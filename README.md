@@ -27,16 +27,17 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on GitHub Pages
-
-Cada push para o repositório executa o workflow em `.github/workflows/deploy.yml` e publica o site em:
-
-`https://projeto-arquitetura-de-software-grupo-9.github.io/front-end/`
-
-Na primeira publicação, em **Settings > Pages**, selecione **GitHub Actions** como fonte do deploy.
-
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Acesse [vercel.com/new](https://vercel.com/new) e entre com sua conta GitHub.
+2. Clique em **Add New > Project** e importe `Projeto-Arquitetura-de-Software-Grupo-9/front-end`.
+3. Mantenha estas configurações:
+	- **Framework Preset:** Next.js
+	- **Root Directory:** `./`
+	- **Build Command:** `npm run build`
+	- **Output Directory:** deixe o padrão da Vercel
+4. Clique em **Deploy**.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Depois disso, cada push na branch conectada gera um novo deploy automaticamente. O endereço será fornecido pela Vercel, normalmente no formato `https://front-end-...vercel.app`.
+
+Para publicar uma branch específica, em **Project Settings > Git > Production Branch**, selecione `jonatas` ou a branch principal que você utilizar.
