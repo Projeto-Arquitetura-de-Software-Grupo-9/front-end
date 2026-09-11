@@ -24,10 +24,16 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 To learn more about Next.js, take a look at the following resources:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on GitHub Pages
+
+Cada push para o repositório executa o workflow em `.github/workflows/deploy.yml` e publica o site em:
+
+`https://projeto-arquitetura-de-software-grupo-9.github.io/front-end/`
+
+Na primeira publicação, em **Settings > Pages**, selecione **GitHub Actions** como fonte do deploy.
 
 ## Deploy on Vercel
 
