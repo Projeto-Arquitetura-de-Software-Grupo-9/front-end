@@ -97,3 +97,6 @@ O projeto abrange o desenvolvimento de uma solução tecnológica completa para 
 - **FELIPE SANTOS**: Desenvolvimento e documentação.
 - **JONATAS JACKSON GONÇALVES**: Desenvolvimento e documentação.
 - **MARIA HELOISA PEREIRA ANDRADE**: Desenvolvimento e documentação.
+
+## 7. Link do projeto hospedado
+https://front-end-lemon-gamma.vercel.app/
