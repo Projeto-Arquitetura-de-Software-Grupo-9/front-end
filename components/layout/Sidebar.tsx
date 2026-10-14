@@ -31,7 +31,7 @@ export const Sidebar: React.FC = () => {
   const { currentScreen, setCurrentScreen } = useApp();
 
   return (
-    <aside className="w-56 bg-white border-r border-slate-200 flex flex-col select-none print:hidden flex-shrink-0 min-h-[calc(100vh-4rem)]">
+    <aside className="w-56 bg-white border-r border-slate-200 flex flex-col select-none print:hidden flex-shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] overflow-y-auto z-20">
       {/* Navigation Links */}
       <nav className="p-3 space-y-1">
         {NAV_ITEMS.map((item) => {

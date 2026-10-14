@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { DifficultyLevel } from '@/lib/types';
-import { X, BookOpen } from 'lucide-react';
+import { X, BookOpen, Tag, Plus } from 'lucide-react';
 
 export const NewQuestionModal: React.FC = () => {
   const {
@@ -13,13 +13,20 @@ export const NewQuestionModal: React.FC = () => {
     setEditingQuestion,
     addQuestion,
     updateQuestion,
+    questions,
   } = useApp();
 
   const [statement, setStatement] = useState('');
   const [discipline, setDiscipline] = useState('Direito Constitucional');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('Médio');
   const [topic, setTopic] = useState('');
-  const [tags, setTags] = useState('TAG 1, TAG 2, TAG 3');
+  const [selectedTags, setSelectedTags] = useState<string[]>(['TAG 1', 'TAG 2', 'TAG 3']);
+  const [tagInput, setTagInput] = useState('');
+  const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
+
   const [explanation, setExplanation] = useState('');
   const [correctAlt, setCorrectAlt] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('C');
   const [alternatives, setAlternatives] = useState<
@@ -38,7 +45,14 @@ export const NewQuestionModal: React.FC = () => {
       setDiscipline(editingQuestion.discipline);
       setDifficulty(editingQuestion.difficulty);
       setTopic(editingQuestion.topic || '');
-      setTags(editingQuestion.tags?.join(', ') || 'TAG 1, TAG 2, TAG 3');
+      setSelectedTags(
+        editingQuestion.tags && editingQuestion.tags.length > 0
+          ? [...editingQuestion.tags]
+          : ['TAG 1', 'TAG 2', 'TAG 3']
+      );
+      setTagInput('');
+      setIsTagDropdownOpen(false);
+      setHighlightedIndex(-1);
       setExplanation(editingQuestion.explanation || '');
       setCorrectAlt(editingQuestion.correctAlternative);
       setAlternatives(
@@ -52,7 +66,10 @@ export const NewQuestionModal: React.FC = () => {
       setDiscipline('Direito Constitucional');
       setDifficulty('Médio');
       setTopic('');
-      setTags('TAG 1, TAG 2, TAG 3');
+      setSelectedTags(['TAG 1', 'TAG 2', 'TAG 3']);
+      setTagInput('');
+      setIsTagDropdownOpen(false);
+      setHighlightedIndex(-1);
       setExplanation('');
       setCorrectAlt('A');
       setAlternatives([
@@ -64,6 +81,112 @@ export const NewQuestionModal: React.FC = () => {
       ]);
     }
   }, [editingQuestion, isNewQuestionModalOpen]);
+
+  // Extract all unique existing tags across questions
+  const allExistingTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    ['TAG 1', 'TAG 2', 'TAG 3'].forEach((t) => tagSet.add(t));
+    if (questions) {
+      questions.forEach((q) => {
+        if (q.tags && Array.isArray(q.tags)) {
+          q.tags.forEach((t) => {
+            const clean = t?.trim();
+            if (clean) tagSet.add(clean);
+          });
+        }
+      });
+    }
+    return Array.from(tagSet);
+  }, [questions]);
+
+  // Filter existing tags not yet selected, matching typed search query
+  const filteredExistingTags = useMemo(() => {
+    const query = tagInput.trim().toLowerCase();
+    return allExistingTags.filter((tag) => {
+      const alreadySelected = selectedTags.some(
+        (st) => st.toLowerCase() === tag.toLowerCase()
+      );
+      if (alreadySelected) return false;
+      if (!query) return true;
+      return tag.toLowerCase().includes(query);
+    });
+  }, [allExistingTags, selectedTags, tagInput]);
+
+  // Check if what the user typed is a new tag that can be created
+  const canCreateNewTag = useMemo(() => {
+    const query = tagInput.trim();
+    if (!query) return false;
+    const alreadySelected = selectedTags.some(
+      (st) => st.toLowerCase() === query.toLowerCase()
+    );
+    const exactExistingMatch = allExistingTags.some(
+      (t) => t.toLowerCase() === query.toLowerCase()
+    );
+    return !alreadySelected && !exactExistingMatch;
+  }, [tagInput, selectedTags, allExistingTags]);
+
+  // Combined options for dropdown navigation
+  const dropdownOptions = useMemo(() => {
+    const options: { type: 'create' | 'existing'; label: string }[] = [];
+    if (canCreateNewTag) {
+      options.push({ type: 'create', label: tagInput.trim() });
+    }
+    filteredExistingTags.forEach((tag) => {
+      options.push({ type: 'existing', label: tag });
+    });
+    return options;
+  }, [canCreateNewTag, tagInput, filteredExistingTags]);
+
+  const handleAddTag = (tagToAdd: string) => {
+    const trimmed = tagToAdd.trim();
+    if (!trimmed) return;
+
+    const exists = selectedTags.some(
+      (t) => t.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (!exists) {
+      const existingMatch = allExistingTags.find(
+        (t) => t.toLowerCase() === trimmed.toLowerCase()
+      );
+      setSelectedTags((prev) => [...prev, existingMatch || trimmed]);
+    }
+    setTagInput('');
+    setIsTagDropdownOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setSelectedTags((prev) => prev.filter((t) => t !== tagToRemove));
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && dropdownOptions[highlightedIndex]) {
+        handleAddTag(dropdownOptions[highlightedIndex].label);
+      } else if (tagInput.trim()) {
+        handleAddTag(tagInput.trim());
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isTagDropdownOpen) {
+        setIsTagDropdownOpen(true);
+      }
+      setHighlightedIndex((prev) =>
+        prev < dropdownOptions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev > 0 ? prev - 1 : dropdownOptions.length - 1
+      );
+    } else if (e.key === 'Backspace' && !tagInput && selectedTags.length > 0) {
+      handleRemoveTag(selectedTags[selectedTags.length - 1]);
+    } else if (e.key === 'Escape') {
+      setIsTagDropdownOpen(false);
+      setHighlightedIndex(-1);
+    }
+  };
 
   if (!isNewQuestionModalOpen) return null;
 
@@ -83,18 +206,13 @@ export const NewQuestionModal: React.FC = () => {
       text: a.text.trim() || `Opção ${a.letter}`,
     }));
 
-    const parsedTags = tags
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-
     if (editingQuestion) {
       updateQuestion(editingQuestion.id, {
         statement,
         discipline,
         difficulty,
         topic,
-        tags: parsedTags.length > 0 ? parsedTags : ['TAG 1', 'TAG 2', 'TAG 3'],
+        tags: selectedTags,
         explanation,
         correctAlternative: correctAlt,
         alternatives: mappedAlternatives,
@@ -105,7 +223,7 @@ export const NewQuestionModal: React.FC = () => {
         discipline,
         difficulty,
         topic,
-        tags: parsedTags.length > 0 ? parsedTags : ['TAG 1', 'TAG 2', 'TAG 3'],
+        tags: selectedTags,
         explanation,
         correctAlternative: correctAlt,
         alternatives: mappedAlternatives,
@@ -209,17 +327,144 @@ export const NewQuestionModal: React.FC = () => {
           </div>
 
           {/* Tags / Etiquetas */}
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">
-              Etiquetas (separadas por vírgula)
-            </label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="TAG 1, TAG 2, TAG 3"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
-            />
+          <div className="relative">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block font-bold text-slate-700">
+                Etiquetas
+              </label>
+              <span className="text-[11px] text-slate-400">
+                Pressione Enter para adicionar ou criar
+              </span>
+            </div>
+
+            {/* Tags Box */}
+            <div
+              onClick={() => tagInputRef.current?.focus()}
+              className="min-h-[42px] p-2 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-[#9E0B1A]/20 focus-within:border-slate-300 transition cursor-text"
+            >
+              {selectedTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg shadow-2xs group"
+                >
+                  <Tag className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                  <span>{tag}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveTag(tag);
+                    }}
+                    className="ml-0.5 text-slate-400 hover:text-red-600 rounded-full hover:bg-slate-100 p-0.5 transition cursor-pointer"
+                    title={`Remover ${tag}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+
+              <input
+                ref={tagInputRef}
+                type="text"
+                value={tagInput}
+                onChange={(e) => {
+                  setTagInput(e.target.value);
+                  setIsTagDropdownOpen(true);
+                  setHighlightedIndex(-1);
+                }}
+                onFocus={() => setIsTagDropdownOpen(true)}
+                onBlur={() => {
+                  setTimeout(() => setIsTagDropdownOpen(false), 200);
+                }}
+                onKeyDown={handleTagInputKeyDown}
+                placeholder={
+                  selectedTags.length === 0
+                    ? 'Digite uma etiqueta e pressione Enter...'
+                    : 'Adicionar etiqueta...'
+                }
+                className="flex-1 min-w-[150px] px-2 py-1 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-none"
+              />
+            </div>
+
+            {/* Dropdown for Selection / Creation */}
+            {isTagDropdownOpen && dropdownOptions.length > 0 && (
+              <div
+                ref={tagDropdownRef}
+                className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1.5"
+              >
+                {dropdownOptions.map((opt, idx) => {
+                  const isHighlighted = highlightedIndex === idx;
+                  if (opt.type === 'create') {
+                    return (
+                      <button
+                        type="button"
+                        key={`create-${opt.label}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleAddTag(opt.label);
+                        }}
+                        className={`w-full px-3 py-2 text-left text-xs text-[#9E0B1A] font-semibold flex items-center justify-between transition cursor-pointer border-b border-slate-100 ${
+                          isHighlighted ? 'bg-red-50' : 'hover:bg-red-50/70'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>
+                            Criar nova etiqueta: <strong>{opt.label}</strong>
+                          </span>
+                        </span>
+                        <span className="text-[10px] bg-red-100/60 text-[#9E0B1A] px-2 py-0.5 rounded font-bold">
+                          Enter
+                        </span>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <button
+                      type="button"
+                      key={`existing-${opt.label}`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleAddTag(opt.label);
+                      }}
+                      className={`w-full px-3 py-1.5 text-left text-xs text-slate-700 flex items-center justify-between transition cursor-pointer ${
+                        isHighlighted ? 'bg-slate-100 text-slate-900 font-medium' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Tag className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{opt.label}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">Selecionar</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Quick-select pills from available existing tags */}
+            {allExistingTags.filter((t) => !selectedTags.includes(t)).length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                <span className="text-[11px] font-medium text-slate-400">
+                  Sugestões existentes:
+                </span>
+                {allExistingTags
+                  .filter((t) => !selectedTags.includes(t))
+                  .slice(0, 6)
+                  .map((tag) => (
+                    <button
+                      type="button"
+                      key={tag}
+                      onClick={() => handleAddTag(tag)}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded-md transition cursor-pointer"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      {tag}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
 
           {/* Alternatives list */}
