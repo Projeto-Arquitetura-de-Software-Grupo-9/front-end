@@ -7,7 +7,6 @@ import { Header } from '@/components/layout/Header';
 import { ToastContainer } from '@/components/ui/ToastContainer';
 
 // Screens
-import { DashboardScreen } from '@/components/screens/DashboardScreen';
 import { QuestionBankScreen } from '@/components/screens/QuestionBankScreen';
 import { CreateExamScreen } from '@/components/screens/CreateExamScreen';
 import { AnswerSheetScreen } from '@/components/screens/AnswerSheetScreen';
@@ -27,8 +26,6 @@ function MainAppContent() {
 
   const renderScreen = () => {
     switch (currentScreen) {
-      case 'dashboard':
-        return <DashboardScreen />;
       case 'banco-questoes':
         return <QuestionBankScreen />;
       case 'criar-prova':
@@ -44,7 +41,7 @@ function MainAppContent() {
       case 'configuracoes':
         return <SettingsScreen />;
       default:
-        return <DashboardScreen />;
+        return <QuestionBankScreen />;
     }
   };
 

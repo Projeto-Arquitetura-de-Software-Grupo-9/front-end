@@ -1,5 +1,4 @@
 export type ScreenType =
-  | 'dashboard'
   | 'banco-questoes'
   | 'criar-prova'
   | 'folha-respostas'
