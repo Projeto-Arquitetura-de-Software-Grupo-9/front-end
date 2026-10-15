@@ -222,9 +222,15 @@ export const AnswerSheetScreen: React.FC = () => {
 
               {/* QR Code graphic */}
               <QrCodeGraphic
-                value={`${examCode}-V${selectedVersion}`}
-                size={70}
-                className="shadow-xs"
+                value={JSON.stringify({
+                  appId: examCode.replace(/[^a-zA-Z0-9]/g, ''),
+                  ver: selectedVersion,
+                  code: examCode,
+                })}
+                versionLetter={selectedVersion}
+                examCode={examCode}
+                size={84}
+                showBadge={true}
               />
             </div>
 
