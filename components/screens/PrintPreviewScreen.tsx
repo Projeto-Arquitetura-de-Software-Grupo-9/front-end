@@ -2,25 +2,21 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { QrCodeGraphic } from '@/components/common/QrCodeGraphic';
+import { A4ExamSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
 import {
-  ArrowLeft,
   Download,
   Printer,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  FileText,
   Layers,
-  CheckCircle2,
   UserCheck,
-  UserX,
 } from 'lucide-react';
 
 export const PrintPreviewScreen: React.FC = () => {
   const {
     selectedExam,
-    setExamWizardStep,
-    setCurrentScreen,
     previewVersion,
     setPreviewVersion,
     showAnswerKeyInPreview,
@@ -32,13 +28,35 @@ export const PrintPreviewScreen: React.FC = () => {
     previewPage,
     setPreviewPage,
     questions,
+    students,
     addToast,
   } = useApp();
 
-  const [withIdentification, setWithIdentification] = useState(true);
+  const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
+  const [includeBoxNota, setIncludeBoxNota] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('none');
+
+  const isBatchMode = selectedStudentId === 'all_students';
+
+  const currentStudent =
+    selectedStudentId !== 'none' && selectedStudentId !== 'all_students'
+      ? students.find((s) => s.id === selectedStudentId) || null
+      : null;
+
+  const handleSelectStudent = (stdId: string) => {
+    setSelectedStudentId(stdId);
+    if (stdId !== 'none' && stdId !== 'all_students') {
+      const stdIdx = students.findIndex((s) => s.id === stdId);
+      const numV = selectedExam?.numberOfVersions || 4;
+      const assignedLetter = (['A', 'B', 'C', 'D'] as const)[stdIdx % numV];
+      setPreviewVersion(assignedLetter);
+    }
+  };
 
   const exam = selectedExam || {
-    title: 'P1 - Direito Constitucional I - 2026.1',
+    id: 'exam-default',
+    title: 'P1 - Direito Constitucional I - 2024.2',
     discipline: 'Direito Constitucional',
     course: 'Direito',
     classGroup: 'Turma A',
@@ -53,324 +71,438 @@ export const PrintPreviewScreen: React.FC = () => {
     selectedQuestionIds: ['q-disc-1', 'q-1024', 'q-1024-2', 'q-1024-3'],
   };
 
-  // Get selected questions objects
-  const examQuestions = exam.selectedQuestionIds
-    ?.map((id) => questions.find((q) => q.id === id))
-    .filter((q): q is NonNullable<typeof q> => q !== undefined) || questions.slice(0, 5);
+  // Helper to resolve questions for a specific Caderno version (A, B, C, D)
+  const getQuestionsForVersion = (vLetter: 'A' | 'B' | 'C' | 'D'): A4ExamQuestion[] => {
+    const vData = (exam as any).versions?.find(
+      (v: any) => v.versionLetter === vLetter
+    );
+
+    if (vData?.questions && vData.questions.length > 0) {
+      return vData.questions.map((qv: any, idx: number) => ({
+        id: qv.originalQuestionId || `q-${idx}`,
+        orderIndex: idx + 1,
+        statement: qv.statement,
+        alternatives: qv.alternatives,
+        correctAlternative: qv.correctAlternative,
+      }));
+    }
+
+    const baseQuestions = (exam.selectedQuestionIds
+      ?.map((id) => questions.find((q) => q.id === id))
+      .filter((q): q is NonNullable<typeof q> => q !== undefined) || questions.slice(0, 5));
+
+    let reordered = [...baseQuestions];
+    if (vLetter === 'B' && reordered.length >= 2) {
+      reordered = [reordered[1], ...reordered.slice(2), reordered[0]];
+    } else if (vLetter === 'C' && reordered.length >= 3) {
+      reordered = [reordered[2], reordered[0], ...reordered.slice(3), reordered[1]];
+    } else if (vLetter === 'D' && reordered.length >= 4) {
+      reordered = [reordered[3], ...reordered.slice(0, 3), ...reordered.slice(4)];
+    }
+
+    return reordered.map((q, idx) => ({
+      id: q.id,
+      orderIndex: idx + 1,
+      statement: q.statement,
+      alternatives: q.alternatives,
+      correctAlternative: q.correctAlternative,
+    }));
+  };
+
+  const paginateQuestions = (vQuestions: A4ExamQuestion[]) => {
+    const QUESTIONS_PAGE_1 = 3;
+    const QUESTIONS_SUBSEQUENT_PAGES = 3;
+
+    const page1Questions = vQuestions.slice(0, QUESTIONS_PAGE_1);
+    const remainingQuestions = vQuestions.slice(QUESTIONS_PAGE_1);
+
+    const additionalPagesCount = Math.max(
+      remainingQuestions.length > 0 ? Math.ceil(remainingQuestions.length / QUESTIONS_SUBSEQUENT_PAGES) : 0,
+      1
+    );
+
+    const totalPages = 1 + additionalPagesCount;
+
+    const pagesData: { pageNumber: number; questions: A4ExamQuestion[] }[] = [
+      { pageNumber: 1, questions: page1Questions },
+    ];
+
+    for (let p = 2; p <= totalPages; p++) {
+      const startIndex = (p - 2) * QUESTIONS_SUBSEQUENT_PAGES;
+      const pQuestions = remainingQuestions.slice(startIndex, startIndex + QUESTIONS_SUBSEQUENT_PAGES);
+      pagesData.push({
+        pageNumber: p,
+        questions: pQuestions.length > 0 ? pQuestions : vQuestions.slice(3, 5),
+      });
+    }
+
+    return { totalPages, pagesData };
+  };
+
+  const singleVersionQuestions = getQuestionsForVersion(previewVersion);
+  const { totalPages, pagesData } = paginateQuestions(singleVersionQuestions);
+
+  const allStudentsBatch = students.map((std, stdIdx) => {
+    const numV = (selectedExam?.numberOfVersions) || 4;
+    const assignedLetter = (['A', 'B', 'C', 'D'] as const)[stdIdx % numV];
+    const stdQuestions = getQuestionsForVersion(assignedLetter);
+    const { totalPages: stdTotalPages, pagesData: stdPagesData } = paginateQuestions(stdQuestions);
+    return {
+      student: std,
+      studentIndex: stdIdx,
+      assignedLetter,
+      totalPages: stdTotalPages,
+      pagesData: stdPagesData,
+    };
+  });
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleExportConsolidatedPdf = () => {
-    addToast({
-      type: 'success',
-      title: 'PDF Único Consolidado Gerado!',
-      message: `Arquivo consolidado contendo todas as provas da turma (${withIdentification ? 'Com identificação do aluno' : 'Sem identificação'}) pronto para download.`,
-    });
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    try {
+      const examId = exam.id || 'exam-catolica-01';
+      const backendUrl = `http://localhost:3001/api/v1/exams/${examId}/download-pdf?versionLetter=${previewVersion}&showAnswerKey=${showAnswerKeyInPreview}&showQrCode=${showQrCodeInPreview}&includeBoxNota=${includeBoxNota}`;
+
+      const response = await fetch(backendUrl);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Prova-${exam.title.replace(/[^a-zA-Z0-9]/g, '_')}-Caderno-${previewVersion}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+        addToast({
+          type: 'success',
+          title: 'PDF Baixado com Sucesso!',
+          message: `Caderno ${previewVersion} gerado em formato A4 institucional.`,
+        });
+      } else {
+        window.print();
+      }
+    } catch {
+      window.print();
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Header with Title and Main Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-[#9E0B1A] uppercase tracking-wider">
-            <Layers className="w-4 h-4" />
-            <span>Feature 6 – Geração de PDF e Versões (Católica SC)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1">
-            Pré-visualização da Avaliação
-          </h1>
-          <p className="text-xs text-slate-500">
-            {exam.title} • {exam.institution || 'CATÓLICA DE SANTA CATARINA'}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => {
-              setExamWizardStep(2);
-              setCurrentScreen('criar-prova');
-            }}
-            className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer"
-          >
-            Voltar ao Editor
-          </button>
-
-          <button
-            onClick={handleExportConsolidatedPdf}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" /> Baixar PDF Consolidado
-          </button>
-
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" /> Imprimir
-          </button>
-        </div>
-      </div>
-
-      {/* Toolbar Controls Card */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4 print:hidden">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Mode Selector (Feature 6: Com ou Sem Identificação) */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            <button
-              onClick={() => setWithIdentification(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                withIdentification
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-              <span>Com Identificação</span>
-            </button>
-
-            <button
-              onClick={() => setWithIdentification(false)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                !withIdentification
-                  ? 'bg-white text-amber-800 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <UserX className="w-3.5 h-3.5 text-amber-600" />
-              <span>Sem Identificação (Anônima)</span>
-            </button>
-          </div>
-
+    <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
+      {/* Integrated Workbench Toolbar */}
+      <div className="bg-white px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
+        {/* Left Controls: Caderno, Aluno & Visualização */}
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Caderno Version Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-            {(['A', 'B', 'C', 'D'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setPreviewVersion(v)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                  previewVersion === v
-                    ? 'bg-[#9E0B1A] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Caderno {v}
-              </button>
-            ))}
-          </div>
-
-          {/* Zoom Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Zoom:</span>
-            <div className="relative">
-              <select
-                value={previewZoom}
-                onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
-                className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none"
-              >
-                <option value={75}>75%</option>
-                <option value={100}>100%</option>
-                <option value={125}>125%</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        {/* Toggles: Gabarito & QR Code */}
-        <div className="flex items-center gap-5">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">
-              Gabarito Visual
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowAnswerKeyInPreview(!showAnswerKeyInPreview)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                showAnswerKeyInPreview ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  showAnswerKeyInPreview ? 'translate-x-4.5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">
-              QR Code
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowQrCodeInPreview(!showQrCodeInPreview)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                showQrCodeInPreview ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  showQrCodeInPreview ? 'translate-x-4.5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </label>
-        </div>
-      </div>
-
-      {/* Realistic A4 Paper Container */}
-      <div className="bg-slate-200/60 p-6 sm:p-10 rounded-3xl flex justify-center shadow-inner overflow-x-auto print:bg-white print:p-0">
-        <div
-          style={{
-            transform: `scale(${previewZoom / 100})`,
-            transformOrigin: 'top center',
-          }}
-          className="w-full max-w-[800px] bg-white text-slate-900 p-10 sm:p-14 rounded-sm shadow-xl space-y-6 transition-transform duration-200 print:shadow-none print:max-w-none print:p-0"
-        >
-          {/* Institutional Header */}
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
-              <h2 className="text-base font-extrabold tracking-wide uppercase text-slate-950">
-                {exam.institution || 'CATÓLICA DE SANTA CATARINA'}
-              </h2>
-              <p className="text-xs font-semibold text-slate-700">
-                {exam.department || 'Curso de Direito | Departamento de Ciências Jurídicas'}
-              </p>
-              <p className="text-xs font-medium text-slate-600">
-                Disciplina: {exam.discipline} | Turma: {exam.classGroup || 'Turma A'} (Caderno {previewVersion})
-              </p>
-              <h3 className="text-xs font-bold text-slate-900 pt-1">
-                {exam.title}
-              </h3>
-            </div>
-
-            {/* QR Code (Feature 6: version + student if withIdentification, or version only) */}
-            {showQrCodeInPreview && (
-              <div className="text-center ml-4">
-                <QrCodeGraphic
-                  value={
-                    withIdentification
-                      ? `CATOLICA-OMR:V=${previewVersion}:STD=2024.1.001`
-                      : `CATOLICA-OMR:V=${previewVersion}`
-                  }
-                  size={72}
-                  className="shadow-xs"
-                />
-                <span className="text-[9px] font-mono font-bold text-slate-500 block mt-1">
-                  CADERNO {previewVersion}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t-2 border-slate-900 pt-2"></div>
-
-          {/* Student Header (Feature 6) */}
-          {withIdentification ? (
-            /* Mode COM Identificação: Pré-impresso */
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-              <div>
-                <span className="font-semibold text-slate-500">Aluno(a): </span>
-                <span className="font-bold text-slate-950 text-sm">Amanda Dolores</span>
-                <span className="ml-4 font-semibold text-slate-500">Matrícula: </span>
-                <span className="font-mono font-bold text-slate-800">2024.1.001</span>
-              </div>
-              <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                Identificação Pré-impressa
-              </span>
-            </div>
-          ) : (
-            /* Mode SEM Identificação: Linhas em branco para preenchimento manual */
-            <div className="space-y-2 text-xs font-medium text-slate-800">
-              <div className="flex items-end">
-                <span className="font-semibold whitespace-nowrap mr-2">Nome:</span>
-                <div className="flex-1 border-b border-dashed border-slate-500 pb-0.5"></div>
-              </div>
-
-              <div className="flex items-center justify-between gap-6 pt-1">
-                <div className="flex items-end flex-1">
-                  <span className="font-semibold whitespace-nowrap mr-2">Matrícula:</span>
-                  <div className="flex-1 border-b border-dashed border-slate-500 pb-0.5"></div>
-                </div>
-
-                <div className="flex items-end w-44">
-                  <span className="font-semibold whitespace-nowrap mr-2">Data:</span>
-                  <span className="font-mono text-slate-600">____/____/________</span>
-                </div>
-              </div>
+          {!isBatchMode && (
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              {(['A', 'B', 'C', 'D'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    setSelectedStudentId('none');
+                    setPreviewVersion(v);
+                  }}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md transition cursor-pointer ${
+                    previewVersion === v
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Caderno {v}
+                </button>
+              ))}
             </div>
           )}
 
-          {/* Official Instructions */}
-          <div className="border-t border-b border-slate-300 py-2.5 my-3 text-[11px] italic text-slate-600 leading-snug">
-            {exam.instructions}
+          {/* Student Selector */}
+          <div className="relative">
+            <select
+              value={selectedStudentId}
+              onChange={(e) => handleSelectStudent(e.target.value)}
+              className={`text-xs font-bold rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none border ${
+                isBatchMode
+                  ? 'bg-blue-50 border-blue-300 text-blue-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-800'
+              }`}
+            >
+              <option value="none">Caderno Geral (Sem Nome)</option>
+              <option value="all_students">
+                🖨️ Turma Completa ({students.length} Provas em Lote)
+              </option>
+              <optgroup label="Aluno Individual:">
+                {students.map((s, sIdx) => {
+                  const numV = selectedExam?.numberOfVersions || 4;
+                  const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — Caderno {v}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          {/* Questions Section */}
-          <div className="space-y-6 pt-2">
-            {examQuestions.map((q, index) => {
-              const isDiscursive = q.type === 'discursiva';
+          {/* View Mode Toggle: Single vs All Pages (when not in batch mode) */}
+          {!isBatchMode && (
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs">
+              <button
+                onClick={() => setViewMode('single')}
+                className={`px-2 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  viewMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Visualizar uma folha por vez"
+              >
+                <FileText className="w-3.5 h-3.5" /> Folha Única
+              </button>
+              <button
+                onClick={() => setViewMode('all')}
+                className={`px-2 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  viewMode === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Visualizar todas as folhas lado a lado"
+              >
+                <Layers className="w-3.5 h-3.5" /> Todas as Folhas
+              </button>
+            </div>
+          )}
 
-              return (
-                <div key={q.id} className="space-y-2.5 text-xs text-slate-900">
-                  {/* Statement */}
-                  <div className="flex items-start justify-between gap-2 font-bold leading-relaxed">
-                    <p>
-                      {index + 1}. {q.statement}
-                    </p>
-                    <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap bg-slate-100 px-1.5 py-0.5 rounded">
-                      ({q.type === 'discursiva' ? `${q.maxScore || 2.5} pts` : `${q.points || 1.0} pt`})
+          {/* Pagination (if single mode) */}
+          {!isBatchMode && viewMode === 'single' && (
+            <div className="flex items-center gap-1 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-lg">
+              <button
+                onClick={() => setPreviewPage(Math.max(1, previewPage - 1))}
+                disabled={previewPage === 1}
+                className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-1">{previewPage} / {totalPages}</span>
+              <button
+                onClick={() => setPreviewPage(Math.min(totalPages, previewPage + 1))}
+                disabled={previewPage === totalPages}
+                className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right Controls: Zoom, Toggles & Primary Actions */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Zoom */}
+          <div className="relative">
+            <select
+              value={previewZoom}
+              onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+              className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 pr-6 appearance-none cursor-pointer focus:outline-none"
+            >
+              <option value={50}>50%</option>
+              <option value={75}>75%</option>
+              <option value={100}>100%</option>
+              <option value={125}>125%</option>
+            </select>
+            <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Compact Toggles */}
+          <div className="flex items-center gap-3 text-xs text-slate-600 font-medium border-l border-slate-200 pl-3">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeBoxNota}
+                onChange={(e) => setIncludeBoxNota(e.target.checked)}
+                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>Box NOTA</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showAnswerKeyInPreview}
+                onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
+                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>Gabarito</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showQrCodeInPreview}
+                onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
+                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>QR Code</span>
+            </label>
+          </div>
+
+          {/* Action Buttons: Export PDF & Print */}
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+            <button
+              onClick={handleExportPdf}
+              disabled={isExporting}
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
+              title="Baixar em formato PDF"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isExporting ? 'Baixando...' : 'PDF'}</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs ${
+                isBatchMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-900 hover:bg-black'
+              }`}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{isBatchMode ? `Imprimir Lote (${students.length})` : 'Imprimir'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Realistic Virtual Drafting Desk Environment simulating physical A4 paper sheets */}
+      <div className="bg-slate-200/80 p-6 sm:p-10 shadow-inner overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
+        <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
+          {/* Batch Print Mode Banner */}
+          {isBatchMode && (
+            <div className="w-full max-w-[210mm] bg-blue-50 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
+                  <Printer className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-blue-950 flex items-center gap-2">
+                    <span>Lote de Impressão Nominal: Turma Completa</span>
+                    <span className="px-2 py-0.2 rounded bg-blue-200/70 text-blue-800 text-[10px] font-bold">
+                      {students.length} Provas
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-blue-700">
+                    Provas nominais com distribuição de Cadernos A, B, C e D e quebras de página automáticas.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handlePrint}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer flex-shrink-0"
+              >
+                <Printer className="w-3.5 h-3.5" /> Imprimir Todas as Provas
+              </button>
+            </div>
+          )}
+
+          {isBatchMode ? (
+            /* BATCH PRINT MODE: Render all students' full exams */
+            <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
+              {allStudentsBatch.map((batchItem) => (
+                <div
+                  key={batchItem.student.id}
+                  className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
+                >
+                  {/* Student Section Header in Preview Screen */}
+                  <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
+                        {batchItem.studentIndex + 1}
+                      </span>
+                      <span>{batchItem.student.name}</span>
+                      <span className="text-slate-400 font-mono text-[11px]">
+                        ({batchItem.student.registration})
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-bold">
+                      Caderno {batchItem.assignedLetter}
                     </span>
                   </div>
 
-                  {/* Objective Alternatives */}
-                  {!isDiscursive ? (
-                    <div className="space-y-1.5 pl-3">
-                      {q.alternatives.map((alt) => {
-                        const isCorrect = alt.letter === q.correctAlternative;
-                        const showHighlight = showAnswerKeyInPreview && isCorrect;
-
-                        return (
-                          <div
-                            key={alt.id}
-                            className={`flex items-start gap-2 p-1 rounded transition ${
-                              showHighlight ? 'bg-emerald-100/70 font-semibold' : ''
-                            }`}
-                          >
-                            <span
-                              className={`w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${
-                                showHighlight ? 'bg-emerald-600 text-white border-emerald-600' : ''
-                              }`}
-                            >
-                              {alt.letter}
-                            </span>
-                            <span className="leading-normal">{alt.text}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    /* Discursive Writing Lines */
-                    <div className="space-y-3.5 pl-2 pt-2">
-                      <div className="border-b border-slate-300 h-5"></div>
-                      <div className="border-b border-slate-300 h-5"></div>
-                      <div className="border-b border-slate-300 h-5"></div>
-                      <div className="border-b border-slate-300 h-5"></div>
-                    </div>
-                  )}
+                  {/* Render each page for this student with print:break-after-page */}
+                  {batchItem.pagesData.map((page) => (
+                    <A4ExamSheet
+                      key={`${batchItem.student.id}-p${page.pageNumber}`}
+                      exam={exam}
+                      questions={page.questions}
+                      pageNumber={page.pageNumber}
+                      totalPages={batchItem.totalPages}
+                      versionLetter={batchItem.assignedLetter}
+                      showAnswerKey={showAnswerKeyInPreview}
+                      showQrCode={showQrCodeInPreview}
+                      includeBoxNota={includeBoxNota}
+                      student={{
+                        name: batchItem.student.name,
+                        registration: batchItem.student.registration,
+                      }}
+                      scale={previewZoom / 100}
+                    />
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Footer */}
-          <div className="pt-8 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-            <span>SGP Católica SC • Caderno {previewVersion}</span>
-            <span>Página 1 de 1</span>
-          </div>
+              ))}
+            </div>
+          ) : viewMode === 'single' ? (
+            /* Single Sheet View */
+            <div className="flex flex-col items-center">
+              <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                Folha {previewPage} de {totalPages} • Caderno {previewVersion}
+                {currentStudent && ` • Aluno: ${currentStudent.name}`}
+              </div>
+              <A4ExamSheet
+                exam={exam}
+                questions={
+                  pagesData.find((p) => p.pageNumber === previewPage)?.questions ||
+                  pagesData[0].questions
+                }
+                pageNumber={previewPage}
+                totalPages={totalPages}
+                versionLetter={previewVersion}
+                showAnswerKey={showAnswerKeyInPreview}
+                showQrCode={showQrCodeInPreview}
+                includeBoxNota={includeBoxNota}
+                student={
+                  currentStudent
+                    ? { name: currentStudent.name, registration: currentStudent.registration }
+                    : undefined
+                }
+                scale={previewZoom / 100}
+              />
+            </div>
+          ) : (
+            /* All Sheets View for Selected Version */
+            pagesData.map((page) => (
+              <div key={page.pageNumber} className="flex flex-col items-center print:w-full">
+                <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                  Folha {page.pageNumber} de {totalPages} • Caderno {previewVersion}
+                  {currentStudent && ` • Aluno: ${currentStudent.name}`}
+                </div>
+                <A4ExamSheet
+                  exam={exam}
+                  questions={page.questions}
+                  pageNumber={page.pageNumber}
+                  totalPages={totalPages}
+                  versionLetter={previewVersion}
+                  showAnswerKey={showAnswerKeyInPreview}
+                  showQrCode={showQrCodeInPreview}
+                  includeBoxNota={includeBoxNota}
+                  student={
+                    currentStudent
+                      ? { name: currentStudent.name, registration: currentStudent.registration }
+                      : undefined
+                  }
+                  scale={previewZoom / 100}
+                />
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

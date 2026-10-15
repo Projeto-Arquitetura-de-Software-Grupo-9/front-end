@@ -131,35 +131,13 @@ export interface Exam {
   maxScore: number;
   totalStudents?: number;
   averageScore?: number;
-  createdAt?: string;
-}
-
-export interface ExamAssignment {
-  id: string;
-  examVersionId: string;
-  studentId: string;
-  qrCodePayload: string;
-}
-
-export interface Application {
-  id: string;
-  examId: string;
-  classId: string;
-  teacherId: string;
-  title: string;
-  className: string;
-  discipline: string;
-  status: 'draft' | 'generated' | 'closed';
-  withStudentIdentification: boolean;
-  shuffleQuestions: boolean;
-  shuffleAlternatives: boolean;
-  numberOfVersions: number;
-  pdfUrl?: string;
-  createdAt: string;
-  versions: ExamVersion[];
-  assignments?: ExamAssignment[];
-  answerKeyPublished: boolean;
-  publicCode: string;
+  permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
+  studentAssignments?: {
+    studentId: string;
+    studentName: string;
+    registration: string;
+    assignedVersion: 'A' | 'B' | 'C' | 'D';
+  }[];
 }
 
 export interface Student {

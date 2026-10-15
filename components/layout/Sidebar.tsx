@@ -1,12 +1,12 @@
 'use client';
 
 import React from 'react';
-import { useApp } from '@/context/AppContext';
-import { ScreenType } from '@/lib/types';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
-  Folder,
-  Plus,
   FileText,
+  Plus,
+  Folder,
   TrendingUp,
   GraduationCap,
   Layers,
@@ -19,32 +19,23 @@ import {
 } from 'lucide-react';
 
 interface NavItem {
-  id: ScreenType;
+  href: string;
   label: string;
   icon: React.ElementType;
   badge?: string;
 }
 
-const TEACHER_NAV_ITEMS: NavItem[] = [
-  { id: 'banco-questoes', label: 'Banco de Questões', icon: Folder },
-  { id: 'turmas', label: 'Minhas Turmas', icon: GraduationCap },
-  { id: 'criar-prova', label: 'Criar Prova (Template)', icon: Plus },
-  { id: 'aplicacoes', label: 'Aplicações & PDFs', icon: Layers },
-  { id: 'folha-respostas', label: 'Folha de Respostas', icon: FileText },
-  { id: 'lancamento-manual', label: 'Lançamento Manual', icon: ClipboardCheck, badge: '2 pend.' },
-  { id: 'resultados', label: 'Resultados & Relatórios', icon: TrendingUp },
-  { id: 'configuracoes', label: 'Configurações & LGPD', icon: Settings },
-];
-
-const STUDENT_NAV_ITEMS: NavItem[] = [
-  { id: 'portal-aluno', label: 'Minhas Notas e Provas', icon: Award },
+const NAV_ITEMS: NavItem[] = [
+  { href: '/provas', label: 'Provas', icon: FileText },
+  { href: '/provas/new', label: 'Criar Prova', icon: Plus },
+  { href: '/banco-questoes', label: 'Banco de Questões', icon: Folder },
+  { href: '/resultados', label: 'Resultados', icon: TrendingUp },
+  { href: '/alunos', label: 'Alunos', icon: Users },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
 export const Sidebar: React.FC = () => {
-  const { currentScreen, setCurrentScreen, currentUser, logout } = useApp();
-
-  const isStudent = currentUser.role === 'estudante';
-  const navItems = isStudent ? STUDENT_NAV_ITEMS : TEACHER_NAV_ITEMS;
+  const pathname = usePathname();
 
   return (
     <aside className="w-60 bg-white border-r border-slate-200 flex flex-col select-none print:hidden flex-shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] overflow-y-auto z-20">
@@ -59,39 +50,36 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Navigation Links */}
-      <nav className="p-3 space-y-1 flex-1">
-        {navItems.map((item) => {
-          const isActive = currentScreen === item.id;
+      <nav className="p-3 space-y-1">
+        {NAV_ITEMS.map((item) => {
+          let isActive = false;
+          if (item.href === '/provas') {
+            isActive = pathname === '/provas' || (pathname.startsWith('/provas/') && pathname !== '/provas/new');
+          } else if (item.href === '/provas/new') {
+            isActive = pathname === '/provas/new';
+          } else {
+            isActive = pathname.startsWith(item.href);
+          }
+
           const Icon = item.icon;
 
           return (
-            <button
-              key={item.id}
-              onClick={() => setCurrentScreen(item.id)}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-left cursor-pointer ${
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-left cursor-pointer ${
                 isActive
-                  ? isStudent
-                    ? 'bg-blue-50 text-blue-700 font-bold'
-                    : 'bg-red-50 text-[#9E0B1A] font-bold'
+                  ? 'bg-blue-50 text-blue-600 font-semibold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <div className="flex items-center gap-3 min-w-0">
-                <Icon
-                  className={`w-4 h-4 flex-shrink-0 transition-colors ${
-                    isActive
-                      ? isStudent ? 'text-blue-600' : 'text-[#9E0B1A]'
-                      : 'text-slate-500 group-hover:text-slate-700'
-                  }`}
-                />
-                <span className="truncate text-xs sm:text-sm">{item.label}</span>
-              </div>
-              {item.badge && (
-                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 rounded-full flex-shrink-0">
-                  {item.badge}
-                </span>
-              )}
-            </button>
+              <Icon
+                className={`w-4 h-4 transition-colors ${
+                  isActive ? 'text-blue-600' : 'text-slate-500 group-hover:text-slate-700'
+                }`}
+              />
+              <span className="flex-1 text-xs sm:text-sm">{item.label}</span>
+            </Link>
           );
         })}
       </nav>

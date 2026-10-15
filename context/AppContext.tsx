@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ScreenType,
   Question,
@@ -36,6 +37,7 @@ interface Toast {
 }
 
 interface ExamDraft {
+  id?: string;
   title: string;
   discipline: string;
   course: string;
@@ -51,6 +53,7 @@ interface ExamDraft {
   shuffleAlternatives: boolean;
   numberOfVersions: number;
   maxScore: number;
+  permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
 }
 
 interface AppContextType {
@@ -90,7 +93,9 @@ interface AppContextType {
   setActiveExamId: (id: string) => void;
   selectedExam: Exam | undefined;
   createExamFromDraft: (draft: ExamDraft) => Exam;
+  updateExam: (id: string, draft: ExamDraft) => Exam;
   deleteExam: (id: string) => void;
+  duplicateExam: (id: string) => Exam;
   
   // Applications (Feature 5, 6 - Prova aplicada a Turma)
   applications: Application[];
@@ -115,6 +120,7 @@ interface AppContextType {
   examWizardStep: number;
   setExamWizardStep: (step: number) => void;
   resetExamDraft: () => void;
+  loadExamToDraft: (id: string) => void;
 
   // Print Preview state
   previewVersion: 'A' | 'B' | 'C' | 'D';
@@ -168,8 +174,8 @@ interface AppContextType {
   navigateToAplicacoes: () => void;
 }
 
-const DEFAULT_EXAM_DRAFT: ExamDraft = {
-  title: 'P1 - Direito Constitucional I - 2026.1',
+const BLANK_EXAM_DRAFT: ExamDraft = {
+  title: '',
   discipline: 'Direito Constitucional',
   course: 'Direito',
   classGroup: 'Turma A',
@@ -178,17 +184,20 @@ const DEFAULT_EXAM_DRAFT: ExamDraft = {
   department: 'Curso de Direito | Departamento de Ciências Jurídicas',
   date: '15 Mar, 2026',
   duration: '2 horas',
-  instructions: 'Marque apenas uma alternativa por questão. Preencha completamente a bolha com caneta preta ou azul. Rasuras anulam a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca.',
-  selectedQuestionIds: ['q-disc-1', 'q-1024', 'q-1024-2', 'q-1024-3'],
+  instructions:
+    'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
+  selectedQuestionIds: [],
   shuffleQuestions: true,
   shuffleAlternatives: true,
   numberOfVersions: 4,
   maxScore: 10.0,
+  permutationStrategy: 'FISHER_YATES',
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const router = useRouter();
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('banco-questoes');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -213,9 +222,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pendingCorrectionsCount: 2,
   });
   
-  // Exam Wizard Draft
-  const [examDraft, setExamDraft] = useState<ExamDraft>(DEFAULT_EXAM_DRAFT);
-  const [examWizardStep, setExamWizardStep] = useState<number>(2);
+  // Exam Wizard Draft: starts cleanly on Step 1 with clean draft
+  const [examDraft, setExamDraft] = useState<ExamDraft>(BLANK_EXAM_DRAFT);
+  const [examWizardStep, setExamWizardStep] = useState<number>(1);
+
+  // LocalStorage Persistence for Exams
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('correge_exams_v1');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setExams(parsed);
+            if (parsed[0]?.id) setActiveExamId(parsed[0].id);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load exams from localStorage:', e);
+      }
+    }
+  }, []);
+
+  const persistExams = (newExams: Exam[]) => {
+    setExams(newExams);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('correge_exams_v1', JSON.stringify(newExams));
+      } catch (e) {
+        console.error('Failed to save exams to localStorage:', e);
+      }
+    }
+  };
 
   // Print Preview state
   const [previewVersion, setPreviewVersion] = useState<'A' | 'B' | 'C' | 'D'>('A');
@@ -510,6 +548,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       draft.numberOfVersions
     );
 
+    const versionLetters: ('A' | 'B' | 'C' | 'D')[] = (['A', 'B', 'C', 'D'] as const).slice(
+      0,
+      draft.numberOfVersions
+    );
+    const studentAssignments = students.map((std, idx) => ({
+      studentId: std.id,
+      studentName: std.name,
+      registration: std.registration,
+      assignedVersion: versionLetters[idx % versionLetters.length],
+    }));
+
     const newExam: Exam = {
       id: `exam-${Date.now()}`,
       teacherId: currentUser.id,
@@ -530,15 +579,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shuffleQuestions: draft.shuffleQuestions,
       shuffleAlternatives: draft.shuffleAlternatives,
       numberOfVersions: draft.numberOfVersions,
-      selectedQuestionIds: draft.selectedQuestionIds.slice(0, 20),
+      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
+      selectedQuestionIds: draft.selectedQuestionIds,
       versions,
+      studentAssignments,
       maxScore: draft.maxScore,
-      totalStudents: 34,
+      totalStudents: students.length > 0 ? students.length : 32,
       averageScore: 0,
       createdAt: new Date().toISOString(),
     };
 
-    setExams((prev) => [newExam, ...prev]);
+    const nextExams = [newExam, ...exams];
+    persistExams(nextExams);
     setActiveExamId(newExam.id);
     addToast({
       type: 'success',
@@ -548,8 +600,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newExam;
   };
 
+  const updateExam = (id: string, draft: ExamDraft): Exam => {
+    const existing = exams.find((e) => e.id === id);
+    if (!existing) {
+      return createExamFromDraft(draft);
+    }
+
+    const versions = buildExamVersions(
+      draft.selectedQuestionIds,
+      draft.shuffleQuestions,
+      draft.shuffleAlternatives,
+      draft.numberOfVersions
+    );
+
+    const versionLetters: ('A' | 'B' | 'C' | 'D')[] = (['A', 'B', 'C', 'D'] as const).slice(
+      0,
+      draft.numberOfVersions
+    );
+    const studentAssignments = students.map((std, idx) => ({
+      studentId: std.id,
+      studentName: std.name,
+      registration: std.registration,
+      assignedVersion: versionLetters[idx % versionLetters.length],
+    }));
+
+    const updatedExam: Exam = {
+      ...existing,
+      title: draft.title,
+      discipline: draft.discipline,
+      course: draft.course,
+      classGroup: draft.classGroup,
+      semester: draft.semester,
+      institution: draft.institution,
+      department: draft.department,
+      date: draft.date,
+      duration: draft.duration,
+      instructions: draft.instructions,
+      selectedQuestionIds: draft.selectedQuestionIds,
+      shuffleQuestions: draft.shuffleQuestions,
+      shuffleAlternatives: draft.shuffleAlternatives,
+      numberOfVersions: draft.numberOfVersions,
+      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
+      maxScore: draft.maxScore,
+      versions,
+      studentAssignments,
+    };
+
+    const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
+    persistExams(nextExams);
+    setActiveExamId(updatedExam.id);
+    addToast({
+      type: 'success',
+      title: 'Prova Atualizada com Sucesso!',
+      message: `As alterações em "${updatedExam.title}" foram salvas.`,
+    });
+    return updatedExam;
+  };
+
+  const duplicateExam = (id: string): Exam => {
+    const original = exams.find((e) => e.id === id);
+    if (!original) throw new Error('Prova não encontrada');
+
+    const copy: Exam = {
+      ...original,
+      id: `exam-${Date.now()}`,
+      code: `${original.code}-COP`,
+      title: `${original.title} (Cópia)`,
+      status: 'Pendente',
+    };
+
+    const nextExams = [copy, ...exams];
+    persistExams(nextExams);
+    setActiveExamId(copy.id);
+    addToast({
+      type: 'success',
+      title: 'Prova Duplicada!',
+      message: `Uma cópia de "${original.title}" foi adicionada à lista.`,
+    });
+    return copy;
+  };
+
   const deleteExam = (id: string) => {
-    setExams((prev) => prev.filter((e) => e.id !== id));
+    const nextExams = exams.filter((e) => e.id !== id);
+    persistExams(nextExams);
+    if (activeExamId === id && nextExams.length > 0) {
+      setActiveExamId(nextExams[0].id);
+    }
     addToast({
       type: 'info',
       title: 'Prova Arquivada',
@@ -653,8 +789,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const loadExamToDraft = (id: string) => {
+    const target = exams.find((e) => e.id === id);
+    if (!target) return;
+
+    setExamDraft({
+      id: target.id,
+      title: target.title,
+      discipline: target.discipline,
+      course: target.course,
+      classGroup: target.classGroup,
+      semester: target.semester,
+      institution: target.institution,
+      department: target.department || '',
+      date: target.date,
+      duration: target.duration,
+      instructions: target.instructions,
+      selectedQuestionIds: target.selectedQuestionIds || [],
+      shuffleQuestions: target.shuffleQuestions ?? true,
+      shuffleAlternatives: target.shuffleAlternatives ?? true,
+      numberOfVersions: target.numberOfVersions || 4,
+      maxScore: target.maxScore || 10,
+      permutationStrategy: target.permutationStrategy || 'FISHER_YATES',
+    });
+    setExamWizardStep(1);
+  };
+
   const resetExamDraft = () => {
-    setExamDraft(DEFAULT_EXAM_DRAFT);
+    setExamDraft(BLANK_EXAM_DRAFT);
     setExamWizardStep(1);
   };
 
@@ -706,18 +868,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Navigation helpers
   const navigateToPreview = (examId?: string) => {
-    if (examId) setActiveExamId(examId);
+    const targetId = examId || activeExamId;
+    if (targetId) setActiveExamId(targetId);
     setCurrentScreen('pre-visualizacao');
+    if (targetId) router.push(`/provas/${targetId}?p=caderno`);
   };
 
   const navigateToResults = (examId?: string) => {
-    if (examId) setActiveExamId(examId);
+    const targetId = examId || activeExamId;
+    if (targetId) setActiveExamId(targetId);
     setCurrentScreen('resultados');
+    router.push(targetId ? `/resultados?examId=${targetId}` : '/resultados');
   };
 
   const navigateToFolha = (examId?: string) => {
-    if (examId) setActiveExamId(examId);
+    const targetId = examId || activeExamId;
+    if (targetId) setActiveExamId(targetId);
     setCurrentScreen('folha-respostas');
+    if (targetId) router.push(`/provas/${targetId}?p=folha`);
   };
 
   const navigateToTurmas = () => {
@@ -757,20 +925,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveExamId,
         selectedExam,
         createExamFromDraft,
+        updateExam,
         deleteExam,
-        applications,
-        activeApplicationId,
-        setActiveApplicationId,
-        selectedApplication,
-        createApplication,
-        publishAnswerKey,
-        corrections,
-        assignCorrection,
+        duplicateExam,
         examDraft,
         setExamDraft,
         examWizardStep,
         setExamWizardStep,
         resetExamDraft,
+        loadExamToDraft,
         previewVersion,
         setPreviewVersion,
         showAnswerKeyInPreview,
