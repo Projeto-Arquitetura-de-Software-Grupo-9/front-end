@@ -1,50 +1,58 @@
 'use client';
 
 import React from 'react';
-import { useApp } from '@/context/AppContext';
-import { ScreenType } from '@/lib/types';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
-  Folder,
-  Plus,
   FileText,
+  Plus,
+  Folder,
   TrendingUp,
   Users,
   Settings,
 } from 'lucide-react';
 
 interface NavItem {
-  id: ScreenType;
+  href: string;
   label: string;
   icon: React.ElementType;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'banco-questoes', label: 'Banco de Questões', icon: Folder },
-  { id: 'criar-prova', label: 'Criar Prova', icon: Plus },
-  { id: 'folha-respostas', label: 'Folha de Respostas', icon: FileText },
-  { id: 'resultados', label: 'Resultados', icon: TrendingUp },
-  { id: 'alunos', label: 'Alunos', icon: Users },
-  { id: 'configuracoes', label: 'Configurações', icon: Settings },
+  { href: '/provas', label: 'Provas', icon: FileText },
+  { href: '/provas/new', label: 'Criar Prova', icon: Plus },
+  { href: '/banco-questoes', label: 'Banco de Questões', icon: Folder },
+  { href: '/resultados', label: 'Resultados', icon: TrendingUp },
+  { href: '/alunos', label: 'Alunos', icon: Users },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
 export const Sidebar: React.FC = () => {
-  const { currentScreen, setCurrentScreen } = useApp();
+  const pathname = usePathname();
 
   return (
     <aside className="w-56 bg-white border-r border-slate-200 flex flex-col select-none print:hidden flex-shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] overflow-y-auto z-20">
       {/* Navigation Links */}
       <nav className="p-3 space-y-1">
         {NAV_ITEMS.map((item) => {
-          const isActive = currentScreen === item.id;
+          let isActive = false;
+          if (item.href === '/provas') {
+            isActive = pathname === '/provas' || (pathname.startsWith('/provas/') && pathname !== '/provas/new');
+          } else if (item.href === '/provas/new') {
+            isActive = pathname === '/provas/new';
+          } else {
+            isActive = pathname.startsWith(item.href);
+          }
+
           const Icon = item.icon;
 
           return (
-            <button
-              key={item.id}
-              onClick={() => setCurrentScreen(item.id)}
+            <Link
+              key={item.href}
+              href={item.href}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-left cursor-pointer ${
                 isActive
-                  ? 'bg-blue-50 text-blue-600 font-semibold'
+                  ? 'bg-blue-50 text-blue-600 font-semibold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
@@ -54,7 +62,7 @@ export const Sidebar: React.FC = () => {
                 }`}
               />
               <span className="flex-1 text-xs sm:text-sm">{item.label}</span>
-            </button>
+            </Link>
           );
         })}
       </nav>

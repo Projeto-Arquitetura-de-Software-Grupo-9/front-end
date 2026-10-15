@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { Question } from '@/lib/types';
+import { Question, Exam } from '@/lib/types';
 import { A4ExamSheet } from '@/components/common/A4ExamSheet';
 import {
   GripVertical,
@@ -20,11 +22,14 @@ import {
   Sliders,
   Settings2,
   RotateCcw,
+  ShieldCheck,
   ChevronDown,
-  Tag,
 } from 'lucide-react';
 
 export const CreateExamScreen: React.FC = () => {
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('edit');
+
   const {
     questions,
     examDraft,
@@ -32,30 +37,35 @@ export const CreateExamScreen: React.FC = () => {
     examWizardStep,
     setExamWizardStep,
     createExamFromDraft,
+    updateExam,
+    loadExamToDraft,
+    resetExamDraft,
     setCurrentScreen,
     navigateToPreview,
     navigateToFolha,
+    students,
     addToast,
   } = useApp();
+
+  // Reset or load draft depending on whether editing or creating new
+  useEffect(() => {
+    if (editId) {
+      loadExamToDraft(editId);
+    } else {
+      if (examDraft.id) {
+        resetExamDraft();
+      } else {
+        setExamWizardStep(1);
+      }
+    }
+  }, [editId]);
 
   const [searchBankQuery, setSearchBankQuery] = useState('');
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
   const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [showGabaritoInStep4, setShowGabaritoInStep4] = useState(false);
-  const [selectedTag, setSelectedTag] = useState<string>('Todas');
-
-  // Extract all unique tags across questions
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    questions.forEach((q) => {
-      if (q.tags && Array.isArray(q.tags)) {
-        q.tags.forEach((tag) => {
-          if (tag && tag.trim()) set.add(tag.trim());
-        });
-      }
-    });
-    return ['Todas', ...Array.from(set)];
-  }, [questions]);
+  const [showStudentRosterInStep3, setShowStudentRosterInStep3] = useState(false);
+  const [isCrossMatrixExpanded, setIsCrossMatrixExpanded] = useState(false);
 
   // Selected questions objects
   const selectedQuestions = examDraft.selectedQuestionIds
@@ -126,7 +136,69 @@ export const CreateExamScreen: React.FC = () => {
     });
   };
 
+  const handleAdvanceFromStep1 = () => {
+    if (!examDraft.title.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Título Obrigatório',
+        message: 'Por favor, informe o título da avaliação.',
+      });
+      return;
+    }
+    if (!examDraft.discipline.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Disciplina Obrigatória',
+        message: 'Por favor, informe a disciplina da avaliação.',
+      });
+      return;
+    }
+    setExamWizardStep(2);
+  };
+
+  const handleAdvanceFromStep2 = () => {
+    if (examDraft.selectedQuestionIds.length === 0) {
+      addToast({
+        type: 'error',
+        title: 'Selecione Questões',
+        message: 'Adicione pelo menos uma questão à prova antes de avançar.',
+      });
+      return;
+    }
+    setExamWizardStep(3);
+  };
+
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep >= 2 && !examDraft.title.trim()) {
+      addToast({
+        type: 'warning',
+        title: 'Título Obrigatório',
+        message: 'Informe o título da prova na Etapa 1 antes de avançar.',
+      });
+      return;
+    }
+    if (targetStep >= 3 && examDraft.selectedQuestionIds.length === 0) {
+      addToast({
+        type: 'warning',
+        title: 'Selecione Questões',
+        message: 'Selecione pelo menos uma questão na Etapa 2 antes de avançar.',
+      });
+      return;
+    }
+    setExamWizardStep(targetStep);
+  };
+
   const handleFinishAndGenerate = () => {
+    if (!examDraft.title.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Título Obrigatório',
+        message: 'A avaliação precisa de um título.',
+      });
+      setExamWizardStep(1);
+      return;
+    }
+
     if (examDraft.selectedQuestionIds.length === 0) {
       addToast({
         type: 'error',
@@ -137,82 +209,45 @@ export const CreateExamScreen: React.FC = () => {
       return;
     }
 
-    const created = createExamFromDraft(examDraft);
-    navigateToPreview(created.id);
+    let savedExam: Exam;
+    if (editId) {
+      savedExam = updateExam(editId, examDraft);
+    } else {
+      savedExam = createExamFromDraft(examDraft);
+    }
+
+    resetExamDraft();
+    navigateToPreview(savedExam.id);
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Title & Top Toggles Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Title & Navigation Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Criar Prova: {examDraft.title || 'Nova Avaliação'}
+            {editId ? 'Editar Prova' : 'Criar Prova'}: {examDraft.title || (editId ? 'Avaliação' : 'Nova Avaliação')}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Gere variações aleatórias automaticamente a partir de questões selecionadas.
+            {editId
+              ? 'Atualize as informações, questões selecionadas e regras de cadernos da prova.'
+              : 'Configure informações, selecione questões e gere variações de cadernos.'}
           </p>
         </div>
 
-        {/* Top Toggles */}
-        <div className="flex flex-wrap items-center gap-6 bg-white px-5 py-2.5 rounded-2xl border border-slate-200 shadow-xs">
-          {/* Toggle 1: Embaralhar Questões */}
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">
-              Embaralhar Questões
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setExamDraft((prev) => ({
-                  ...prev,
-                  shuffleQuestions: !prev.shuffleQuestions,
-                }))
-              }
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                examDraft.shuffleQuestions ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  examDraft.shuffleQuestions ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </label>
-
-          {/* Toggle 2: Embaralhar Alternativas */}
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">
-              Embaralhar Alternativas
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setExamDraft((prev) => ({
-                  ...prev,
-                  shuffleAlternatives: !prev.shuffleAlternatives,
-                }))
-              }
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                examDraft.shuffleAlternatives ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  examDraft.shuffleAlternatives ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </label>
-        </div>
+        <Link
+          href="/provas"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition shadow-xs self-start sm:self-center"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Voltar para Provas
+        </Link>
       </div>
 
       {/* 4-Step Stepper Header */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between overflow-x-auto">
         {[
           { step: 1, label: 'Informações' },
-          { step: 2, label: 'Questões (Ativo)' },
+          { step: 2, label: 'Questões' },
           { step: 3, label: 'Configurações' },
           { step: 4, label: 'Revisão' },
         ].map((item) => {
@@ -222,7 +257,7 @@ export const CreateExamScreen: React.FC = () => {
           return (
             <button
               key={item.step}
-              onClick={() => setExamWizardStep(item.step)}
+              onClick={() => handleStepClick(item.step)}
               className={`flex items-center gap-2.5 px-4 py-2 rounded-xl transition cursor-pointer text-xs font-semibold whitespace-nowrap ${
                 isCurrent
                   ? 'bg-blue-50 text-blue-700 border border-blue-200/80 shadow-xs'
@@ -393,7 +428,7 @@ export const CreateExamScreen: React.FC = () => {
 
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
-              onClick={() => setExamWizardStep(2)}
+              onClick={handleAdvanceFromStep1}
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
             >
               Avançar para Seleção de Questões <ArrowRight className="w-4 h-4" />
@@ -619,7 +654,7 @@ export const CreateExamScreen: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setExamWizardStep(3)}
+                onClick={handleAdvanceFromStep2}
                 className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
               >
                 Avançar para Configurações <ArrowRight className="w-4 h-4" />
@@ -631,21 +666,28 @@ export const CreateExamScreen: React.FC = () => {
 
       {/* STEP 3: Configurações de Embaralhamento e Gabarito */}
       {examWizardStep === 3 && (
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6 max-w-4xl">
-          <div className="border-b border-slate-100 pb-4">
-            <h2 className="text-lg font-bold text-slate-900">
-              3. Configurações de Variação & Folha
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Configure os cadernos com permutações aleatórias e critérios de pontuação.
-            </p>
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6 max-w-4xl">
+          <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                3. Variações & Ensalamento
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Configure os cadernos, regras de embaralhamento e distribuição de alunos.
+              </p>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 self-start sm:self-center">
+              {selectedQuestions.length} questões selecionadas
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            {/* Left Column: Variações & Embaralhamento */}
+            <div className="space-y-5">
+              {/* Quantidade de Cadernos */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Quantidade de Cadernos / Versões Diferentes
+                  Quantidade de Cadernos (Versões)
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   {[1, 2, 3, 4].map((num) => (
@@ -655,76 +697,379 @@ export const CreateExamScreen: React.FC = () => {
                       onClick={() =>
                         setExamDraft((p) => ({ ...p, numberOfVersions: num }))
                       }
-                      className={`py-2.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                         examDraft.numberOfVersions === num
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                           : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
-                      {num} {num === 1 ? 'Versão' : 'Versões'}
+                      <span className="text-xs">
+                        {num === 1 ? '1 Caderno' : `${num} Cadernos`}
+                      </span>
+                      <span
+                        className={`text-[10px] font-normal ${
+                          examDraft.numberOfVersions === num
+                            ? 'text-blue-100'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {num === 1
+                          ? 'Apenas A'
+                          : num === 2
+                          ? 'A e B'
+                          : num === 3
+                          ? 'A, B e C'
+                          : 'A, B, C e D'}
+                      </span>
                     </button>
                   ))}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  Gera automaticamente gabaritos cruzados para Caderno A, B, C e D.
-                </p>
               </div>
 
+              {/* Toggles de Embaralhamento */}
+              <div className="space-y-2.5 pt-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  Regras de Embaralhamento
+                </label>
+
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50/50 cursor-pointer transition">
+                  <input
+                    type="checkbox"
+                    checked={examDraft.shuffleQuestions}
+                    onChange={(e) =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        shuffleQuestions: e.target.checked,
+                      }))
+                    }
+                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-800 block">
+                      Embaralhar ordem das questões
+                    </span>
+                    <span className="text-slate-500 text-[11px]">
+                      Altera a sequência das perguntas entre os cadernos A, B, C e D.
+                    </span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50/50 cursor-pointer transition">
+                  <input
+                    type="checkbox"
+                    checked={examDraft.shuffleAlternatives}
+                    onChange={(e) =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        shuffleAlternatives: e.target.checked,
+                      }))
+                    }
+                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-800 block">
+                      Embaralhar alternativas de resposta
+                    </span>
+                    <span className="text-slate-500 text-[11px]">
+                      Permuta as opções (A-E) mantendo o gabarito sincronizado no OMR.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Estratégia de Permutação */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Algoritmo de Permutação
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        permutationStrategy: 'FISHER_YATES',
+                      }))
+                    }
+                    className={`p-2.5 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
+                      (examDraft.permutationStrategy || 'FISHER_YATES') === 'FISHER_YATES'
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-1 ring-blue-600'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="font-bold">Fisher-Yates</div>
+                    <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                      Permutações estocásticas completas
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        permutationStrategy: 'CYCLIC_ROTATION',
+                      }))
+                    }
+                    className={`p-2.5 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
+                      examDraft.permutationStrategy === 'CYCLIC_ROTATION'
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-1 ring-blue-600'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="font-bold">Rotação Cíclica</div>
+                    <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                      Deslocamento posicional ordenado
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Pontuação Máxima */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Pontuação Máxima da Prova
                 </label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={examDraft.maxScore}
-                  onChange={(e) =>
-                    setExamDraft((p) => ({
-                      ...p,
-                      maxScore: parseFloat(e.target.value) || 10,
-                    }))
-                  }
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    value={examDraft.maxScore}
+                    onChange={(e) =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        maxScore: parseFloat(e.target.value) || 10,
+                      }))
+                    }
+                    className="w-28 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <span className="text-xs text-slate-500 font-medium">
+                    {(examDraft.maxScore / (selectedQuestions.length || 1)).toFixed(2)} pts por questão
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4 bg-slate-50/70 p-5 rounded-xl border border-slate-200/70">
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Recursos de Segurança & Leitura OMR
-              </h3>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-700 font-medium">
-                    QR Code de Alinhamento OMR
-                  </span>
-                  <span className="text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded">
-                    Ativado
+            {/* Right Column: Ensalamento & Distribuição */}
+            <div className="space-y-4">
+              <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Ensalamento da Turma
+                  </h3>
+                  <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full">
+                    {students.length} Estudantes
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-700 font-medium">
-                    Código de Barras por Estudante
-                  </span>
-                  <span className="text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded">
-                    Ativado
-                  </span>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Os alunos são distribuídos sequencialmente entre os cadernos ativos para evitar versões idênticas lado a lado.
+                </p>
+
+                {/* Distribution cards per caderno */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['A', 'B', 'C', 'D'] as const)
+                    .slice(0, examDraft.numberOfVersions)
+                    .map((v, vIdx) => {
+                      const count = students.filter(
+                        (_, idx) => idx % examDraft.numberOfVersions === vIdx
+                      ).length;
+                      return (
+                        <div
+                          key={v}
+                          className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs text-center"
+                        >
+                          <span className="text-xs font-black text-blue-700 block">
+                            Caderno {v}
+                          </span>
+                          <span className="text-sm font-extrabold text-slate-900 block mt-0.5">
+                            {count}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {count === 1 ? 'aluno' : 'alunos'}
+                          </span>
+                        </div>
+                      );
+                    })}
                 </div>
 
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-700 font-medium">
-                    Detecção Anti-Fraude de Respostas
-                  </span>
-                  <span className="text-blue-700 font-bold bg-blue-100 px-2 py-0.5 rounded">
-                    Habilitada
-                  </span>
+                {/* Toggle nominal roster */}
+                <div className="pt-2 border-t border-slate-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setShowStudentRosterInStep3(!showStudentRosterInStep3)}
+                    className="w-full py-2 px-3 rounded-xl border border-slate-200 hover:bg-white text-xs font-semibold text-slate-700 flex items-center justify-between transition cursor-pointer"
+                  >
+                    <span>
+                      {showStudentRosterInStep3
+                        ? 'Ocultar Ensalamento Detalhado'
+                        : 'Ver Alocação Nominal de Alunos'}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                        showStudentRosterInStep3 ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {showStudentRosterInStep3 && (
+                    <div className="mt-3 max-h-48 overflow-y-auto divide-y divide-slate-100 bg-white rounded-xl border border-slate-200 text-xs">
+                      {students.map((std, idx) => {
+                        const assignedLetter = (['A', 'B', 'C', 'D'] as const)[
+                          idx % examDraft.numberOfVersions
+                        ];
+                        return (
+                          <div
+                            key={std.id}
+                            className="flex items-center justify-between px-3 py-2 text-slate-800 hover:bg-slate-50"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 text-[10px] text-slate-400 font-mono">
+                                {idx + 1}.
+                              </span>
+                              <span className="font-semibold">{std.name}</span>
+                              <span className="font-mono text-[10px] text-slate-400">
+                                ({std.registration})
+                              </span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-800 border border-blue-200">
+                              Caderno {assignedLetter}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Security & OMR features info box */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-slate-800 text-[11px] uppercase tracking-wide">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Garantias de Correção e Segurança OMR
+                </div>
+                <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                  <div>• QR Code institucional em cada caderno com ID único e versão.</div>
+                  <div>• 4 Marcadores fiduciais nos cantos para alinhamento por Visão Computacional.</div>
+                  <div>• Matriz de gabaritos cruzados sincronizada para correção automatizada.</div>
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Collapsible Cross Answer Matrix */}
+          <div className="pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Matriz de Gabaritos Cruzados
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Rastreamento sincronizado de cada questão e gabarito em cada caderno.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCrossMatrixExpanded(!isCrossMatrixExpanded)}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <span>{isCrossMatrixExpanded ? 'Ocultar Matriz' : 'Inspecionar Matriz'}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                    isCrossMatrixExpanded ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {isCrossMatrixExpanded && (
+              <div className="mt-3 overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100/80 text-[11px] font-bold text-slate-700 border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Questão Original</th>
+                      <th className="py-2.5 px-3 text-center">Caderno A</th>
+                      {examDraft.numberOfVersions >= 2 && (
+                        <th className="py-2.5 px-3 text-center bg-blue-50/50">Caderno B</th>
+                      )}
+                      {examDraft.numberOfVersions >= 3 && (
+                        <th className="py-2.5 px-3 text-center">Caderno C</th>
+                      )}
+                      {examDraft.numberOfVersions >= 4 && (
+                        <th className="py-2.5 px-3 text-center bg-blue-50/50">Caderno D</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-800">
+                    {selectedQuestions.map((q, idx) => {
+                      const posA = idx + 1;
+                      const letterA = q.correctAlternative;
+
+                      const posB = ((idx + 1) % selectedQuestions.length) + 1;
+                      const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
+                      const letterB = examDraft.shuffleAlternatives
+                        ? letters[(letters.indexOf(letterA) + 1) % letters.length]
+                        : letterA;
+
+                      const posC = ((idx + 2) % selectedQuestions.length) + 1;
+                      const letterC = examDraft.shuffleAlternatives
+                        ? letters[(letters.indexOf(letterA) + 2) % letters.length]
+                        : letterA;
+
+                      const posD = ((idx + 3) % selectedQuestions.length) + 1;
+                      const letterD = examDraft.shuffleAlternatives
+                        ? letters[(letters.indexOf(letterA) + 3) % letters.length]
+                        : letterA;
+
+                      return (
+                        <tr key={q.id} className="hover:bg-slate-50/60 transition">
+                          <td className="py-2 px-3 font-medium text-slate-900">
+                            <span className="font-bold text-slate-400 mr-2">{idx + 1}.</span>
+                            <span className="line-clamp-1">{q.statement}</span>
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            <span className="font-semibold text-slate-600">Q.{posA}</span>{' '}
+                            <span className="font-black text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              ({letterA})
+                            </span>
+                          </td>
+                          {examDraft.numberOfVersions >= 2 && (
+                            <td className="py-2 px-3 text-center bg-blue-50/30">
+                              <span className="font-semibold text-slate-600">Q.{posB}</span>{' '}
+                              <span className="font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                ({letterB})
+                              </span>
+                            </td>
+                          )}
+                          {examDraft.numberOfVersions >= 3 && (
+                            <td className="py-2 px-3 text-center">
+                              <span className="font-semibold text-slate-600">Q.{posC}</span>{' '}
+                              <span className="font-black text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                                ({letterC})
+                              </span>
+                            </td>
+                          )}
+                          {examDraft.numberOfVersions >= 4 && (
+                            <td className="py-2 px-3 text-center bg-blue-50/30">
+                              <span className="font-semibold text-slate-600">Q.{posD}</span>{' '}
+                              <span className="font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                ({letterD})
+                              </span>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Navigation Buttons */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-100">
             <button
               onClick={() => setExamWizardStep(2)}
@@ -865,15 +1210,46 @@ export const CreateExamScreen: React.FC = () => {
                     duration: examDraft.duration,
                     instructions: examDraft.instructions,
                   }}
-                  questions={
-                    selectedQuestions.slice(0, 3).map((q, idx) => ({
-                      id: q.id,
-                      orderIndex: idx + 1,
-                      statement: q.statement,
-                      alternatives: q.alternatives,
-                      correctAlternative: q.correctAlternative,
-                    }))
-                  }
+                  questions={(() => {
+                    const base = selectedQuestions.slice(0, 3);
+                    const vLetter = previewCadernoInStep4;
+                    if (vLetter === 'A') {
+                      return base.map((q, idx) => ({
+                        id: q.id,
+                        orderIndex: idx + 1,
+                        statement: q.statement,
+                        alternatives: q.alternatives,
+                        correctAlternative: q.correctAlternative,
+                      }));
+                    }
+                    
+                    const shift = vLetter === 'B' ? 1 : vLetter === 'C' ? 2 : 3;
+                    const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
+                    const reordered = [...base.slice(shift % base.length), ...base.slice(0, shift % base.length)];
+
+                    return reordered.map((q, idx) => {
+                      const correctText = q.alternatives.find((a) => a.letter === q.correctAlternative)?.text;
+                      const altShift = (shift + idx) % q.alternatives.length;
+                      const shuffledAlts = [...q.alternatives.slice(altShift), ...q.alternatives.slice(0, altShift)];
+                      let newCorrectLetter: 'A' | 'B' | 'C' | 'D' | 'E' = 'A';
+
+                      const finalAlts = shuffledAlts.map((alt, aIdx) => {
+                        const l = letters[aIdx];
+                        if (alt.text === correctText) {
+                          newCorrectLetter = l;
+                        }
+                        return { id: `${q.id}-v${vLetter}-${aIdx}`, letter: l, text: alt.text };
+                      });
+
+                      return {
+                        id: `${q.id}-v${vLetter}`,
+                        orderIndex: idx + 1,
+                        statement: q.statement,
+                        alternatives: finalAlts,
+                        correctAlternative: newCorrectLetter,
+                      };
+                    });
+                  })()}
                   pageNumber={1}
                   totalPages={2}
                   versionLetter={previewCadernoInStep4}
@@ -899,7 +1275,10 @@ export const CreateExamScreen: React.FC = () => {
                 onClick={handleFinishAndGenerate}
                 className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition cursor-pointer"
               >
-                <FileCheck className="w-4 h-4" /> Gerar Prova & Abrir Simulador Completo
+                <FileCheck className="w-4 h-4" />{' '}
+                {editId
+                  ? 'Salvar Alterações & Abrir Simulador'
+                  : 'Gerar Prova & Abrir Simulador Completo'}
               </button>
             </div>
           </div>

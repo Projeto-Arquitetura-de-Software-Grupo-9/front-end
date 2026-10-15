@@ -36,6 +36,10 @@ export interface A4ExamSheetProps {
   showAnswerKey?: boolean;
   showQrCode?: boolean;
   includeBoxNota?: boolean;
+  student?: {
+    name?: string;
+    registration?: string;
+  };
   scale?: number;
   className?: string;
 }
@@ -49,6 +53,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
   showAnswerKey = false,
   showQrCode = true,
   includeBoxNota = true,
+  student,
   scale = 1,
   className = '',
 }) => {
@@ -151,7 +156,13 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                 <span className="font-bold text-slate-900 uppercase whitespace-nowrap mr-2 text-[11px]">
                   ESTUDANTE:
                 </span>
-                <div className="flex-1 border-b border-dashed border-slate-500 pb-0.5" />
+                {student?.name ? (
+                  <span className="flex-1 font-bold text-slate-950 border-b border-slate-900 pb-0.5 text-xs">
+                    {student.name}
+                  </span>
+                ) : (
+                  <div className="flex-1 border-b border-dashed border-slate-500 pb-0.5" />
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-4 pt-0.5">
@@ -159,7 +170,13 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                   <span className="font-bold text-slate-900 uppercase whitespace-nowrap mr-2 text-[11px]">
                     MATRÍCULA:
                   </span>
-                  <div className="flex-1 border-b border-dashed border-slate-500 pb-0.5" />
+                  {student?.registration ? (
+                    <span className="font-mono font-bold text-slate-950 border-b border-slate-900 pb-0.5 text-xs">
+                      {student.registration}
+                    </span>
+                  ) : (
+                    <div className="flex-1 border-b border-dashed border-slate-500 pb-0.5" />
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

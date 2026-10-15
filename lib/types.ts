@@ -64,6 +64,13 @@ export interface Exam {
   maxScore: number;
   totalStudents?: number;
   averageScore?: number;
+  permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
+  studentAssignments?: {
+    studentId: string;
+    studentName: string;
+    registration: string;
+    assignedVersion: 'A' | 'B' | 'C' | 'D';
+  }[];
 }
 
 export interface Student {
