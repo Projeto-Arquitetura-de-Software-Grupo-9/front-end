@@ -38,8 +38,14 @@ const OmrSheet: React.FC<OmrSheetProps> = ({
 }) => {
   return (
     <div
-      className={`w-full max-w-[620px] bg-white text-slate-900 p-8 sm:p-10 rounded-sm shadow-2xl space-y-6 select-none print:shadow-none print:p-6 print:m-0 print:w-full print:break-after-page ${className}`}
+      className={`relative w-full max-w-[620px] bg-white text-slate-900 p-8 sm:p-10 rounded-sm shadow-xl space-y-6 select-none print:shadow-none print:p-6 print:m-0 print:w-full print:break-after-page ${className}`}
     >
+      {/* OMR Fiducial Corner Alignment Markers */}
+      <div className="absolute top-3 left-3 w-3 h-3 bg-slate-950 pointer-events-none" />
+      <div className="absolute top-3 right-3 w-3 h-3 bg-slate-950 pointer-events-none" />
+      <div className="absolute bottom-3 left-3 w-3 h-3 bg-slate-950 pointer-events-none" />
+      <div className="absolute bottom-3 right-3 w-3 h-3 bg-slate-950 pointer-events-none" />
+
       {/* Header with Title and QR Code */}
       <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4">
         <div>
@@ -293,205 +299,229 @@ export const AnswerSheetScreen: React.FC = () => {
   const examCode = selectedExam ? selectedExam.code : '#DIR-CONST-2024.2';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in duration-200">
-      {/* Left Options Card (4 cols) */}
-      <div className="lg:col-span-4 space-y-4 print:hidden">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <h2 className="text-sm font-bold text-slate-900">
-              Configurações de Exportação
-            </h2>
-            <button
-              onClick={() => setIsScannerModalOpen(true)}
-              className="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 cursor-pointer"
-            >
-              <Camera className="w-3.5 h-3.5" /> Testar Leitor
-            </button>
-          </div>
-
-          {/* Student Selector / Turma Completa */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Destinatário da Folha
-            </label>
-            <div className="relative">
-              <select
-                value={selectedStudentId}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedStudentId(val);
-                  if (val !== 'none' && val !== 'all_students') {
-                    const sIdx = students.findIndex((s) => s.id === val);
-                    const numV = selectedExam?.numberOfVersions || 4;
-                    const assigned = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
-                    setSelectedVersion(assigned);
-                  }
-                }}
-                className={`w-full text-xs font-semibold rounded-lg px-3 py-2 pr-7 appearance-none cursor-pointer focus:outline-none border ${
-                  isBatchMode
-                    ? 'bg-blue-50 border-blue-300 text-blue-900'
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
-                }`}
-              >
-                <option value="none">Folha Padrão (Sem Nome do Aluno)</option>
-                <option value="all_students">
-                  🖨️ Turma Completa ({students.length} Folhas em Lote)
-                </option>
-                <optgroup label="Aluno Individual:">
-                  {students.map((s, sIdx) => {
-                    const numV = selectedExam?.numberOfVersions || 4;
-                    const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {s.name} — Caderno {v}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Version Caderno Selector (active when not in batch mode) */}
+    <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
+      {/* Integrated Workbench Toolbar (Identical structure to Caderno A4) */}
+      <div className="bg-white px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
+        {/* Left Controls: Caderno & Destinatário */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Version Caderno Selector */}
           {!isBatchMode && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Versão do Caderno
-              </label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(['A', 'B', 'C', 'D'] as const).map((ver) => (
-                  <button
-                    key={ver}
-                    type="button"
-                    onClick={() => setSelectedVersion(ver)}
-                    className={`py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                      selectedVersion === ver
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {ver}
-                  </button>
-                ))}
-              </div>
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              {(['A', 'B', 'C', 'D'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setSelectedVersion(v)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md transition cursor-pointer ${
+                    selectedVersion === v
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Caderno {v}
+                </button>
+              ))}
             </div>
           )}
 
-          {/* Copies Count (when in blank single sheet mode) */}
+          {/* Destinatário Selector */}
+          <div className="relative">
+            <select
+              value={selectedStudentId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedStudentId(val);
+                if (val !== 'none' && val !== 'all_students') {
+                  const sIdx = students.findIndex((s) => s.id === val);
+                  const numV = selectedExam?.numberOfVersions || 4;
+                  const assigned = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                  setSelectedVersion(assigned);
+                }
+              }}
+              className={`text-xs font-bold rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none border ${
+                isBatchMode
+                  ? 'bg-blue-50 border-blue-300 text-blue-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-800'
+              }`}
+            >
+              <option value="none">Folha Padrão (Sem Nome)</option>
+              <option value="all_students">
+                🖨️ Turma Completa ({students.length} Folhas em Lote)
+              </option>
+              <optgroup label="Aluno Individual:">
+                {students.map((s, sIdx) => {
+                  const numV = selectedExam?.numberOfVersions || 4;
+                  const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — Caderno {v}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Copies count when blank single sheet */}
           {!isBatchMode && selectedStudentId === 'none' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Quantidade de Cópias
-              </label>
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs">
+              <span className="font-semibold text-slate-500 text-[11px]">Cópias:</span>
               <input
                 type="number"
                 min="1"
-                max="200"
+                max="500"
                 value={copyCount}
                 onChange={(e) => setCopyCount(parseInt(e.target.value) || 1)}
-                className="w-full px-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none"
+                className="w-12 text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
               />
             </div>
           )}
+        </div>
 
-          {/* Primary Actions: Clean Side by Side */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
+        {/* Right Controls: Scanner, Limpar, PDF, Print */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+          >
+            <Camera className="w-3.5 h-3.5 text-blue-600" />
+            <span>Testar Leitor</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMarkedAnswers({})}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+            title="Limpar respostas preenchidas na simulação"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Limpar</span>
+          </button>
+
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-2">
             <button
+              type="button"
               onClick={handleExportPdf}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-lg transition cursor-pointer"
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>{isBatchMode ? 'Lote PDF' : 'Exportar PDF'}</span>
+              <span>{isBatchMode ? 'Lote PDF' : 'PDF'}</span>
             </button>
 
             <button
+              type="button"
               onClick={handlePrint}
-              className={`flex items-center justify-center gap-1.5 px-3 py-2 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-xs ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs ${
                 isBatchMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-900 hover:bg-black'
               }`}
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>{isBatchMode ? `Lote (${students.length})` : 'Imprimir'}</span>
-            </button>
-          </div>
-
-          {/* Tip Box & Simulation Reset */}
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span className="flex items-center gap-1 text-[11px]">
-              <Info className="w-3.5 h-3.5 text-blue-500" />
-              Impressão em alta definição
-            </span>
-            <button
-              onClick={() => setMarkedAnswers({})}
-              className="text-[11px] text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <RotateCcw className="w-3 h-3" /> Limpar
+              <span>{isBatchMode ? `Imprimir Lote (${students.length})` : 'Imprimir'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Right Dark Canvas with Printable Sheet (8 cols) */}
-      <div className="lg:col-span-8 bg-[#2d3436] p-6 sm:p-10 rounded-2xl flex flex-col items-center justify-center shadow-xl overflow-x-auto print:bg-white print:p-0 print:shadow-none">
-        {isBatchMode ? (
-          /* Batch Mode: Render an OMR sheet for each student */
-          <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
-            <div className="w-full max-w-[620px] bg-white/10 text-white border border-white/20 p-2.5 rounded-lg text-xs font-bold flex items-center justify-between print:hidden">
-              <span className="flex items-center gap-2">
-                <Printer className="w-4 h-4 text-emerald-400" />
-                Lote de Folhas de Resposta ({students.length} alunos)
-              </span>
-              <span className="text-[11px] font-normal text-slate-300">
-                Impressão unificada com quebra de página
-              </span>
-            </div>
-
-            {students.map((std, sIdx) => {
-              const numV = selectedExam?.numberOfVersions || 4;
-              const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
-              return (
-                <div key={std.id} className="w-full flex flex-col items-center gap-2 print:gap-0 print:w-full">
-                  <div className="w-full max-w-[620px] text-[11px] font-semibold text-slate-300 print:hidden text-left pl-1">
-                    #{sIdx + 1} — {std.name} • Caderno {v}
-                  </div>
-                  <OmrSheet
-                    examTitle={examTitle}
-                    examCode={examCode}
-                    versionLetter={v}
-                    student={{
-                      name: std.name,
-                      registration: std.registration,
-                      discipline: std.discipline,
-                      classGroup: std.classGroup,
-                    }}
-                    markedAnswers={markedAnswers}
-                    onBubbleClick={handleBubbleClick}
-                  />
+      {/* Realistic Virtual Drafting Desk Environment for OMR sheets */}
+      <div className="bg-slate-200/80 p-6 sm:p-10 shadow-inner overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
+        <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
+          {isBatchMode && (
+            <div className="w-full max-w-[620px] bg-blue-50 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
+                  <Printer className="w-4 h-4" />
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* Single Sheet View */
-          <OmrSheet
-            examTitle={examTitle}
-            examCode={examCode}
-            versionLetter={selectedVersion}
-            student={
-              currentStudent
-                ? {
-                    name: currentStudent.name,
-                    registration: currentStudent.registration,
-                    discipline: currentStudent.discipline,
-                    classGroup: currentStudent.classGroup,
-                  }
-                : null
-            }
-            markedAnswers={markedAnswers}
-            onBubbleClick={handleBubbleClick}
-          />
-        )}
+                <div>
+                  <div className="text-xs font-bold text-blue-950 flex items-center gap-2">
+                    <span>Lote de Folhas OMR: Turma Completa</span>
+                    <span className="px-2 py-0.2 rounded bg-blue-200/70 text-blue-800 text-[10px] font-bold">
+                      {students.length} Folhas
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-blue-700">
+                    Folhas nominais com distribuição de Cadernos A, B, C e D e QR Code individual.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handlePrint}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer flex-shrink-0"
+              >
+                <Printer className="w-3.5 h-3.5" /> Imprimir Todas as Folhas
+              </button>
+            </div>
+          )}
+
+          {isBatchMode ? (
+            /* Batch Mode: Render an OMR sheet for each student */
+            <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
+              {students.map((std, sIdx) => {
+                const numV = selectedExam?.numberOfVersions || 4;
+                const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                return (
+                  <div key={std.id} className="w-full flex flex-col items-center gap-3 print:gap-0 print:w-full">
+                    {/* Student Section Header in Preview Screen */}
+                    <div className="w-full max-w-[620px] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
+                          {sIdx + 1}
+                        </span>
+                        <span>{std.name}</span>
+                        <span className="text-slate-400 font-mono text-[11px]">
+                          ({std.registration})
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-bold">
+                        Caderno {v}
+                      </span>
+                    </div>
+
+                    <OmrSheet
+                      examTitle={examTitle}
+                      examCode={examCode}
+                      versionLetter={v}
+                      student={{
+                        name: std.name,
+                        registration: std.registration,
+                        discipline: std.discipline,
+                        classGroup: std.classGroup,
+                      }}
+                      markedAnswers={markedAnswers}
+                      onBubbleClick={handleBubbleClick}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Single Sheet View */
+            <div className="flex flex-col items-center">
+              <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                Folha de Respostas OMR • Caderno {selectedVersion}
+                {currentStudent && ` • Aluno: ${currentStudent.name}`}
+              </div>
+              <OmrSheet
+                examTitle={examTitle}
+                examCode={examCode}
+                versionLetter={selectedVersion}
+                student={
+                  currentStudent
+                    ? {
+                        name: currentStudent.name,
+                        registration: currentStudent.registration,
+                        discipline: currentStudent.discipline,
+                        classGroup: currentStudent.classGroup,
+                      }
+                    : null
+                }
+                markedAnswers={markedAnswers}
+                onBubbleClick={handleBubbleClick}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

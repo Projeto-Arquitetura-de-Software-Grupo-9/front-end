@@ -194,9 +194,9 @@ export const PrintPreviewScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
-      {/* Unified Simulation Toolbar (Clean & Streamlined) */}
-      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+    <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
+      {/* Integrated Workbench Toolbar */}
+      <div className="bg-white px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
         {/* Left Controls: Caderno, Aluno & Visualização */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Caderno Version Selector */}
@@ -373,7 +373,7 @@ export const PrintPreviewScreen: React.FC = () => {
       </div>
 
       {/* Realistic Virtual Drafting Desk Environment simulating physical A4 paper sheets */}
-      <div className="bg-slate-200/80 p-6 sm:p-10 rounded-2xl shadow-inner overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
+      <div className="bg-slate-200/80 p-6 sm:p-10 shadow-inner overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
         <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
           {/* Batch Print Mode Banner */}
           {isBatchMode && (
