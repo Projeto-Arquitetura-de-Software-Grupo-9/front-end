@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
 import { Search, Bell, User, BookOpen, FileCheck } from 'lucide-react';
 
 export const Header: React.FC = () => {
+  const router = useRouter();
   const { searchQuery, setSearchQuery, setCurrentScreen, setActiveExamId } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -19,7 +22,7 @@ export const Header: React.FC = () => {
       read: false,
       action: () => {
         setActiveExamId('exam-1');
-        setCurrentScreen('resultados');
+        router.push('/resultados?examId=exam-1');
         setShowNotifications(false);
       },
     },
@@ -30,7 +33,7 @@ export const Header: React.FC = () => {
       time: 'Há 1 hora',
       read: true,
       action: () => {
-        setCurrentScreen('alunos');
+        router.push('/alunos');
         setShowNotifications(false);
       },
     },
@@ -41,7 +44,7 @@ export const Header: React.FC = () => {
       time: 'Há 3 horas',
       read: true,
       action: () => {
-        setCurrentScreen('banco-questoes');
+        router.push('/banco-questoes');
         setShowNotifications(false);
       },
     },
@@ -50,9 +53,9 @@ export const Header: React.FC = () => {
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-6 select-none print:hidden">
       {/* Brand Logo on the left */}
-      <div className="flex items-center">
+      <Link href="/provas" className="flex items-center hover:opacity-90 transition cursor-pointer">
         <CorregeLogo />
-      </div>
+      </Link>
 
       {/* Right Controls: Search, Notifications, Profile */}
       <div className="flex items-center gap-4 sm:gap-6">
@@ -69,7 +72,7 @@ export const Header: React.FC = () => {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-semibold"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
             >
               Limpar
             </button>
@@ -83,60 +86,56 @@ export const Header: React.FC = () => {
               setShowNotifications(!showNotifications);
               setShowProfileMenu(false);
             }}
-            className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 transition cursor-pointer relative"
+            className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition relative cursor-pointer"
             title="Notificações"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#9E0B1A] rounded-full"></span>
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white"></span>
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-40 animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
-                <span className="font-semibold text-sm text-slate-800">Notificações</span>
-                <span className="text-[11px] font-medium text-[#9E0B1A] bg-red-50 px-2 py-0.5 rounded-full">
-                  1 nova
+            <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl py-3 z-40 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-4 pb-2.5 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">Notificações</span>
+                <span className="text-[10px] font-semibold text-blue-600 cursor-pointer hover:underline">
+                  Marcar lidas
                 </span>
               </div>
               <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
                 {notifications.map((n) => (
-                  <div
+                  <button
                     key={n.id}
                     onClick={n.action}
-                    className={`p-3 hover:bg-slate-50 cursor-pointer transition flex gap-3 items-start ${
-                      !n.read ? 'bg-red-50/20' : ''
-                    }`}
+                    className="w-full p-3 text-left hover:bg-slate-50/80 transition flex items-start gap-2.5 cursor-pointer"
                   >
-                    <div className="p-2 rounded-lg bg-red-50 text-[#9E0B1A] mt-0.5 flex-shrink-0">
-                      <FileCheck className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 flex-shrink-0"></div>
+                    <div>
                       <p className="text-xs font-semibold text-slate-800">{n.title}</p>
-                      <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{n.desc}</p>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{n.desc}</p>
                       <span className="text-[10px] text-slate-400 mt-1 block">{n.time}</span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
           )}
         </div>
 
-        {/* User Profile */}
+        {/* Profile Avatar / Menu */}
         <div className="relative">
           <button
             onClick={() => {
               setShowProfileMenu(!showProfileMenu);
               setShowNotifications(false);
             }}
-            className="flex items-center gap-3 text-left hover:opacity-90 transition cursor-pointer"
+            className="flex items-center gap-3 pl-2 cursor-pointer focus:outline-none"
           >
-            <div className="flex flex-col text-right">
+            <div className="hidden sm:flex flex-col text-right">
               <span className="text-xs font-bold text-slate-900 leading-tight">
                 Professor(a)
               </span>
-              <span className="text-[11px] text-slate-400 leading-tight">
-                Universidade
+              <span className="text-[11px] font-medium text-slate-400">
+                Católica SC
               </span>
             </div>
             <div className="relative w-9 h-9 rounded-full overflow-hidden ring-1 ring-slate-200 bg-slate-100 flex items-center justify-center flex-shrink-0">
@@ -145,7 +144,6 @@ export const Header: React.FC = () => {
                 alt="Professor(a)"
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  // Fallback to initials if image doesn't load
                   const target = e.currentTarget;
                   target.style.display = 'none';
                   if (target.parentElement) {
@@ -169,23 +167,23 @@ export const Header: React.FC = () => {
               <div className="p-1">
                 <button
                   onClick={() => {
-                    setCurrentScreen('configuracoes');
+                    router.push('/configuracoes');
                     setShowProfileMenu(false);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-lg transition text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-lg transition text-left cursor-pointer"
                 >
                   <User className="w-4 h-4 text-slate-400" />
-                  Perfil
+                  Perfil & Configurações
                 </button>
                 <button
                   onClick={() => {
-                    setCurrentScreen('dashboard');
+                    router.push('/provas');
                     setShowProfileMenu(false);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-lg transition text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-lg transition text-left cursor-pointer"
                 >
                   <BookOpen className="w-4 h-4 text-slate-400" />
-                  Painel de Controle
+                  Minhas Provas
                 </button>
               </div>
             </div>

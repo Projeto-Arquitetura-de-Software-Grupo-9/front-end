@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ScreenType,
   Question,
@@ -143,6 +144,7 @@ const DEFAULT_EXAM_DRAFT: ExamDraft = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const router = useRouter();
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('banco-questoes');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -431,18 +433,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Navigation helpers
   const navigateToPreview = (examId?: string) => {
-    if (examId) setActiveExamId(examId);
+    const targetId = examId || activeExamId;
+    if (targetId) setActiveExamId(targetId);
     setCurrentScreen('pre-visualizacao');
+    if (targetId) router.push(`/provas/${targetId}?p=caderno`);
   };
 
   const navigateToResults = (examId?: string) => {
-    if (examId) setActiveExamId(examId);
+    const targetId = examId || activeExamId;
+    if (targetId) setActiveExamId(targetId);
     setCurrentScreen('resultados');
+    router.push(targetId ? `/resultados?examId=${targetId}` : '/resultados');
   };
 
   const navigateToFolha = (examId?: string) => {
-    if (examId) setActiveExamId(examId);
+    const targetId = examId || activeExamId;
+    if (targetId) setActiveExamId(targetId);
     setCurrentScreen('folha-respostas');
+    if (targetId) router.push(`/provas/${targetId}?p=folha`);
   };
 
   return (
