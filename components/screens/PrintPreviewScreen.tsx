@@ -239,9 +239,16 @@ export const PrintPreviewScreen: React.FC = () => {
             {/* QR Code */}
             {showQrCodeInPreview && (
               <QrCodeGraphic
-                value={`${exam.code}-CADERNO-${previewVersion}`}
-                size={68}
-                className="shadow-xs ml-4"
+                value={JSON.stringify({
+                  appId: exam.code ? exam.code.replace(/[^a-zA-Z0-9]/g, '') : 'CAL1',
+                  ver: previewVersion,
+                  code: exam.code || '#CAL-1-2024.2',
+                })}
+                versionLetter={previewVersion}
+                examCode={exam.code}
+                size={84}
+                showBadge={true}
+                className="ml-4"
               />
             )}
           </div>

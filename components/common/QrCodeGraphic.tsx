@@ -1,84 +1,88 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { generateQrCodeSvg } from '@/lib/qrCode';
 
-interface QrCodeGraphicProps {
+export interface QrCodeGraphicProps {
   value?: string;
   size?: number;
   className?: string;
+  versionLetter?: 'A' | 'B' | 'C' | 'D';
+  examCode?: string;
+  studentRegistration?: string;
+  showBadge?: boolean;
+  showCodeLabel?: boolean;
 }
 
 export const QrCodeGraphic: React.FC<QrCodeGraphicProps> = ({
-  value = 'PROVA-FACIL-2024',
-  size = 64,
+  value = '{"appId":"app-cal-1","vId":"ver-a","ver":"A","code":"#CAL-1-2024.2"}',
+  size = 80,
   className = '',
+  versionLetter,
+  examCode,
+  showBadge = true,
+  showCodeLabel = false,
 }) => {
+  const [svgMarkup, setSvgMarkup] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    generateQrCodeSvg(value, {
+      size: size * 2, // 2x resolution for ultra-crisp rendering
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    })
+      .then((svg) => {
+        if (isMounted) {
+          setSvgMarkup(svg);
+        }
+      })
+      .catch((err) => {
+        console.error('Erro ao gerar SVG do QR Code:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [value, size]);
+
   return (
-    <div
-      className={`relative inline-flex items-center justify-center p-1 bg-white border-2 border-slate-900 rounded ${className}`}
-      style={{ width: size, height: size }}
-      title={`QR Code de Alinhamento: ${value}`}
-    >
-      <svg
-        viewBox="0 0 33 33"
-        fill="currentColor"
-        className="w-full h-full text-slate-900"
-        xmlns="http://www.w3.org/2000/svg"
+    <div className={`inline-flex flex-col items-center select-none ${className}`}>
+      {/* 
+        Container do QR Code 100% livre de sobreposições para leitura perfeita da câmera.
+        Quiet Zone (margem branca) preservada sem nenhum elemento por cima.
+      */}
+      <div
+        className="bg-white p-1 rounded-sm border-2 border-slate-900 shadow-sm flex items-center justify-center transition-transform hover:scale-105"
+        style={{ width: size, height: size }}
+        title={`QR Code de Alinhamento OMR\nPayload: ${value}`}
       >
-        {/* Top Left Finder Pattern */}
-        <rect x="0" y="0" width="7" height="7" fill="black" />
-        <rect x="1" y="1" width="5" height="5" fill="white" />
-        <rect x="2" y="2" width="3" height="3" fill="black" />
+        {svgMarkup ? (
+          <div
+            className="w-full h-full [&>svg]:w-full [&>svg]:h-full"
+            dangerouslySetInnerHTML={{ __html: svgMarkup }}
+          />
+        ) : (
+          <div className="w-full h-full bg-slate-100 animate-pulse rounded-xs" />
+        )}
+      </div>
 
-        {/* Top Right Finder Pattern */}
-        <rect x="26" y="0" width="7" height="7" fill="black" />
-        <rect x="27" y="1" width="5" height="5" fill="white" />
-        <rect x="28" y="2" width="3" height="3" fill="black" />
+      {/* 
+        Etiqueta de versão posicionada ESTRITAMENTE ABAIXO do QR Code, 
+        sem tampar nenhum módulo ou margem do código.
+      */}
+      {showBadge && versionLetter && (
+        <span className="mt-1.5 inline-flex items-center justify-center bg-blue-700 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full shadow-xs tracking-wider">
+          Caderno {versionLetter}
+        </span>
+      )}
 
-        {/* Bottom Left Finder Pattern */}
-        <rect x="0" y="26" width="7" height="7" fill="black" />
-        <rect x="1" y="27" width="5" height="5" fill="white" />
-        <rect x="2" y="28" width="3" height="3" fill="black" />
-
-        {/* Timing Patterns */}
-        <rect x="8" y="6" width="2" height="1" fill="black" />
-        <rect x="12" y="6" width="2" height="1" fill="black" />
-        <rect x="16" y="6" width="2" height="1" fill="black" />
-        <rect x="20" y="6" width="2" height="1" fill="black" />
-        <rect x="24" y="6" width="1" height="1" fill="black" />
-
-        <rect x="6" y="8" width="1" height="2" fill="black" />
-        <rect x="6" y="12" width="1" height="2" fill="black" />
-        <rect x="6" y="16" width="1" height="2" fill="black" />
-        <rect x="6" y="20" width="1" height="2" fill="black" />
-        <rect x="6" y="24" width="1" height="1" fill="black" />
-
-        {/* Alignment Pattern */}
-        <rect x="20" y="20" width="5" height="5" fill="black" />
-        <rect x="21" y="21" width="3" height="3" fill="white" />
-        <rect x="22" y="22" width="1" height="1" fill="black" />
-
-        {/* Data bits representation */}
-        <rect x="9" y="9" width="3" height="2" fill="black" />
-        <rect x="14" y="9" width="2" height="3" fill="black" />
-        <rect x="18" y="10" width="2" height="2" fill="black" />
-        <rect x="10" y="13" width="2" height="2" fill="black" />
-        <rect x="13" y="14" width="3" height="1" fill="black" />
-        <rect x="10" y="18" width="2" height="3" fill="black" />
-        <rect x="14" y="18" width="2" height="2" fill="black" />
-        <rect x="17" y="15" width="2" height="3" fill="black" />
-        <rect x="22" y="10" width="2" height="2" fill="black" />
-        <rect x="26" y="9" width="2" height="2" fill="black" />
-        <rect x="29" y="11" width="2" height="3" fill="black" />
-        <rect x="26" y="15" width="3" height="2" fill="black" />
-        <rect x="10" y="23" width="3" height="2" fill="black" />
-        <rect x="15" y="23" width="2" height="3" fill="black" />
-        <rect x="10" y="28" width="2" height="2" fill="black" />
-        <rect x="14" y="28" width="3" height="2" fill="black" />
-        <rect x="18" y="27" width="2" height="3" fill="black" />
-        <rect x="27" y="26" width="3" height="2" fill="black" />
-        <rect x="28" y="29" width="2" height="2" fill="black" />
-      </svg>
+      {showCodeLabel && examCode && (
+        <span className="text-[9px] font-mono text-slate-500 font-bold mt-0.5 tracking-tighter">
+          {examCode}
+        </span>
+      )}
     </div>
   );
 };
