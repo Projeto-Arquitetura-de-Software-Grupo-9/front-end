@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { Question } from '@/lib/types';
 import { A4ExamSheet } from '@/components/common/A4ExamSheet';
@@ -121,69 +122,23 @@ export const CreateExamScreen: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Title & Top Toggles Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Title & Navigation Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             Criar Prova: {examDraft.title || 'Nova Avaliação'}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Gere variações aleatórias automaticamente a partir de questões selecionadas.
+            Configure informações, selecione questões e gere variações de cadernos.
           </p>
         </div>
 
-        {/* Top Toggles */}
-        <div className="flex flex-wrap items-center gap-6 bg-white px-5 py-2.5 rounded-2xl border border-slate-200 shadow-xs">
-          {/* Toggle 1: Embaralhar Questões */}
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">
-              Embaralhar Questões
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setExamDraft((prev) => ({
-                  ...prev,
-                  shuffleQuestions: !prev.shuffleQuestions,
-                }))
-              }
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                examDraft.shuffleQuestions ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  examDraft.shuffleQuestions ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </label>
-
-          {/* Toggle 2: Embaralhar Alternativas */}
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">
-              Embaralhar Alternativas
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setExamDraft((prev) => ({
-                  ...prev,
-                  shuffleAlternatives: !prev.shuffleAlternatives,
-                }))
-              }
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                examDraft.shuffleAlternatives ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  examDraft.shuffleAlternatives ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </label>
-        </div>
+        <Link
+          href="/provas"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition shadow-xs self-start sm:self-center"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Voltar para Provas
+        </Link>
       </div>
 
       {/* 4-Step Stepper Header */}

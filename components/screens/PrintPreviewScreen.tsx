@@ -11,21 +11,12 @@ import {
   ChevronDown,
   FileText,
   Layers,
-  CheckCircle2,
-  ZoomIn,
   UserCheck,
-  Eye,
-  Users,
 } from 'lucide-react';
 
 export const PrintPreviewScreen: React.FC = () => {
   const {
-    exams,
-    activeExamId,
-    setActiveExamId,
     selectedExam,
-    setExamWizardStep,
-    setCurrentScreen,
     previewVersion,
     setPreviewVersion,
     showAnswerKeyInPreview,
@@ -38,7 +29,6 @@ export const PrintPreviewScreen: React.FC = () => {
     setPreviewPage,
     questions,
     students,
-    navigateToFolha,
     addToast,
   } = useApp();
 
@@ -97,12 +87,10 @@ export const PrintPreviewScreen: React.FC = () => {
       }));
     }
 
-    // Fallback: derive questions from selectedQuestionIds or questions pool
     const baseQuestions = (exam.selectedQuestionIds
       ?.map((id) => questions.find((q) => q.id === id))
       .filter((q): q is NonNullable<typeof q> => q !== undefined) || questions.slice(0, 5));
 
-    // Permute order based on Caderno letter if version > A
     let reordered = [...baseQuestions];
     if (vLetter === 'B' && reordered.length >= 2) {
       reordered = [reordered[1], ...reordered.slice(2), reordered[0]];
@@ -121,9 +109,6 @@ export const PrintPreviewScreen: React.FC = () => {
     }));
   };
 
-  // Realistic A4 Pagination helper:
-  // Page 1: Header + Box NOTA + Student Fill Block + Instructions + First 3 questions
-  // Subsequent pages: 3 questions each
   const paginateQuestions = (vQuestions: A4ExamQuestion[]) => {
     const QUESTIONS_PAGE_1 = 3;
     const QUESTIONS_SUBSEQUENT_PAGES = 3;
@@ -133,7 +118,7 @@ export const PrintPreviewScreen: React.FC = () => {
 
     const additionalPagesCount = Math.max(
       remainingQuestions.length > 0 ? Math.ceil(remainingQuestions.length / QUESTIONS_SUBSEQUENT_PAGES) : 0,
-      1 // minimum 2 pages to demonstrate multi-sheet continuation
+      1
     );
 
     const totalPages = 1 + additionalPagesCount;
@@ -154,11 +139,9 @@ export const PrintPreviewScreen: React.FC = () => {
     return { totalPages, pagesData };
   };
 
-  // Questions and pagination for the single selected Caderno version
   const singleVersionQuestions = getQuestionsForVersion(previewVersion);
   const { totalPages, pagesData } = paginateQuestions(singleVersionQuestions);
 
-  // Batch data for all students when "all_students" is chosen
   const allStudentsBatch = students.map((std, stdIdx) => {
     const numV = (selectedExam?.numberOfVersions) || 4;
     const assignedLetter = (['A', 'B', 'C', 'D'] as const)[stdIdx % numV];
@@ -201,7 +184,6 @@ export const PrintPreviewScreen: React.FC = () => {
           message: `Caderno ${previewVersion} gerado em formato A4 institucional.`,
         });
       } else {
-        // Fallback to print
         window.print();
       }
     } catch {
@@ -212,182 +194,14 @@ export const PrintPreviewScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Header with Exam Selector & Main Actions */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-bold">
-              Simulador A4 (210 × 297 mm)
-            </span>
-            <span className="text-xs font-semibold text-slate-500">
-              Escala Real 1:1.414
-            </span>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Pré-visualização da Prova
-            </h1>
-
-            {/* Direct Exam Selector Dropdown */}
-            <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
-              <span className="text-xs font-bold text-slate-600">Prova:</span>
-              <div className="relative">
-                <select
-                  value={activeExamId || exam.id}
-                  onChange={(e) => {
-                    setActiveExamId(e.target.value);
-                    setSelectedStudentId('none');
-                  }}
-                  className="text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1 pr-7 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  {exams.map((ex) => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.title}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-500">
-            {exam.title} • {exam.course} • {exam.classGroup} • {exam.semester}
-          </p>
-        </div>
-
-        {/* Header Action Buttons */}
+    <div className="space-y-4 animate-in fade-in duration-200">
+      {/* Unified Simulation Toolbar (Clean & Streamlined) */}
+      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+        {/* Left Controls: Caderno, Aluno & Visualização */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => navigateToFolha(exam.id)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-blue-200 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 transition cursor-pointer"
-            title="Abrir Folha de Respostas OMR desta avaliação"
-          >
-            <FileText className="w-3.5 h-3.5 text-blue-600" /> Folha de Respostas (OMR)
-          </button>
-
-          <button
-            onClick={() => {
-              setExamWizardStep(2);
-              setCurrentScreen('criar-prova');
-            }}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition cursor-pointer"
-          >
-            Voltar ao Editor
-          </button>
-
-          <button
-            onClick={handleExportPdf}
-            disabled={isExporting}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" /> {isExporting ? 'Exportando...' : 'Exportar PDF'}
-          </button>
-
-          <button
-            onClick={handlePrint}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer ${
-              isBatchMode ? 'bg-indigo-600 hover:bg-indigo-700 ring-2 ring-indigo-400/50' : 'bg-slate-900 hover:bg-black'
-            }`}
-          >
-            <Printer className="w-3.5 h-3.5" />
-            {isBatchMode ? `Imprimir Lote (${students.length} Provas)` : 'Imprimir Folha'}
-          </button>
-        </div>
-      </div>
-
-      {/* Toolbar Controls Card */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4 print:hidden">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* View Mode Toggle: Single Page vs All Pages (disabled when batch mode is active) */}
+          {/* Caderno Version Selector */}
           {!isBatchMode && (
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              <button
-                onClick={() => setViewMode('single')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                  viewMode === 'single'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" /> Folha Única
-              </button>
-              <button
-                onClick={() => setViewMode('all')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                  viewMode === 'all'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" /> Todas as Folhas
-              </button>
-            </div>
-          )}
-
-          {/* Pagination (Active in single page mode and not batch) */}
-          {!isBatchMode && viewMode === 'single' && (
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-xl">
-              <button
-                onClick={() => setPreviewPage(Math.max(1, previewPage - 1))}
-                disabled={previewPage === 1}
-                className="p-1 rounded-lg text-slate-600 hover:bg-white disabled:opacity-30 transition cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-xs font-bold text-slate-800 px-2">
-                Folha {previewPage} de {totalPages}
-              </span>
-              <button
-                onClick={() => setPreviewPage(Math.min(totalPages, previewPage + 1))}
-                disabled={previewPage === totalPages}
-                className="p-1 rounded-lg text-slate-600 hover:bg-white disabled:opacity-30 transition cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {/* Student Selector / Turma Completa */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-            <span className="text-xs font-semibold text-slate-500 pl-2 flex items-center gap-1">
-              <UserCheck className="w-3.5 h-3.5 text-blue-600" /> Aluno:
-            </span>
-            <div className="relative">
-              <select
-                value={selectedStudentId}
-                onChange={(e) => handleSelectStudent(e.target.value)}
-                className={`text-xs font-bold rounded-lg px-2.5 py-1 pr-7 appearance-none cursor-pointer focus:outline-none border ${
-                  isBatchMode
-                    ? 'bg-indigo-50 border-indigo-300 text-indigo-900 ring-2 ring-indigo-400/30'
-                    : 'bg-white border-slate-200 text-slate-800'
-                }`}
-              >
-                <option value="none">Caderno Geral (Em Branco)</option>
-                <option value="all_students">
-                  🖨️ Turma Completa ({students.length} Provas Nominais em Lote)
-                </option>
-                <optgroup label="Aluno Individual:">
-                  {students.map((s, sIdx) => {
-                    const numV = selectedExam?.numberOfVersions || 4;
-                    const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.registration}) — Caderno {v}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Caderno Version Selector (disabled in batch mode) */}
-          {!isBatchMode && (
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
               {(['A', 'B', 'C', 'D'] as const).map((v) => (
                 <button
                   key={v}
@@ -395,7 +209,7 @@ export const PrintPreviewScreen: React.FC = () => {
                     setSelectedStudentId('none');
                     setPreviewVersion(v);
                   }}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md transition cursor-pointer ${
                     previewVersion === v
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -407,128 +221,200 @@ export const PrintPreviewScreen: React.FC = () => {
             </div>
           )}
 
-          {/* Zoom Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Zoom:</span>
-            <div className="relative">
-              <select
-                value={previewZoom}
-                onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
-                className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              >
-                <option value={50}>50%</option>
-                <option value={75}>75%</option>
-                <option value={100}>100% (Real)</option>
-                <option value={125}>125%</option>
-                <option value={150}>150%</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
+          {/* Student Selector */}
+          <div className="relative">
+            <select
+              value={selectedStudentId}
+              onChange={(e) => handleSelectStudent(e.target.value)}
+              className={`text-xs font-bold rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none border ${
+                isBatchMode
+                  ? 'bg-blue-50 border-blue-300 text-blue-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-800'
+              }`}
+            >
+              <option value="none">Caderno Geral (Sem Nome)</option>
+              <option value="all_students">
+                🖨️ Turma Completa ({students.length} Provas em Lote)
+              </option>
+              <optgroup label="Aluno Individual:">
+                {students.map((s, sIdx) => {
+                  const numV = selectedExam?.numberOfVersions || 4;
+                  const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — Caderno {v}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
+
+          {/* View Mode Toggle: Single vs All Pages (when not in batch mode) */}
+          {!isBatchMode && (
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs">
+              <button
+                onClick={() => setViewMode('single')}
+                className={`px-2 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  viewMode === 'single' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Visualizar uma folha por vez"
+              >
+                <FileText className="w-3.5 h-3.5" /> Folha Única
+              </button>
+              <button
+                onClick={() => setViewMode('all')}
+                className={`px-2 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
+                  viewMode === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Visualizar todas as folhas lado a lado"
+              >
+                <Layers className="w-3.5 h-3.5" /> Todas as Folhas
+              </button>
+            </div>
+          )}
+
+          {/* Pagination (if single mode) */}
+          {!isBatchMode && viewMode === 'single' && (
+            <div className="flex items-center gap-1 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-lg">
+              <button
+                onClick={() => setPreviewPage(Math.max(1, previewPage - 1))}
+                disabled={previewPage === 1}
+                className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-1">{previewPage} / {totalPages}</span>
+              <button
+                onClick={() => setPreviewPage(Math.min(totalPages, previewPage + 1))}
+                disabled={previewPage === totalPages}
+                className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Toggles: Gabarito, QR Code & Box NOTA */}
-        <div className="flex flex-wrap items-center gap-5">
-          {/* Box NOTA Toggle */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">Box NOTA</span>
-            <button
-              type="button"
-              onClick={() => setIncludeBoxNota(!includeBoxNota)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                includeBoxNota ? 'bg-blue-600' : 'bg-slate-300'
-              }`}
+        {/* Right Controls: Zoom, Toggles & Primary Actions */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Zoom */}
+          <div className="relative">
+            <select
+              value={previewZoom}
+              onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+              className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 pr-6 appearance-none cursor-pointer focus:outline-none"
             >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  includeBoxNota ? 'translate-x-4.5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </label>
+              <option value={50}>50%</option>
+              <option value={75}>75%</option>
+              <option value={100}>100%</option>
+              <option value={125}>125%</option>
+            </select>
+            <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
 
-          {/* Mostrar Gabarito */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">Mostrar Gabarito</span>
-            <button
-              type="button"
-              onClick={() => setShowAnswerKeyInPreview(!showAnswerKeyInPreview)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                showAnswerKeyInPreview ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  showAnswerKeyInPreview ? 'translate-x-4.5' : 'translate-x-0.5'
-                }`}
+          {/* Compact Toggles */}
+          <div className="flex items-center gap-3 text-xs text-slate-600 font-medium border-l border-slate-200 pl-3">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeBoxNota}
+                onChange={(e) => setIncludeBoxNota(e.target.checked)}
+                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
               />
-            </button>
-          </label>
+              <span>Box NOTA</span>
+            </label>
 
-          {/* Mostrar QR Code */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs font-semibold text-slate-700">QR Code</span>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showAnswerKeyInPreview}
+                onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
+                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>Gabarito</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showQrCodeInPreview}
+                onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
+                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>QR Code</span>
+            </label>
+          </div>
+
+          {/* Action Buttons: Export PDF & Print */}
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
             <button
-              type="button"
-              onClick={() => setShowQrCodeInPreview(!showQrCodeInPreview)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                showQrCodeInPreview ? 'bg-emerald-500' : 'bg-slate-300'
+              onClick={handleExportPdf}
+              disabled={isExporting}
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
+              title="Baixar em formato PDF"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isExporting ? 'Baixando...' : 'PDF'}</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs ${
+                isBatchMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-900 hover:bg-black'
               }`}
             >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  showQrCodeInPreview ? 'translate-x-4.5' : 'translate-x-0.5'
-                }`}
-              />
+              <Printer className="w-3.5 h-3.5" />
+              <span>{isBatchMode ? `Imprimir Lote (${students.length})` : 'Imprimir'}</span>
             </button>
-          </label>
+          </div>
         </div>
       </div>
 
       {/* Realistic Virtual Drafting Desk Environment simulating physical A4 paper sheets */}
-      <div className="bg-slate-200/80 p-6 sm:p-12 rounded-3xl shadow-inner overflow-x-auto min-h-[800px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
-        {/* Printable/Display Container */}
-        <div className="w-full flex flex-col items-center gap-12 print:gap-0 print:w-full">
+      <div className="bg-slate-200/80 p-6 sm:p-10 rounded-2xl shadow-inner overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
+        <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
           {/* Batch Print Mode Banner */}
           {isBatchMode && (
-            <div className="w-full max-w-[210mm] bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs flex-shrink-0">
-                  <Printer className="w-5 h-5" />
+            <div className="w-full max-w-[210mm] bg-blue-50 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
+                  <Printer className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-indigo-950 flex items-center gap-2">
+                  <div className="text-xs font-bold text-blue-950 flex items-center gap-2">
                     <span>Lote de Impressão Nominal: Turma Completa</span>
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-200/80 text-indigo-800 text-[10px] font-bold">
-                      {students.length} Alunos • {students.length * 2} Folhas A4
+                    <span className="px-2 py-0.2 rounded bg-blue-200/70 text-blue-800 text-[10px] font-bold">
+                      {students.length} Provas
                     </span>
                   </div>
-                  <p className="text-xs text-indigo-700 mt-0.5">
-                    Todas as provas nominais foram geradas com distribuição balanceada de Cadernos (A, B, C, D). Ao clicar em &quot;Imprimir&quot;, cada aluno e folha terão quebra de página automática.
+                  <p className="text-[11px] text-blue-700">
+                    Provas nominais com distribuição de Cadernos A, B, C e D e quebras de página automáticas.
                   </p>
                 </div>
               </div>
               <button
                 onClick={handlePrint}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer flex-shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer flex-shrink-0"
               >
-                <Printer className="w-4 h-4" /> Imprimir Lote Completo
+                <Printer className="w-3.5 h-3.5" /> Imprimir Todas as Provas
               </button>
             </div>
           )}
 
           {isBatchMode ? (
             /* BATCH PRINT MODE: Render all students' full exams */
-            <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
+            <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
               {allStudentsBatch.map((batchItem) => (
                 <div
                   key={batchItem.student.id}
-                  className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full"
+                  className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
                 >
                   {/* Student Section Header in Preview Screen */}
-                  <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-300 rounded-xl px-4 py-2 text-xs font-bold text-slate-800 shadow-xs print:hidden">
+                  <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
                     <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[11px]">
+                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
                         {batchItem.studentIndex + 1}
                       </span>
                       <span>{batchItem.student.name}</span>
@@ -536,14 +422,9 @@ export const PrintPreviewScreen: React.FC = () => {
                         ({batchItem.student.registration})
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded bg-indigo-600 text-white text-[11px]">
-                        Caderno {batchItem.assignedLetter}
-                      </span>
-                      <span className="text-slate-500 text-[11px]">
-                        {batchItem.totalPages} Folhas
-                      </span>
-                    </div>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-bold">
+                      Caderno {batchItem.assignedLetter}
+                    </span>
                   </div>
 
                   {/* Render each page for this student with print:break-after-page */}
@@ -571,8 +452,8 @@ export const PrintPreviewScreen: React.FC = () => {
           ) : viewMode === 'single' ? (
             /* Single Sheet View */
             <div className="flex flex-col items-center">
-              <div className="text-[11px] font-bold text-slate-500 mb-2 uppercase tracking-wider print:hidden">
-                Visualizando Folha {previewPage} de {totalPages} • Caderno {previewVersion}
+              <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                Folha {previewPage} de {totalPages} • Caderno {previewVersion}
                 {currentStudent && ` • Aluno: ${currentStudent.name}`}
               </div>
               <A4ExamSheet
@@ -599,7 +480,7 @@ export const PrintPreviewScreen: React.FC = () => {
             /* All Sheets View for Selected Version */
             pagesData.map((page) => (
               <div key={page.pageNumber} className="flex flex-col items-center print:w-full">
-                <div className="text-[11px] font-bold text-slate-500 mb-2 uppercase tracking-wider print:hidden">
+                <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
                   Folha {page.pageNumber} de {totalPages} • Caderno {previewVersion}
                   {currentStudent && ` • Aluno: ${currentStudent.name}`}
                 </div>
