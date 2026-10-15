@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
-import { DifficultyLevel } from '@/lib/types';
-import { X, BookOpen, Tag, Plus } from 'lucide-react';
+import { DifficultyLevel, QuestionType } from '@/lib/types';
+import { X, BookOpen, Tag, Plus, Trash2, CheckCircle2, FileText, ListOrdered } from 'lucide-react';
 
 export const NewQuestionModal: React.FC = () => {
   const {
@@ -16,11 +16,14 @@ export const NewQuestionModal: React.FC = () => {
     questions,
   } = useApp();
 
+  const [questionType, setQuestionType] = useState<QuestionType>('objetiva');
   const [statement, setStatement] = useState('');
   const [discipline, setDiscipline] = useState('Direito Constitucional');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('Médio');
   const [topic, setTopic] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>(['TAG 1', 'TAG 2', 'TAG 3']);
+  const [points, setPoints] = useState<number>(1.0);
+  const [maxScore, setMaxScore] = useState<number>(2.5);
+  const [selectedTags, setSelectedTags] = useState<string[]>(['Direito Constitucional', 'Objetiva']);
   const [tagInput, setTagInput] = useState('');
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -28,7 +31,7 @@ export const NewQuestionModal: React.FC = () => {
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   const [explanation, setExplanation] = useState('');
-  const [correctAlt, setCorrectAlt] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('C');
+  const [correctAlt, setCorrectAlt] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('A');
   const [alternatives, setAlternatives] = useState<
     { letter: 'A' | 'B' | 'C' | 'D' | 'E'; text: string }[]
   >([
@@ -41,32 +44,40 @@ export const NewQuestionModal: React.FC = () => {
 
   useEffect(() => {
     if (editingQuestion) {
+      setQuestionType(editingQuestion.type || 'objetiva');
       setStatement(editingQuestion.statement);
       setDiscipline(editingQuestion.discipline);
       setDifficulty(editingQuestion.difficulty);
       setTopic(editingQuestion.topic || '');
+      setPoints(editingQuestion.points || 1.0);
+      setMaxScore(editingQuestion.maxScore || 2.5);
       setSelectedTags(
         editingQuestion.tags && editingQuestion.tags.length > 0
           ? [...editingQuestion.tags]
-          : ['TAG 1', 'TAG 2', 'TAG 3']
+          : ['Direito', 'Revisão']
       );
       setTagInput('');
       setIsTagDropdownOpen(false);
       setHighlightedIndex(-1);
       setExplanation(editingQuestion.explanation || '');
-      setCorrectAlt(editingQuestion.correctAlternative);
-      setAlternatives(
-        editingQuestion.alternatives.map((a) => ({
-          letter: a.letter,
-          text: a.text,
-        }))
-      );
+      setCorrectAlt(editingQuestion.correctAlternative || 'A');
+      if (editingQuestion.alternatives && editingQuestion.alternatives.length > 0) {
+        setAlternatives(
+          editingQuestion.alternatives.map((a) => ({
+            letter: a.letter,
+            text: a.text,
+          }))
+        );
+      }
     } else {
+      setQuestionType('objetiva');
       setStatement('');
       setDiscipline('Direito Constitucional');
       setDifficulty('Médio');
       setTopic('');
-      setSelectedTags(['TAG 1', 'TAG 2', 'TAG 3']);
+      setPoints(1.0);
+      setMaxScore(2.5);
+      setSelectedTags(['Direito Constitucional', 'Objetiva']);
       setTagInput('');
       setIsTagDropdownOpen(false);
       setHighlightedIndex(-1);
@@ -85,7 +96,7 @@ export const NewQuestionModal: React.FC = () => {
   // Extract all unique existing tags across questions
   const allExistingTags = useMemo(() => {
     const tagSet = new Set<string>();
-    ['TAG 1', 'TAG 2', 'TAG 3'].forEach((t) => tagSet.add(t));
+    ['Direito Constitucional', 'Direito Penal', 'Direito Civil', 'Objetiva', 'Discursiva'].forEach((t) => tagSet.add(t));
     if (questions) {
       questions.forEach((q) => {
         if (q.tags && Array.isArray(q.tags)) {
@@ -99,56 +110,19 @@ export const NewQuestionModal: React.FC = () => {
     return Array.from(tagSet);
   }, [questions]);
 
-  // Filter existing tags not yet selected, matching typed search query
-  const filteredExistingTags = useMemo(() => {
-    const query = tagInput.trim().toLowerCase();
-    return allExistingTags.filter((tag) => {
-      const alreadySelected = selectedTags.some(
-        (st) => st.toLowerCase() === tag.toLowerCase()
-      );
-      if (alreadySelected) return false;
-      if (!query) return true;
-      return tag.toLowerCase().includes(query);
-    });
-  }, [allExistingTags, selectedTags, tagInput]);
-
-  // Check if what the user typed is a new tag that can be created
-  const canCreateNewTag = useMemo(() => {
-    const query = tagInput.trim();
-    if (!query) return false;
-    const alreadySelected = selectedTags.some(
-      (st) => st.toLowerCase() === query.toLowerCase()
-    );
-    const exactExistingMatch = allExistingTags.some(
-      (t) => t.toLowerCase() === query.toLowerCase()
-    );
-    return !alreadySelected && !exactExistingMatch;
-  }, [tagInput, selectedTags, allExistingTags]);
-
-  // Combined options for dropdown navigation
   const dropdownOptions = useMemo(() => {
-    const options: { type: 'create' | 'existing'; label: string }[] = [];
-    if (canCreateNewTag) {
-      options.push({ type: 'create', label: tagInput.trim() });
-    }
-    filteredExistingTags.forEach((tag) => {
-      options.push({ type: 'existing', label: tag });
-    });
-    return options;
-  }, [canCreateNewTag, tagInput, filteredExistingTags]);
+    const query = tagInput.trim().toLowerCase();
+    const matches = allExistingTags.filter(
+      (t) => !selectedTags.includes(t) && (!query || t.toLowerCase().includes(query))
+    );
+    return matches.map((t) => ({ type: 'existing' as const, label: t }));
+  }, [allExistingTags, selectedTags, tagInput]);
 
   const handleAddTag = (tagToAdd: string) => {
     const trimmed = tagToAdd.trim();
     if (!trimmed) return;
-
-    const exists = selectedTags.some(
-      (t) => t.toLowerCase() === trimmed.toLowerCase()
-    );
-    if (!exists) {
-      const existingMatch = allExistingTags.find(
-        (t) => t.toLowerCase() === trimmed.toLowerCase()
-      );
-      setSelectedTags((prev) => [...prev, existingMatch || trimmed]);
+    if (!selectedTags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
+      setSelectedTags((prev) => [...prev, trimmed]);
     }
     setTagInput('');
     setIsTagDropdownOpen(false);
@@ -159,32 +133,24 @@ export const NewQuestionModal: React.FC = () => {
     setSelectedTags((prev) => prev.filter((t) => t !== tagToRemove));
   };
 
-  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (highlightedIndex >= 0 && dropdownOptions[highlightedIndex]) {
-        handleAddTag(dropdownOptions[highlightedIndex].label);
-      } else if (tagInput.trim()) {
-        handleAddTag(tagInput.trim());
-      }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (!isTagDropdownOpen) {
-        setIsTagDropdownOpen(true);
-      }
-      setHighlightedIndex((prev) =>
-        prev < dropdownOptions.length - 1 ? prev + 1 : 0
-      );
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedIndex((prev) =>
-        prev > 0 ? prev - 1 : dropdownOptions.length - 1
-      );
-    } else if (e.key === 'Backspace' && !tagInput && selectedTags.length > 0) {
-      handleRemoveTag(selectedTags[selectedTags.length - 1]);
-    } else if (e.key === 'Escape') {
-      setIsTagDropdownOpen(false);
-      setHighlightedIndex(-1);
+  const handleAddAlternative = () => {
+    if (alternatives.length >= 5) return;
+    const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
+    const nextLetter = letters[alternatives.length];
+    setAlternatives([...alternatives, { letter: nextLetter, text: '' }]);
+  };
+
+  const handleRemoveAlternative = (idx: number) => {
+    if (alternatives.length <= 2) return; // Spec: 2 a 5 alternativas
+    const remaining = alternatives.filter((_, i) => i !== idx);
+    const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
+    const reindexed = remaining.map((alt, i) => ({
+      letter: letters[i],
+      text: alt.text,
+    }));
+    setAlternatives(reindexed);
+    if (!reindexed.some((a) => a.letter === correctAlt)) {
+      setCorrectAlt('A');
     }
   };
 
@@ -200,14 +166,18 @@ export const NewQuestionModal: React.FC = () => {
     e.preventDefault();
     if (!statement.trim()) return;
 
-    const mappedAlternatives = alternatives.map((a, idx) => ({
-      id: `alt-${idx}-${Date.now()}`,
-      letter: a.letter,
-      text: a.text.trim() || `Opção ${a.letter}`,
-    }));
+    const mappedAlternatives =
+      questionType === 'objetiva'
+        ? alternatives.map((a, idx) => ({
+            id: `alt-${idx}-${Date.now()}`,
+            letter: a.letter,
+            text: a.text.trim() || `Opção ${a.letter}`,
+          }))
+        : [];
 
     if (editingQuestion) {
       updateQuestion(editingQuestion.id, {
+        type: questionType,
         statement,
         discipline,
         difficulty,
@@ -216,9 +186,12 @@ export const NewQuestionModal: React.FC = () => {
         explanation,
         correctAlternative: correctAlt,
         alternatives: mappedAlternatives,
+        points: Number(points) || 1.0,
+        maxScore: questionType === 'discursiva' ? Number(maxScore) || 2.5 : undefined,
       });
     } else {
       addQuestion({
+        type: questionType,
         statement,
         discipline,
         difficulty,
@@ -227,7 +200,8 @@ export const NewQuestionModal: React.FC = () => {
         explanation,
         correctAlternative: correctAlt,
         alternatives: mappedAlternatives,
-        points: 1.0,
+        points: Number(points) || 1.0,
+        maxScore: questionType === 'discursiva' ? Number(maxScore) || 2.5 : undefined,
       });
     }
 
@@ -241,7 +215,7 @@ export const NewQuestionModal: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center font-bold">
               <BookOpen className="w-5 h-5" />
             </div>
             <div>
@@ -249,7 +223,7 @@ export const NewQuestionModal: React.FC = () => {
                 {editingQuestion ? 'Editar Questão' : 'Cadastrar Nova Questão'}
               </h2>
               <p className="text-xs text-slate-500">
-                Adicione o enunciado, etiquetas e opções com marcação do gabarito oficial.
+                Conforme a Feature 2 da especificação: suporte a questões objetivas (2-5 alternativas) e discursivas.
               </p>
             </div>
           </div>
@@ -267,23 +241,68 @@ export const NewQuestionModal: React.FC = () => {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          {/* Statement */}
+          {/* Question Type Selector (Feature 2) */}
           <div>
             <label className="block font-bold text-slate-700 mb-1.5">
-              Enunciado da Pergunta *
+              Tipo de Questão *
             </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setQuestionType('objetiva')}
+                className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition cursor-pointer ${
+                  questionType === 'objetiva'
+                    ? 'border-[#9E0B1A] bg-red-50/40 text-[#9E0B1A] font-bold shadow-xs'
+                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <ListOrdered className="w-4 h-4 flex-shrink-0" />
+                <div>
+                  <div className="text-xs font-semibold">Objetiva</div>
+                  <div className="text-[11px] text-slate-500">2 a 5 alternativas com uma correta</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuestionType('discursiva')}
+                className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition cursor-pointer ${
+                  questionType === 'discursiva'
+                    ? 'border-[#9E0B1A] bg-red-50/40 text-[#9E0B1A] font-bold shadow-xs'
+                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <FileText className="w-4 h-4 flex-shrink-0" />
+                <div>
+                  <div className="text-xs font-semibold">Discursiva</div>
+                  <div className="text-[11px] text-slate-500">Enunciado aberto + pontuação máxima</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Statement */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block font-bold text-slate-700">
+                Enunciado da Pergunta *
+              </label>
+              <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                Suporta Markdown básico (*itálico*, **negrito**)
+              </span>
+            </div>
             <textarea
               required
               rows={3}
               value={statement}
               onChange={(e) => setStatement(e.target.value)}
-              placeholder="Ex: Dada a função f(x) = ..., determine o valor de x para o qual..."
+              placeholder="Ex: Discorra sobre o princípio da dignidade da pessoa humana..."
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20 focus:border-[#9E0B1A]"
             />
           </div>
 
-          {/* Row: Discipline, Difficulty, Topic */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Row: Discipline, Difficulty, Points/MaxScore */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label className="block font-bold text-slate-700 mb-1">
                 Disciplina
@@ -314,7 +333,7 @@ export const NewQuestionModal: React.FC = () => {
 
             <div>
               <label className="block font-bold text-slate-700 mb-1">
-                Tópico / Conteúdo
+                Tópico
               </label>
               <input
                 type="text"
@@ -324,30 +343,42 @@ export const NewQuestionModal: React.FC = () => {
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
               />
             </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                {questionType === 'discursiva' ? 'Pontuação Máx.' : 'Pontos'}
+              </label>
+              <input
+                type="number"
+                step="0.25"
+                min="0.25"
+                max="10"
+                value={questionType === 'discursiva' ? maxScore : points}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 1.0;
+                  if (questionType === 'discursiva') setMaxScore(val);
+                  else setPoints(val);
+                }}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
+              />
+            </div>
           </div>
 
-          {/* Tags / Etiquetas */}
-          <div className="relative">
-            <div className="flex items-center justify-between mb-1">
-              <label className="block font-bold text-slate-700">
-                Etiquetas
-              </label>
-              <span className="text-[11px] text-slate-400">
-                Pressione Enter para adicionar ou criar
-              </span>
-            </div>
-
-            {/* Tags Box */}
+          {/* Tags */}
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">
+              Etiquetas (Tags)
+            </label>
             <div
               onClick={() => tagInputRef.current?.focus()}
-              className="min-h-[42px] p-2 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-[#9E0B1A]/20 focus-within:border-slate-300 transition cursor-text"
+              className="min-h-[38px] p-1.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center gap-1.5 cursor-text"
             >
               {selectedTags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg shadow-2xs group"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 bg-white border border-slate-200 text-slate-700 rounded-lg shadow-2xs"
                 >
-                  <Tag className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                  <Tag className="w-2.5 h-2.5 text-slate-400" />
                   <span>{tag}</span>
                   <button
                     type="button"
@@ -355,181 +386,122 @@ export const NewQuestionModal: React.FC = () => {
                       e.stopPropagation();
                       handleRemoveTag(tag);
                     }}
-                    className="ml-0.5 text-slate-400 hover:text-red-600 rounded-full hover:bg-slate-100 p-0.5 transition cursor-pointer"
-                    title={`Remover ${tag}`}
+                    className="text-slate-400 hover:text-red-600 ml-0.5"
                   >
-                    <X className="w-3 h-3" />
+                    ×
                   </button>
                 </span>
               ))}
-
               <input
                 ref={tagInputRef}
                 type="text"
                 value={tagInput}
-                onChange={(e) => {
-                  setTagInput(e.target.value);
-                  setIsTagDropdownOpen(true);
-                  setHighlightedIndex(-1);
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (tagInput.trim()) handleAddTag(tagInput.trim());
+                  }
                 }}
-                onFocus={() => setIsTagDropdownOpen(true)}
-                onBlur={() => {
-                  setTimeout(() => setIsTagDropdownOpen(false), 200);
-                }}
-                onKeyDown={handleTagInputKeyDown}
-                placeholder={
-                  selectedTags.length === 0
-                    ? 'Digite uma etiqueta e pressione Enter...'
-                    : 'Adicionar etiqueta...'
-                }
-                className="flex-1 min-w-[150px] px-2 py-1 bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-none"
+                placeholder="+ Adicionar tag (Enter)"
+                className="text-xs bg-transparent border-none outline-none px-2 py-1 flex-1 min-w-[120px]"
               />
             </div>
-
-            {/* Dropdown for Selection / Creation */}
-            {isTagDropdownOpen && dropdownOptions.length > 0 && (
-              <div
-                ref={tagDropdownRef}
-                className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1.5"
-              >
-                {dropdownOptions.map((opt, idx) => {
-                  const isHighlighted = highlightedIndex === idx;
-                  if (opt.type === 'create') {
-                    return (
-                      <button
-                        type="button"
-                        key={`create-${opt.label}`}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          handleAddTag(opt.label);
-                        }}
-                        className={`w-full px-3 py-2 text-left text-xs text-[#9E0B1A] font-semibold flex items-center justify-between transition cursor-pointer border-b border-slate-100 ${
-                          isHighlighted ? 'bg-red-50' : 'hover:bg-red-50/70'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>
-                            Criar nova etiqueta: <strong>{opt.label}</strong>
-                          </span>
-                        </span>
-                        <span className="text-[10px] bg-red-100/60 text-[#9E0B1A] px-2 py-0.5 rounded font-bold">
-                          Enter
-                        </span>
-                      </button>
-                    );
-                  }
-
-                  return (
-                    <button
-                      type="button"
-                      key={`existing-${opt.label}`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        handleAddTag(opt.label);
-                      }}
-                      className={`w-full px-3 py-1.5 text-left text-xs text-slate-700 flex items-center justify-between transition cursor-pointer ${
-                        isHighlighted ? 'bg-slate-100 text-slate-900 font-medium' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Tag className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{opt.label}</span>
-                      </span>
-                      <span className="text-[10px] text-slate-400">Selecionar</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Quick-select pills from available existing tags */}
-            {allExistingTags.filter((t) => !selectedTags.includes(t)).length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-2">
-                <span className="text-[11px] font-medium text-slate-400">
-                  Sugestões existentes:
-                </span>
-                {allExistingTags
-                  .filter((t) => !selectedTags.includes(t))
-                  .slice(0, 6)
-                  .map((tag) => (
-                    <button
-                      type="button"
-                      key={tag}
-                      onClick={() => handleAddTag(tag)}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded-md transition cursor-pointer"
-                    >
-                      <Plus className="w-2.5 h-2.5" />
-                      {tag}
-                    </button>
-                  ))}
-              </div>
-            )}
           </div>
 
-          {/* Alternatives list */}
-          <div className="space-y-2 pt-2">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-slate-700">
-                Alternativas (Selecione a Correta)
-              </label>
-              <span className="text-[11px] text-emerald-700 font-semibold">
-                Gabarito Atual: Alternativa {correctAlt}
-              </span>
-            </div>
-
-            {alternatives.map((alt, idx) => {
-              const isSelected = correctAlt === alt.letter;
-              return (
-                <div
-                  key={alt.letter}
-                  className={`flex items-center gap-2.5 p-2 rounded-xl border transition ${
-                    isSelected
-                      ? 'border-emerald-300 bg-emerald-50/40'
-                      : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setCorrectAlt(alt.letter)}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    {alt.letter}
-                  </button>
-
-                  <input
-                    type="text"
-                    required
-                    value={alt.text}
-                    onChange={(e) => handleAltChange(idx, e.target.value)}
-                    placeholder={`Texto da alternativa ${alt.letter}...`}
-                    className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
-                  />
-
-                  {isSelected && (
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                      GABARITO
-                    </span>
+          {/* If Objective Question: Show Alternatives (2 to 5) */}
+          {questionType === 'objetiva' ? (
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-slate-700">
+                  Alternativas ({alternatives.length} de 5 selecionadas)
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded">
+                    Gabarito: {correctAlt}
+                  </span>
+                  {alternatives.length < 5 && (
+                    <button
+                      type="button"
+                      onClick={handleAddAlternative}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Adicionar Alternativa
+                    </button>
                   )}
                 </div>
-              );
-            })}
-          </div>
+              </div>
 
-          {/* Explanation */}
+              {alternatives.map((alt, idx) => {
+                const isSelected = correctAlt === alt.letter;
+                return (
+                  <div
+                    key={alt.letter}
+                    className={`flex items-center gap-2 p-2 rounded-xl border transition ${
+                      isSelected
+                        ? 'border-emerald-300 bg-emerald-50/40'
+                        : 'border-slate-200 bg-slate-50/50'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setCorrectAlt(alt.letter)}
+                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                      }`}
+                      title="Definir como gabarito oficial"
+                    >
+                      {alt.letter}
+                    </button>
+
+                    <input
+                      type="text"
+                      required
+                      value={alt.text}
+                      onChange={(e) => handleAltChange(idx, e.target.value)}
+                      placeholder={`Texto da alternativa ${alt.letter}...`}
+                      className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                    />
+
+                    {alternatives.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAlternative(idx)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                        title="Remover alternativa"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Discursive resolution criteria */
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
+              <div className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                Critérios de Correção da Questão Discursiva
+              </div>
+              <p className="text-[11px] text-amber-800">
+                Esta questão será avaliada manualmente pelo professor no app mobile ou na tela de resultados, atribuindo pontuação de 0 até {maxScore} pts.
+              </p>
+            </div>
+          )}
+
+          {/* Explanation / Answer criteria */}
           <div>
             <label className="block font-bold text-slate-700 mb-1">
-              Justificativa / Comentário da Resolução (Opcional)
+              {questionType === 'discursiva' ? 'Espelho de Correção / Resposta Esperada' : 'Justificativa do Gabarito (Opcional)'}
             </label>
             <textarea
               rows={2}
               value={explanation}
               onChange={(e) => setExplanation(e.target.value)}
-              placeholder="Explique o raciocínio para os alunos..."
+              placeholder="Explique os elementos essenciais da resposta esperada..."
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
             />
           </div>

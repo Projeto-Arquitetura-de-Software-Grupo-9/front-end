@@ -11,12 +11,22 @@ import {
   ExamVersion,
   DifficultyLevel,
   Alternative,
+  Class,
+  Application,
+  Correction,
+  User,
+  UserRole,
 } from '@/lib/types';
 import {
   INITIAL_QUESTIONS,
   INITIAL_STUDENTS,
   INITIAL_EXAMS,
   INITIAL_REPORT,
+  INITIAL_CLASSES,
+  INITIAL_APPLICATIONS,
+  INITIAL_CORRECTIONS,
+  CURRENT_USER,
+  CURRENT_STUDENT_USER,
 } from '@/lib/mock-data';
 
 interface Toast {
@@ -50,17 +60,34 @@ interface AppContextType {
   currentScreen: ScreenType;
   setCurrentScreen: (screen: ScreenType) => void;
   
+  // LGPD & Auth (Features 1 & 1.1)
+  isAuthenticated: boolean;
+  currentUser: User;
+  login: (role: UserRole, email?: string) => void;
+  logout: () => void;
+  anonymizeUser: () => void;
+
   // Search
   searchQuery: string;
   setSearchQuery: (query: string) => void;
 
-  // Questions
+  // Classes (Turmas - Feature 3)
+  classes: Class[];
+  activeClassId: string;
+  setActiveClassId: (id: string) => void;
+  selectedClass: Class | undefined;
+  addClass: (cls: Omit<Class, 'id' | 'createdAt' | 'inviteCode' | 'teacherId'>) => Class;
+  updateClass: (id: string, data: Partial<Class>) => void;
+  archiveClass: (id: string) => void;
+  regenerateInviteCode: (classId: string) => string;
+
+  // Questions (Feature 2)
   questions: Question[];
   addQuestion: (question: Omit<Question, 'id' | 'code'>) => Question;
   updateQuestion: (id: string, question: Partial<Question>) => void;
   deleteQuestion: (id: string) => void;
   
-  // Exams
+  // Exams (Feature 4 - Templates)
   exams: Exam[];
   activeExamId: string;
   setActiveExamId: (id: string) => void;
@@ -70,6 +97,23 @@ interface AppContextType {
   deleteExam: (id: string) => void;
   duplicateExam: (id: string) => Exam;
   
+  // Applications (Feature 5, 6 - Prova aplicada a Turma)
+  applications: Application[];
+  activeApplicationId: string;
+  setActiveApplicationId: (id: string) => void;
+  selectedApplication: Application | undefined;
+  createApplication: (examId: string, classId: string, options: {
+    withStudentIdentification: boolean;
+    numberOfVersions: number;
+    shuffleQuestions: boolean;
+    shuffleAlternatives: boolean;
+  }) => Application;
+  publishAnswerKey: (applicationId: string) => void;
+
+  // Corrections & Pending manual assignment (Feature 8, 9)
+  corrections: Correction[];
+  assignCorrection: (correctionId: string, studentId: string, notes?: string) => void;
+
   // Exam Wizard Draft
   examDraft: ExamDraft;
   setExamDraft: React.Dispatch<React.SetStateAction<ExamDraft>>;
@@ -89,6 +133,8 @@ interface AppContextType {
   setPreviewZoom: (zoom: number) => void;
   previewPage: number;
   setPreviewPage: (page: number) => void;
+  withStudentIdentificationPreview: boolean;
+  setWithStudentIdentificationPreview: (val: boolean) => void;
 
   // Students
   students: Student[];
@@ -97,7 +143,7 @@ interface AppContextType {
   deleteStudent: (id: string) => void;
   deleteStudentsBatch: (ids: string[]) => void;
 
-  // Results & Reports
+  // Results & Reports (Feature 10)
   currentReport: ExamReport;
   
   // Modals
@@ -124,6 +170,8 @@ interface AppContextType {
   navigateToPreview: (examId?: string) => void;
   navigateToResults: (examId?: string) => void;
   navigateToFolha: (examId?: string) => void;
+  navigateToTurmas: () => void;
+  navigateToAplicacoes: () => void;
 }
 
 const BLANK_EXAM_DRAFT: ExamDraft = {
@@ -131,10 +179,10 @@ const BLANK_EXAM_DRAFT: ExamDraft = {
   discipline: 'Direito Constitucional',
   course: 'Direito',
   classGroup: 'Turma A',
-  semester: '2024.2',
-  institution: 'UNIVERSIDADE FEDERAL DO RIO DE JANEIRO',
-  department: 'Faculdade Nacional de Direito | Departamento de Direito Público',
-  date: '12 Mar, 2024',
+  semester: '2026.1',
+  institution: 'CATÓLICA DE SANTA CATARINA',
+  department: 'Curso de Direito | Departamento de Ciências Jurídicas',
+  date: '15 Mar, 2026',
   duration: '2 horas',
   instructions:
     'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
@@ -153,11 +201,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('banco-questoes');
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Auth & LGPD
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
+
+  // Core Data
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
+  const [classes, setClasses] = useState<Class[]>(INITIAL_CLASSES);
+  const [activeClassId, setActiveClassId] = useState<string>('class-1');
   const [exams, setExams] = useState<Exam[]>(INITIAL_EXAMS);
   const [activeExamId, setActiveExamId] = useState<string>('exam-1');
+  const [applications, setApplications] = useState<Application[]>(INITIAL_APPLICATIONS);
+  const [activeApplicationId, setActiveApplicationId] = useState<string>('app-1');
+  const [corrections, setCorrections] = useState<Correction[]>(INITIAL_CORRECTIONS);
   const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
-  const [currentReport, setCurrentReport] = useState<ExamReport>(INITIAL_REPORT);
+  const [currentReport, setCurrentReport] = useState<ExamReport>({
+    ...INITIAL_REPORT,
+    medianScore: 8.0,
+    standardDeviation: 1.45,
+    pendingCorrectionsCount: 2,
+  });
   
   // Exam Wizard Draft: starts cleanly on Step 1 with clean draft
   const [examDraft, setExamDraft] = useState<ExamDraft>(BLANK_EXAM_DRAFT);
@@ -198,6 +261,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [showQrCodeInPreview, setShowQrCodeInPreview] = useState(true);
   const [previewZoom, setPreviewZoom] = useState(100);
   const [previewPage, setPreviewPage] = useState(1);
+  const [withStudentIdentificationPreview, setWithStudentIdentificationPreview] = useState(true);
 
   // Modals
   const [isNewQuestionModalOpen, setIsNewQuestionModalOpen] = useState(false);
@@ -231,7 +295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return copy;
   };
 
-  // Build shuffled versions for an exam
+  // Build shuffled versions for an exam / application (Feature 6 da Spec)
   const buildExamVersions = (
     selectedQIds: string[],
     shuffleQ: boolean,
@@ -240,7 +304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): ExamVersion[] => {
     const baseQuestions = selectedQIds
       .map((id) => questions.find((q) => q.id === id))
-      .filter((q): q is Question => q !== undefined);
+      .filter((q): q is Question => q !== undefined && !q.deletedAt);
 
     const versionLetters: ('A' | 'B' | 'C' | 'D')[] = ['A', 'B', 'C', 'D'].slice(
       0,
@@ -248,16 +312,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) as any;
 
     return versionLetters.map((letter, vIdx) => {
-      // If version A and no shuffle, keep original; otherwise shuffle if enabled
       let versionQuestions = [...baseQuestions];
       if (shuffleQ && vIdx > 0) {
         versionQuestions = shuffleArray(versionQuestions);
       }
 
       const questionsForVersion = versionQuestions.map((q, qIndex) => {
-        let alts = [...q.alternatives];
-        if (shuffleAlt && vIdx > 0) {
-          // Shuffle alternatives while tracking the correct answer text
+        let alts = [...(q.alternatives || [])];
+        if (shuffleAlt && vIdx > 0 && alts.length > 0) {
           const correctAltText = q.alternatives.find(
             (a) => a.letter === q.correctAlternative
           )?.text;
@@ -301,28 +363,144 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       return {
+        id: `version-${letter}`,
         versionLetter: letter,
+        versionNumber: vIdx + 1,
         questions: questionsForVersion,
         answerKey,
+        publicCode: `PUB-KEY-${letter}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        qrCodePayload: `CATOLICA-OMR:V=${letter}:APP=APP1`,
+        answerKeyPublished: false,
       };
     });
   };
 
   const selectedExam = exams.find((e) => e.id === activeExamId) || exams[0];
+  const selectedClass = classes.find((c) => c.id === activeClassId) || classes[0];
+  const selectedApplication = applications.find((a) => a.id === activeApplicationId) || applications[0];
 
-  // Question operations
+  // LGPD Anonymization (Feature 1.1)
+  const anonymizeUser = () => {
+    setCurrentUser((prev) => ({
+      ...prev,
+      fullName: 'Usuário Removido',
+      email: `anon-${prev.id}@removido.local`,
+      anonymizedAt: new Date().toISOString(),
+    }));
+    addToast({
+      type: 'warning',
+      title: 'Conta Anonimizada (LGPD)',
+      message: 'Seus dados pessoais foram substituídos por identificadores anônimos. Suas provas e notas foram preservadas.',
+    });
+  };
+
+  const login = (role: UserRole, email?: string) => {
+    if (role === 'estudante') {
+      setCurrentUser({
+        ...CURRENT_STUDENT_USER,
+        email: email || CURRENT_STUDENT_USER.email,
+      });
+      setIsAuthenticated(true);
+      setCurrentScreen('portal-aluno');
+      addToast({
+        type: 'success',
+        title: 'Bem-vinda, Amanda!',
+        message: 'Acesso autenticado ao Portal do Aluno (Católica SC).',
+      });
+    } else {
+      setCurrentUser({
+        ...CURRENT_USER,
+        email: email || CURRENT_USER.email,
+      });
+      setIsAuthenticated(true);
+      setCurrentScreen('banco-questoes');
+      addToast({
+        type: 'success',
+        title: 'Bem-vindo, Professor!',
+        message: 'Acesso autenticado ao Painel Docente.',
+      });
+    }
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    addToast({
+      type: 'info',
+      title: 'Sessão Encerrada',
+      message: 'Você saiu da conta institucional.',
+    });
+  };
+
+  // Class operations (Feature 3)
+  const addClass = (clsData: Omit<Class, 'id' | 'createdAt' | 'inviteCode' | 'teacherId'>): Class => {
+    const randomCode = `CAT-${clsData.subject.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newClass: Class = {
+      ...clsData,
+      id: `class-${Date.now()}`,
+      teacherId: currentUser.id,
+      inviteCode: randomCode,
+      createdAt: new Date().toISOString(),
+      studentCount: 0,
+      status: 'active',
+    };
+    setClasses((prev) => [newClass, ...prev]);
+    addToast({
+      type: 'success',
+      title: 'Turma Criada com Sucesso!',
+      message: `Código de convite: ${newClass.inviteCode}`,
+    });
+    return newClass;
+  };
+
+  const updateClass = (id: string, data: Partial<Class>) => {
+    setClasses((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+    addToast({
+      type: 'info',
+      title: 'Turma Atualizada',
+      message: 'Informações da turma salvas.',
+    });
+  };
+
+  const archiveClass = (id: string) => {
+    setClasses((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, status: 'archived' } : c))
+    );
+    addToast({
+      type: 'warning',
+      title: 'Turma Arquivada',
+      message: 'A turma foi arquivada (soft-delete). O histórico permanece intacto.',
+    });
+  };
+
+  const regenerateInviteCode = (classId: string): string => {
+    const target = classes.find((c) => c.id === classId);
+    const newCode = `CAT-${(target?.subject || 'TUR').substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    setClasses((prev) =>
+      prev.map((c) => (c.id === classId ? { ...c, inviteCode: newCode } : c))
+    );
+    addToast({
+      type: 'success',
+      title: 'Novo Código de Convite Gerado!',
+      message: `O código anterior foi invalidado. Novo código: ${newCode}`,
+    });
+    return newCode;
+  };
+
+  // Question operations (Feature 2)
   const addQuestion = (newQData: Omit<Question, 'id' | 'code'>): Question => {
     const nextCodeNum = 1024 + questions.length;
+    const isDisc = newQData.type === 'discursiva';
     const newQuestion: Question = {
       ...newQData,
       id: `q-${Date.now()}`,
-      code: `#Q-${nextCodeNum}`,
+      code: isDisc ? `#Q-DISC-${nextCodeNum}` : `#Q-${nextCodeNum}`,
+      type: newQData.type || 'objetiva',
     };
     setQuestions((prev) => [newQuestion, ...prev]);
     addToast({
       type: 'success',
-      title: 'Questão Criada!',
-      message: `Questão ${newQuestion.code} adicionada com sucesso ao banco.`,
+      title: isDisc ? 'Questão Discursiva Adicionada!' : 'Questão Objetiva Adicionada!',
+      message: `Questão ${newQuestion.code} cadastrada no banco.`,
     });
     return newQuestion;
   };
@@ -339,19 +517,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteQuestion = (id: string) => {
-    const target = questions.find((q) => q.id === id);
-    setQuestions((prev) => prev.filter((q) => q.id !== id));
+    // Soft-delete as requested by Feature 2
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === id ? { ...q, deletedAt: new Date().toISOString() } : q
+      )
+    );
     addToast({
       type: 'warning',
-      title: 'Questão Removida',
-      message: `A questão ${target?.code || ''} foi excluída.`,
+      title: 'Questão Removida (Soft-delete)',
+      message: 'A questão foi arquivada e não será incluída em novas provas.',
     });
   };
 
-  // Exam operations
+  // Exam operations (Feature 4 - Templates)
   const createExamFromDraft = (draft: ExamDraft): Exam => {
+    // Enforce up to 20 questions limit
+    if (draft.selectedQuestionIds.length > 20) {
+      addToast({
+        type: 'error',
+        title: 'Limite Excedido',
+        message: 'A prova pode conter no máximo 20 questões conforme a especificação.',
+      });
+    }
+
     const versions = buildExamVersions(
-      draft.selectedQuestionIds,
+      draft.selectedQuestionIds.slice(0, 20),
       draft.shuffleQuestions,
       draft.shuffleAlternatives,
       draft.numberOfVersions
@@ -370,9 +561,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newExam: Exam = {
       id: `exam-${Date.now()}`,
+      teacherId: currentUser.id,
       code: `#${draft.discipline.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
       title: draft.title,
-      subtitle: `Semestre Acadêmico ${draft.semester}`,
+      description: draft.instructions,
+      subtitle: `Período Letivo ${draft.semester}`,
       institution: draft.institution,
       department: draft.department,
       course: draft.course,
@@ -382,7 +575,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       date: draft.date,
       duration: draft.duration,
       instructions: draft.instructions,
-      status: 'Pendente',
+      status: 'ready',
       shuffleQuestions: draft.shuffleQuestions,
       shuffleAlternatives: draft.shuffleAlternatives,
       numberOfVersions: draft.numberOfVersions,
@@ -393,6 +586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       maxScore: draft.maxScore,
       totalStudents: students.length > 0 ? students.length : 32,
       averageScore: 0,
+      createdAt: new Date().toISOString(),
     };
 
     const nextExams = [newExam, ...exams];
@@ -400,8 +594,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveExamId(newExam.id);
     addToast({
       type: 'success',
-      title: 'Prova Criada com Sucesso!',
-      message: `A prova "${newExam.title}" com ${draft.numberOfVersions} cadernos foi gerada.`,
+      title: 'Template de Prova Salvo!',
+      message: `A prova "${newExam.title}" está pronta para ser aplicada a uma turma.`,
     });
     return newExam;
   };
@@ -494,8 +688,104 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     addToast({
       type: 'info',
-      title: 'Prova Removida',
-      message: 'A avaliação foi excluída do sistema.',
+      title: 'Prova Arquivada',
+      message: 'O modelo de prova foi arquivado.',
+    });
+  };
+
+  // Application operations (Feature 5, 6 - Prova x Turma)
+  const createApplication = (
+    examId: string,
+    classId: string,
+    options: {
+      withStudentIdentification: boolean;
+      numberOfVersions: number;
+      shuffleQuestions: boolean;
+      shuffleAlternatives: boolean;
+    }
+  ): Application => {
+    const exam = exams.find((e) => e.id === examId) || exams[0];
+    const targetClass = classes.find((c) => c.id === classId) || classes[0];
+
+    const versions = buildExamVersions(
+      exam.selectedQuestionIds,
+      options.shuffleQuestions,
+      options.shuffleAlternatives,
+      options.numberOfVersions
+    );
+
+    const newApp: Application = {
+      id: `app-${Date.now()}`,
+      examId: exam.id,
+      classId: targetClass.id,
+      teacherId: currentUser.id,
+      title: `Aplicação - ${exam.title} (${targetClass.name})`,
+      className: targetClass.name,
+      discipline: exam.discipline,
+      status: 'generated',
+      withStudentIdentification: options.withStudentIdentification,
+      shuffleQuestions: options.shuffleQuestions,
+      shuffleAlternatives: options.shuffleAlternatives,
+      numberOfVersions: options.numberOfVersions,
+      pdfUrl: `/storage/applications/app-${Date.now()}-consolidated.pdf`,
+      createdAt: new Date().toISOString(),
+      versions,
+      answerKeyPublished: false,
+      publicCode: `PUB-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+    };
+
+    setApplications((prev) => [newApp, ...prev]);
+    setActiveApplicationId(newApp.id);
+    addToast({
+      type: 'success',
+      title: 'Aplicação Criada!',
+      message: `Prova vinculada à ${targetClass.name}. PDF consolidado disponível.`,
+    });
+    return newApp;
+  };
+
+  // Publish Answer Key (Feature 7)
+  const publishAnswerKey = (applicationId: string) => {
+    setApplications((prev) =>
+      prev.map((app) =>
+        app.id === applicationId ? { ...app, answerKeyPublished: true } : app
+      )
+    );
+    addToast({
+      type: 'success',
+      title: 'Gabarito Oficial Publicado!',
+      message: 'Os alunos já podem consultar as respostas pelo portal web usando o código público.',
+    });
+  };
+
+  // Manual Assignment of pending correction (Feature 9)
+  const assignCorrection = (correctionId: string, studentId: string, notes?: string) => {
+    const student = students.find((s) => s.id === studentId);
+    setCorrections((prev) =>
+      prev.map((c) =>
+        c.id === correctionId
+          ? {
+              ...c,
+              studentId,
+              studentName: student?.name,
+              registration: student?.registration,
+              notes,
+              isAutomaticallyAssigned: false,
+            }
+          : c
+      )
+    );
+
+    // Update report pending count
+    setCurrentReport((prev) => ({
+      ...prev,
+      pendingCorrectionsCount: Math.max(0, (prev.pendingCorrectionsCount || 1) - 1),
+    }));
+
+    addToast({
+      type: 'success',
+      title: 'Nota Atribuída ao Aluno!',
+      message: `A prova física foi vinculada a ${student?.name || 'aluno'} com sucesso.`,
     });
   };
 
@@ -562,8 +852,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) => prev.filter((s) => s.id !== id));
     addToast({
       type: 'warning',
-      title: 'Aluno Removido',
-      message: 'O cadastro do aluno foi desvinculado.',
+      title: 'Aluno Removido da Turma',
+      message: 'O aluno foi desvinculado, mas seu histórico de notas permanece preservado.',
     });
   };
 
@@ -598,13 +888,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (targetId) router.push(`/provas/${targetId}?p=folha`);
   };
 
+  const navigateToTurmas = () => {
+    setCurrentScreen('turmas');
+  };
+
+  const navigateToAplicacoes = () => {
+    setCurrentScreen('aplicacoes');
+  };
+
   return (
     <AppContext.Provider
       value={{
         currentScreen,
         setCurrentScreen,
+        isAuthenticated,
+        currentUser,
+        login,
+        logout,
+        anonymizeUser,
         searchQuery,
         setSearchQuery,
+        classes,
+        activeClassId,
+        setActiveClassId,
+        selectedClass,
+        addClass,
+        updateClass,
+        archiveClass,
+        regenerateInviteCode,
         questions,
         addQuestion,
         updateQuestion,
@@ -633,6 +944,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPreviewZoom,
         previewPage,
         setPreviewPage,
+        withStudentIdentificationPreview,
+        setWithStudentIdentificationPreview,
         students,
         addStudent,
         importStudents,
@@ -655,6 +968,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         navigateToPreview,
         navigateToResults,
         navigateToFolha,
+        navigateToTurmas,
+        navigateToAplicacoes,
       }}
     >
       {children}

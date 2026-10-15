@@ -1,6 +1,21 @@
-import { Question, Exam, Student, ExamReport, ExamVersion } from './types';
+import { Question, Exam, Student, ExamReport, ExamVersion, Class, Application, Correction, User } from './types';
 
 export const INITIAL_QUESTIONS: Question[] = [
+  {
+    id: 'q-disc-1',
+    code: '#Q-DISC-01',
+    type: 'discursiva',
+    discipline: 'Direito Constitucional',
+    difficulty: 'Difícil',
+    topic: 'Controle de Constitucionalidade',
+    tags: ['Discursiva', 'Direito Constitucional', 'Controle'],
+    statement: 'Explique a diferença entre a eficácia *erga omnes* e o efeito vinculante nas decisões proferidas pelo Supremo Tribunal Federal em sede de controle concentrado de constitucionalidade (art. 102, § 2º da CF/88).',
+    alternatives: [],
+    correctAlternative: 'A',
+    points: 2.5,
+    maxScore: 2.5,
+    explanation: 'Critério de correção: Deve abordar a abrangência subjetiva em relação aos demais órgãos do Poder Judiciário e à Administração Pública, bem como a não vinculação do Poder Legislativo em sua função típica.',
+  },
   {
     id: 'q-1024',
     code: '#Q-1024',
@@ -649,3 +664,157 @@ export const INITIAL_REPORT: ExamReport = {
     },
   ],
 };
+
+export const CURRENT_USER: User = {
+  id: 'usr-prof-1',
+  role: 'professor',
+  fullName: 'Prof. Dr. Ricardo Silveira',
+  email: 'ricardo.silveira@catolicasc.org.br',
+  createdAt: '2024-01-15T08:00:00Z',
+};
+
+export const CURRENT_STUDENT_USER: User = {
+  id: 'usr-std-1',
+  role: 'estudante',
+  fullName: 'Amanda Dolores',
+  email: 'amanda.dolores@catolicasc.edu.br',
+  createdAt: '2024-02-01T08:00:00Z',
+};
+
+export const INITIAL_CLASSES: Class[] = [
+  {
+    id: 'class-1',
+    teacherId: 'usr-prof-1',
+    name: 'Turma A - Matutino',
+    subject: 'Direito Constitucional I',
+    term: '2026/1',
+    status: 'active',
+    inviteCode: 'CAT-DIR-8492',
+    createdAt: '2026-02-10T09:00:00Z',
+    studentCount: 34,
+  },
+  {
+    id: 'class-2',
+    teacherId: 'usr-prof-1',
+    name: 'Turma B - Noturno',
+    subject: 'Direito Constitucional I',
+    term: '2026/1',
+    status: 'active',
+    inviteCode: 'CAT-DIR-3914',
+    createdAt: '2026-02-10T10:00:00Z',
+    studentCount: 28,
+  },
+  {
+    id: 'class-3',
+    teacherId: 'usr-prof-1',
+    name: 'Turma C - Vespertino',
+    subject: 'Direito Penal I',
+    term: '2026/1',
+    status: 'active',
+    inviteCode: 'CAT-PEN-7120',
+    createdAt: '2026-02-11T14:00:00Z',
+    studentCount: 31,
+  },
+];
+
+export const INITIAL_APPLICATIONS: Application[] = [
+  {
+    id: 'app-1',
+    examId: 'exam-1',
+    classId: 'class-1',
+    teacherId: 'usr-prof-1',
+    title: 'Aplicação P1 - Turma A',
+    className: 'Turma A - Matutino',
+    discipline: 'Direito Constitucional I',
+    status: 'generated',
+    withStudentIdentification: true,
+    shuffleQuestions: true,
+    shuffleAlternatives: true,
+    numberOfVersions: 4,
+    pdfUrl: '/storage/applications/app-1-consolidated.pdf',
+    createdAt: '2026-03-10T14:30:00Z',
+    answerKeyPublished: true,
+    publicCode: 'PUB-DIR-2026-A1',
+    versions: INITIAL_EXAMS[0].versions,
+  },
+  {
+    id: 'app-2',
+    examId: 'exam-1',
+    classId: 'class-2',
+    teacherId: 'usr-prof-1',
+    title: 'Aplicação P1 - Turma B (Sem Identificação)',
+    className: 'Turma B - Noturno',
+    discipline: 'Direito Constitucional I',
+    status: 'generated',
+    withStudentIdentification: false,
+    shuffleQuestions: true,
+    shuffleAlternatives: true,
+    numberOfVersions: 2,
+    pdfUrl: '/storage/applications/app-2-consolidated.pdf',
+    createdAt: '2026-03-12T19:00:00Z',
+    answerKeyPublished: false,
+    publicCode: 'PUB-DIR-2026-B2',
+    versions: INITIAL_EXAMS[0].versions.slice(0, 2),
+  },
+];
+
+export const INITIAL_CORRECTIONS: Correction[] = [
+  {
+    id: 'corr-1',
+    applicationId: 'app-1',
+    examVersionId: 'v-A',
+    versionLetter: 'A',
+    studentId: 'std-1',
+    studentName: 'Amanda Dolores',
+    registration: '2024.1.001',
+    isAutomaticallyAssigned: true,
+    totalScore: 9.2,
+    maxScore: 10.0,
+    confirmedAt: '2026-03-15T11:20:00Z',
+    syncStatus: 'synced',
+    objectiveResults: [
+      { questionId: 'q-1024', chosen: 'B', correct: 'B', isCorrect: true, score: 1.0 },
+      { questionId: 'q-1024-2', chosen: 'A', correct: 'A', isCorrect: true, score: 1.0 },
+      { questionId: 'q-1024-3', chosen: 'E', correct: 'E', isCorrect: true, score: 1.0 },
+    ],
+  },
+  {
+    id: 'corr-2',
+    applicationId: 'app-2',
+    examVersionId: 'v-A',
+    versionLetter: 'A',
+    // Prova SEM identificação pendente de atribuição manual (Feature 9 da Spec)
+    reportedStudentName: 'Lucas Ferreira Mendes',
+    reportedStudentRegistration: '2024.1.077',
+    isAutomaticallyAssigned: false,
+    totalScore: 8.5,
+    maxScore: 10.0,
+    confirmedAt: '2026-03-15T11:35:00Z',
+    syncStatus: 'synced',
+    objectiveResults: [
+      { questionId: 'q-1024', chosen: 'B', correct: 'B', isCorrect: true, score: 1.0 },
+      { questionId: 'q-1024-2', chosen: 'A', correct: 'A', isCorrect: true, score: 1.0 },
+      { questionId: 'q-1024-3', chosen: 'C', correct: 'E', isCorrect: false, score: 0 },
+    ],
+  },
+  {
+    id: 'corr-3',
+    applicationId: 'app-2',
+    examVersionId: 'v-B',
+    versionLetter: 'B',
+    // Outra prova pendente de atribuição
+    reportedStudentName: 'Mariana Duarte Costa',
+    reportedStudentRegistration: '2024.1.092',
+    isAutomaticallyAssigned: false,
+    totalScore: 7.0,
+    maxScore: 10.0,
+    confirmedAt: '2026-03-15T11:42:00Z',
+    syncStatus: 'synced',
+    objectiveResults: [
+      { questionId: 'q-1024', chosen: 'B', correct: 'B', isCorrect: true, score: 1.0 },
+      { questionId: 'q-1024-2', chosen: 'B', correct: 'A', isCorrect: false, score: 0 },
+      { questionId: 'q-1024-3', chosen: 'E', correct: 'E', isCorrect: true, score: 1.0 },
+    ],
+  },
+];
+

@@ -93,6 +93,14 @@ export const CreateExamScreen: React.FC = () => {
   }, [questions, examDraft.selectedQuestionIds, filterDiscipline, selectedTag, searchBankQuery]);
 
   const handleAddQuestion = (qId: string) => {
+    if (examDraft.selectedQuestionIds.length >= 20) {
+      addToast({
+        type: 'warning',
+        title: 'Limite Máximo de Questões (Feature 4)',
+        message: 'A prova pode conter no máximo 20 questões conforme a especificação do SGP Católica.',
+      });
+      return;
+    }
     if (!examDraft.selectedQuestionIds.includes(qId)) {
       setExamDraft((prev) => ({
         ...prev,
@@ -1270,10 +1278,20 @@ export const CreateExamScreen: React.FC = () => {
               Voltar
             </button>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleFinishAndGenerate}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                <FileCheck className="w-4 h-4" /> Pré-visualizar Prova
+              </button>
+
+              <button
+                onClick={() => {
+                  createExamFromDraft(examDraft);
+                  setCurrentScreen('aplicacoes');
+                }}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer"
               >
                 <FileCheck className="w-4 h-4" />{' '}
                 {editId

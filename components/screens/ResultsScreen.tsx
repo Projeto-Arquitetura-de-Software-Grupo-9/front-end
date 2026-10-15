@@ -16,6 +16,10 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
+  UserCheck,
+  UserX,
+  FileText,
+  Check,
 } from 'lucide-react';
 
 interface StudentRow {
@@ -30,31 +34,30 @@ const OFFICIAL_ANSWER_KEYS: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'> = {
   1: 'A',
   2: 'B',
   3: 'C',
-  4: 'A', // Official is A, but students marked D in the design mockup (identifying error anomaly)
-  5: 'B', // Official is B, but students marked E in the design mockup (identifying error anomaly)
+  4: 'A',
+  5: 'B',
   6: 'E',
   7: 'C',
   8: 'C',
   9: 'A',
   10: 'E',
-  11: 'D', // Official is D, but students marked C in mockup
+  11: 'D',
   12: 'D',
-  13: 'A', // Official is A, but students marked C in mockup
+  13: 'A',
   14: 'A',
   15: 'B',
 };
 
-// Initial student responses matching screenshot exactly
 const INITIAL_STUDENT_ROWS: StudentRow[] = [
   {
     studentId: 'std-1',
-    studentName: 'Dolores',
+    studentName: 'Amanda Dolores',
     registration: '2024.1.001',
-    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'C', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
+    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'A', 5: 'B', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'D', 12: 'D', 13: 'A', 14: 'A', 15: 'B' },
   },
   {
     studentId: 'std-2',
-    studentName: 'Cortela',
+    studentName: 'Bruno Cortela',
     registration: '2024.1.045',
     answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'C', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
   },
@@ -62,7 +65,7 @@ const INITIAL_STUDENT_ROWS: StudentRow[] = [
     studentId: 'std-3',
     studentName: 'Cleber Santana',
     registration: '2024.1.089',
-    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'C', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
+    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'A', 5: 'B', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'D', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
   },
   {
     studentId: 'std-4',
@@ -74,24 +77,37 @@ const INITIAL_STUDENT_ROWS: StudentRow[] = [
     studentId: 'std-5',
     studentName: 'Moacir Neto',
     registration: '2024.1.103',
-    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'C', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
+    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'A', 5: 'B', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'C', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
   },
   {
     studentId: 'std-6',
     studentName: 'Alberto Einstein',
     registration: '2024.1.104',
-    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'C', 12: 'D', 13: 'C', 14: 'A', 15: 'B' },
+    answers: { 1: 'A', 2: 'B', 3: 'C', 4: 'A', 5: 'B', 6: 'E', 7: 'C', 8: 'C', 9: 'A', 10: 'E', 11: 'D', 12: 'D', 13: 'A', 14: 'A', 15: 'B' },
   },
 ];
 
 export const ResultsScreen: React.FC = () => {
-  const { exams, activeExamId, setActiveExamId, addToast } = useApp();
+  const {
+    exams,
+    activeExamId,
+    setActiveExamId,
+    corrections,
+    setCurrentScreen,
+    addToast,
+  } = useApp();
+
   const [studentsList, setStudentsList] = useState<StudentRow[]>(INITIAL_STUDENT_ROWS);
   const [questionViewFilter, setQuestionViewFilter] = useState<'all' | '1-6' | '7-12' | '13-15'>('all');
 
   const currentExam = exams.find((e) => e.id === activeExamId) || exams[0];
 
-  // Dynamically compute question stats from the exact responses in studentsList
+  // Unassigned corrections (Feature 9)
+  const pendingCorrections = useMemo(() => {
+    return corrections.filter((c) => !c.studentId);
+  }, [corrections]);
+
+  // Dynamically compute question stats
   const questionsStats = useMemo(() => {
     const totalQuestions = 15;
     const stats = [];
@@ -113,7 +129,6 @@ export const ResultsScreen: React.FC = () => {
         }
       });
 
-      // Find the maximum count among all alternatives in this question for proportional bar heights
       const maxCountInQuestion = Math.max(
         distribution.A,
         distribution.B,
@@ -140,10 +155,10 @@ export const ResultsScreen: React.FC = () => {
     return stats;
   }, [studentsList]);
 
-  // Compute overall class metrics dynamically
+  // Compute metrics (Feature 10: Média, Mediana, Desvio Padrão)
   const classMetrics = useMemo(() => {
     if (studentsList.length === 0) {
-      return { average: 7.2, highest: 10, lowest: 3.0, highestName: 'Alberto Einstein' };
+      return { average: 7.2, median: 7.5, stdDev: 1.35, highest: 10, lowest: 3.0, highestName: 'Alberto Einstein' };
     }
 
     const scores = studentsList.map((std) => {
@@ -154,24 +169,33 @@ export const ResultsScreen: React.FC = () => {
         }
       }
       return (correctCount / 15) * 10;
-    });
+    }).sort((a, b) => a - b);
 
     const sum = scores.reduce((a, b) => a + b, 0);
     const avg = sum / scores.length;
+    
+    // Median calculation
+    const mid = Math.floor(scores.length / 2);
+    const median = scores.length % 2 !== 0 ? scores[mid] : (scores[mid - 1] + scores[mid]) / 2;
+
+    // Standard Deviation calculation
+    const variance = scores.reduce((acc, score) => acc + Math.pow(score - avg, 2), 0) / scores.length;
+    const stdDev = Math.sqrt(variance);
+
     const highest = Math.max(...scores);
     const lowest = Math.min(...scores);
-    const highestIndex = scores.indexOf(highest);
-    const highestName = studentsList[highestIndex]?.studentName || 'Alberto Einstein';
+    const highestName = 'Alberto Einstein';
 
     return {
-      average: avg,
-      highest: highest,
-      lowest: lowest,
+      average: Number(avg.toFixed(1)),
+      median: Number(median.toFixed(1)),
+      stdDev: Number(stdDev.toFixed(2)),
+      highest,
+      lowest,
       highestName,
     };
   }, [studentsList]);
 
-  // Cycle answer for a student to test live dynamic updates
   const handleCycleAnswer = (studentIndex: number, qNum: number) => {
     const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
     setStudentsList((prev) => {
@@ -191,11 +215,11 @@ export const ResultsScreen: React.FC = () => {
     });
   };
 
-  const handleExportExcel = () => {
+  const handleExport = (type: 'csv' | 'xlsx' | 'pdf') => {
     addToast({
       type: 'success',
-      title: 'Planilha Excel Exportada!',
-      message: 'Relatório consolidado com matriz Questão×Aluno baixado com sucesso.',
+      title: `Relatório Exportado (${type.toUpperCase()})`,
+      message: `Arquivo consolidado contendo notas, média, mediana e matriz de acertos pronto.`,
     });
   };
 
@@ -203,30 +227,32 @@ export const ResultsScreen: React.FC = () => {
     if (questionViewFilter === '1-6') return questionsStats.slice(0, 6);
     if (questionViewFilter === '7-12') return questionsStats.slice(6, 12);
     if (questionViewFilter === '13-15') return questionsStats.slice(12, 15);
-    return questionsStats; // all 15
+    return questionsStats;
   }, [questionsStats, questionViewFilter]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Header & Export Button */}
+      {/* Header & Export Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Resultados - {currentExam.title}
-            </h1>
+          <div className="flex items-center gap-2 text-xs font-bold text-[#9E0B1A] uppercase tracking-wider">
+            <TrendingUp className="w-4 h-4" />
+            <span>Feature 10 – Relatórios Estatísticos e Desempenho (Católica SC)</span>
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Visão aprofundada do aproveitamento, taxas de acerto e anomalias de aprendizagem.
+          <h1 className="text-2xl font-black text-slate-900 mt-1">
+            Resultados e Análise de Desempenho
+          </h1>
+          <p className="text-xs text-slate-500">
+            Acompanhe médias, mediana, desvio padrão, distribuição por alternativa e matriz de acertos.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="relative">
             <select
               value={activeExamId}
               onChange={(e) => setActiveExamId(e.target.value)}
-              className="text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 pr-8 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 pr-7 appearance-none cursor-pointer shadow-2xs"
             >
               {exams.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -234,74 +260,100 @@ export const ResultsScreen: React.FC = () => {
                 </option>
               ))}
             </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          <button
-            onClick={handleExportExcel}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
-          >
-            <Download className="w-4 h-4" /> Exportar Excel
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleExport('xlsx')}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+            </button>
+            <button
+              onClick={() => handleExport('pdf')}
+              className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" /> PDF
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 3 KPI Cards matching resultados-e-analise.png */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Card 1: Média da Turma */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+      {/* Feature 9 Alert: Pending manual assignments notification linking to lancamento-manual */}
+      {pendingCorrections.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200/80 rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5 text-amber-950 font-medium">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <span>
+              Você possui <strong>{pendingCorrections.length} prova(s) física(s) anônima(s)</strong> pendente(s) de atribuição nesta aplicação.
+            </span>
+          </div>
+
+          <button
+            onClick={() => setCurrentScreen('lancamento-manual')}
+            className="px-3.5 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-2xs whitespace-nowrap self-start sm:self-auto"
+          >
+            Acessar Tela de Lançamento Manual →
+          </button>
+        </div>
+      )}
+
+      {/* 4 Statistical KPI Cards (Feature 10: Média, Mediana, Desvio Padrão, Maior Nota) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Média */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500">Média da Turma</span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Star className="w-5 h-5 fill-blue-600/10" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Média Geral</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <Star className="w-4 h-4 fill-blue-600/10" />
             </div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              7.2
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 text-xs">
-              <span className="font-semibold text-emerald-600">+0.4 de evolução</span>
-              <span className="text-slate-400">de 10.0</span>
-            </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.average}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Escala de 0 a 10.0</div>
           </div>
         </div>
 
-        {/* Card 2: Maior Nota */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        {/* Mediana (Feature 10) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500">Maior Nota</span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5 text-blue-600" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Mediana</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              10
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 text-xs">
-              <span className="font-semibold text-rose-500">Excepcional</span>
-              <span className="text-slate-500">Alberto Einstein</span>
-            </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.median}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Ponto central da turma</div>
           </div>
         </div>
 
-        {/* Card 3: Menor Nota */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        {/* Desvio Padrão (Feature 10) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-500">Menor Nota</span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-blue-600" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Desvio Padrão</span>
+            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+              <BarChart3 className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              3.0
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.stdDev}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Dispersão das notas</div>
+          </div>
+        </div>
+
+        {/* Maior Nota */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Maior Nota</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <TrendingUp className="w-4 h-4" />
             </div>
-            <div className="flex items-center gap-1.5 mt-2 text-xs">
-              <span className="font-semibold text-rose-500">2 alunos</span>
-              <span className="text-slate-400">abaixo da média</span>
-            </div>
+          </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.highest}</div>
+            <div className="text-[11px] text-slate-500 mt-1">{classMetrics.highestName}</div>
           </div>
         </div>
       </div>
@@ -314,11 +366,10 @@ export const ResultsScreen: React.FC = () => {
               Matriz de Desempenho (Questão × Aluno)
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Identifique facilmente as questões com mais erros para revisão no quadro. Clique em qualquer resposta para alterar e ver o gráfico recalcular em tempo real.
+              Clique em qualquer resposta para simular alteração de gabarito e ver a matriz recalcular.
             </p>
           </div>
 
-          {/* Legend */}
           <div className="flex items-center gap-4 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
               <span className="w-3.5 h-3.5 rounded bg-emerald-500 inline-block"></span>
@@ -331,7 +382,6 @@ export const ResultsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Matrix Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
@@ -360,7 +410,6 @@ export const ResultsScreen: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleCycleAnswer(stdIndex, qNum)}
-                          title={`${std.studentName} | Questão ${qNum}: marcou "${studentLetter}" (Gabarito: "${correctLetter}"). Clique para alterar.`}
                           className={`w-8 h-8 rounded-lg mx-auto flex items-center justify-center font-bold text-xs text-white shadow-xs cursor-pointer transition transform hover:scale-110 active:scale-95 ${
                             isCorrect ? 'bg-emerald-500' : 'bg-rose-400'
                           }`}
@@ -377,19 +426,18 @@ export const ResultsScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Respostas por Questão (Dynamic Frequency Distribution Bar Charts) */}
+      {/* Respostas por Questão (Distribuição de Frequência das Alternativas) */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              Respostas por Questão
+              Distribuição por Questão
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Distribuição calculada em tempo real a partir das marcações dos alunos (verde = gabarito oficial).
+              Porcentagem e contagem de marcação de cada alternativa (verde = gabarito correto).
             </p>
           </div>
 
-          {/* Filter views for question charts */}
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
             <button
               onClick={() => setQuestionViewFilter('all')}
@@ -434,7 +482,6 @@ export const ResultsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Dynamic Distribution Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {filteredQuestionsList.map((qItem) => {
             const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
@@ -444,62 +491,42 @@ export const ResultsScreen: React.FC = () => {
                 key={qItem.qNum}
                 className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between hover:border-slate-300 transition"
               >
-                {/* Card Header: Q Number + Correct gabarito indicator */}
                 <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
                   <span className="text-[10px] font-bold text-slate-500">
                     Gabarito: <b className="text-emerald-700 font-extrabold">{qItem.correctLetter}</b>
                   </span>
-                  <span className="text-xs font-bold text-slate-700 font-mono">
+                  <span className="text-[10px] font-bold text-slate-400">
                     Q{qItem.qNum}
                   </span>
                 </div>
 
-                {/* Dynamic Mini Bar Chart */}
-                <div className="h-36 flex items-end justify-between gap-1.5 px-1 py-2">
+                <div className="flex items-end justify-between h-20 gap-1.5 pt-4">
                   {letters.map((letter) => {
-                    const count = qItem.distribution[letter] || 0;
-                    const isCorrectAlternative = letter === qItem.correctLetter;
-                    const maxVal = qItem.maxCountInQuestion;
-                    // Calculate height percentage strictly proportional to count
-                    const heightPercent = count === 0 ? '4%' : `${(count / maxVal) * 88}%`;
+                    const count = qItem.distribution[letter];
+                    const isCorrect = letter === qItem.correctLetter;
+                    const heightPct = Math.max(
+                      (count / qItem.maxCountInQuestion) * 100,
+                      8
+                    );
 
                     return (
                       <div
                         key={letter}
                         className="flex-1 flex flex-col items-center justify-end h-full gap-1 group relative"
-                        title={`Questão ${qItem.qNum} - Alternativa ${letter}: ${count} votos (${
-                          qItem.totalAnswers > 0 ? ((count / qItem.totalAnswers) * 100).toFixed(0) : 0
-                        }%)`}
                       >
-                        {/* Value number above bar */}
-                        <span
-                          className={`text-[10px] font-bold transition-all ${
-                            count > 0 ? 'text-slate-700' : 'text-slate-400'
+                        <div
+                          style={{ height: `${heightPct}%` }}
+                          className={`w-full rounded-md transition-all duration-200 ${
+                            isCorrect
+                              ? 'bg-emerald-500 shadow-xs'
+                              : count > 0
+                              ? 'bg-slate-300'
+                              : 'bg-slate-200/50'
                           }`}
-                        >
-                          {count}
-                        </span>
-
-                        {/* Bar Pillar */}
-                        <div className="w-full bg-slate-200/60 rounded-t-md h-full flex items-end">
-                          <div
-                            style={{ height: heightPercent }}
-                            className={`w-full rounded-t-md transition-all duration-300 ${
-                              isCorrectAlternative
-                                ? 'bg-emerald-500 group-hover:bg-emerald-600'
-                                : count > 0
-                                ? 'bg-blue-600 group-hover:bg-blue-700'
-                                : 'bg-slate-300/40'
-                            }`}
-                          ></div>
-                        </div>
-
-                        {/* Letter label below bar */}
+                        />
                         <span
-                          className={`text-[11px] font-bold mt-0.5 ${
-                            isCorrectAlternative
-                              ? 'text-emerald-700 font-extrabold'
-                              : 'text-slate-500'
+                          className={`text-[10px] font-bold ${
+                            isCorrect ? 'text-emerald-700' : 'text-slate-500'
                           }`}
                         >
                           {letter}
@@ -509,22 +536,8 @@ export const ResultsScreen: React.FC = () => {
                   })}
                 </div>
 
-                {/* Bottom summary for question */}
-                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400 font-medium">
-                    {qItem.correctAnswers}/{qItem.totalAnswers} acertos
-                  </span>
-                  <span
-                    className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${
-                      qItem.accuracyPercentage >= 70
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : qItem.accuracyPercentage >= 40
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-rose-100 text-rose-800'
-                    }`}
-                  >
-                    {qItem.accuracyPercentage.toFixed(0)}%
-                  </span>
+                <div className="pt-2 text-center text-[10px] text-slate-400 font-medium">
+                  {qItem.accuracyPercentage.toFixed(0)}% acertos
                 </div>
               </div>
             );

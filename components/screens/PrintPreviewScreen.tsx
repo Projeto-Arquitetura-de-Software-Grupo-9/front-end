@@ -60,15 +60,15 @@ export const PrintPreviewScreen: React.FC = () => {
     discipline: 'Direito Constitucional',
     course: 'Direito',
     classGroup: 'Turma A',
-    semester: '2024.2',
-    institution: 'UNIVERSIDADE FEDERAL DO RIO DE JANEIRO',
-    department: 'Faculdade Nacional de Direito | Departamento de Direito Público',
-    code: '#DIR-CONST-2024.2',
-    date: '12 Mar, 2024',
+    semester: '2026.1',
+    institution: 'CATÓLICA DE SANTA CATARINA',
+    department: 'Curso de Direito | Departamento de Ciências Jurídicas',
+    code: '#CAT-DIR-2026.1',
+    date: '15 Mar, 2026',
     duration: '2 horas',
     instructions:
-      'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
-    selectedQuestionIds: ['q-1024', 'q-1025', 'q-1026', 'q-1027', 'q-1028'],
+      'Marque apenas uma alternativa por questão objetiva no cartão-resposta. Preencha completamente a bolha com caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
+    selectedQuestionIds: ['q-disc-1', 'q-1024', 'q-1024-2', 'q-1024-3'],
   };
 
   // Helper to resolve questions for a specific Caderno version (A, B, C, D)
