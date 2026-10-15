@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import { Question } from '@/lib/types';
 import { A4ExamSheet } from '@/components/common/A4ExamSheet';
@@ -20,6 +20,8 @@ import {
   Sliders,
   Settings2,
   RotateCcw,
+  ChevronDown,
+  Tag,
 } from 'lucide-react';
 
 export const CreateExamScreen: React.FC = () => {
@@ -40,6 +42,20 @@ export const CreateExamScreen: React.FC = () => {
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
   const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [showGabaritoInStep4, setShowGabaritoInStep4] = useState(false);
+  const [selectedTag, setSelectedTag] = useState<string>('Todas');
+
+  // Extract all unique tags across questions
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    questions.forEach((q) => {
+      if (q.tags && Array.isArray(q.tags)) {
+        q.tags.forEach((tag) => {
+          if (tag && tag.trim()) set.add(tag.trim());
+        });
+      }
+    });
+    return ['Todas', ...Array.from(set)];
+  }, [questions]);
 
   // Selected questions objects
   const selectedQuestions = examDraft.selectedQuestionIds
@@ -47,16 +63,24 @@ export const CreateExamScreen: React.FC = () => {
     .filter((q): q is Question => q !== undefined);
 
   // Available questions (not yet selected)
-  const availableQuestions = questions.filter((q) => {
-    const isSelected = examDraft.selectedQuestionIds.includes(q.id);
-    const matchesDisc =
-      filterDiscipline === 'Todas' || q.discipline === filterDiscipline;
-    const matchesSearch =
-      searchBankQuery === '' ||
-      q.statement.toLowerCase().includes(searchBankQuery.toLowerCase()) ||
-      q.code.toLowerCase().includes(searchBankQuery.toLowerCase());
-    return !isSelected && matchesDisc && matchesSearch;
-  });
+  const availableQuestions = useMemo(() => {
+    return questions.filter((q) => {
+      const isSelected = examDraft.selectedQuestionIds.includes(q.id);
+      const matchesDisc =
+        filterDiscipline === 'Todas' || q.discipline === filterDiscipline;
+      const matchesTag =
+        selectedTag === 'Todas' ||
+        (q.tags && Array.isArray(q.tags) && q.tags.includes(selectedTag));
+      const query = searchBankQuery.trim().toLowerCase();
+      const matchesSearch =
+        query === '' ||
+        q.statement.toLowerCase().includes(query) ||
+        q.code.toLowerCase().includes(query) ||
+        (q.topic && q.topic.toLowerCase().includes(query)) ||
+        (q.tags && Array.isArray(q.tags) && q.tags.some((t) => t.toLowerCase().includes(query)));
+      return !isSelected && matchesDisc && matchesTag && matchesSearch;
+    });
+  }, [questions, examDraft.selectedQuestionIds, filterDiscipline, selectedTag, searchBankQuery]);
 
   const handleAddQuestion = (qId: string) => {
     if (!examDraft.selectedQuestionIds.includes(qId)) {
@@ -397,21 +421,65 @@ export const CreateExamScreen: React.FC = () => {
               </div>
 
               {/* Filter Row */}
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-3">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Filtrar questões..."
+                    placeholder="Filtrar questões ou tags..."
                     value={searchBankQuery}
                     onChange={(e) => setSearchBankQuery(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
+                  {searchBankQuery && (
+                    <button
+                      onClick={() => setSearchBankQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-semibold"
+                    >
+                      Limpar
+                    </button>
+                  )}
                 </div>
-                <span className="text-xs font-semibold text-slate-600 px-3 py-2 bg-slate-100 rounded-xl border border-slate-200/70">
+
+                {/* Tag Filter Dropdown */}
+                <div className="relative flex-shrink-0">
+                  <select
+                    value={selectedTag}
+                    onChange={(e) => setSelectedTag(e.target.value)}
+                    className="w-full sm:w-auto text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 pr-8 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition"
+                  >
+                    {availableTags.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag === 'Todas' ? 'Etiquetas: Todas' : `Tag: ${tag}`}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                <span className="text-xs font-semibold text-slate-600 px-3 py-2 bg-slate-100 rounded-xl border border-slate-200/70 whitespace-nowrap text-center">
                   {examDraft.discipline}
                 </span>
               </div>
+
+              {/* Active tag indicator */}
+              {selectedTag !== 'Todas' && (
+                <div className="flex items-center gap-1.5 mb-3">
+                  <span className="text-[11px] text-slate-400">Filtrando por:</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/60">
+                    <Tag className="w-3 h-3 text-blue-500" />
+                    {selectedTag}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTag('Todas')}
+                      className="ml-1 hover:text-blue-900 cursor-pointer text-xs leading-none"
+                      title="Limpar filtro de etiqueta"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                </div>
+              )}
 
               {/* Available Question Cards */}
               <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
@@ -425,10 +493,51 @@ export const CreateExamScreen: React.FC = () => {
                       key={q.id}
                       className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300 transition space-y-2.5"
                     >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {q.code}
+                        </span>
+                        {q.difficulty && (
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                              q.difficulty === 'Fácil'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : q.difficulty === 'Médio'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-red-50 text-red-700'
+                            }`}
+                          >
+                            {q.difficulty}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs font-medium text-slate-800 leading-snug">
                         {q.statement}
                       </p>
-                      <div className="flex items-center justify-between">
+
+                      {/* Question tags */}
+                      {q.tags && q.tags.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                          {q.tags.map((tag) => (
+                            <button
+                              type="button"
+                              key={tag}
+                              onClick={() => setSelectedTag(tag === selectedTag ? 'Todas' : tag)}
+                              className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md border transition cursor-pointer ${
+                                selectedTag === tag
+                                  ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                              }`}
+                              title={`Filtrar por ${tag}`}
+                            >
+                              <Tag className="w-2.5 h-2.5" />
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1">
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-100/70 text-blue-700">
                           {q.discipline}
                         </span>

@@ -4,7 +4,6 @@ import React from 'react';
 import { useApp } from '@/context/AppContext';
 import { ScreenType } from '@/lib/types';
 import {
-  LayoutGrid,
   Folder,
   Plus,
   FileText,
@@ -20,7 +19,6 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', label: 'Painel de Controle', icon: LayoutGrid },
   { id: 'banco-questoes', label: 'Banco de Questões', icon: Folder },
   { id: 'criar-prova', label: 'Criar Prova', icon: Plus },
   { id: 'folha-respostas', label: 'Folha de Respostas', icon: FileText },
@@ -33,7 +31,7 @@ export const Sidebar: React.FC = () => {
   const { currentScreen, setCurrentScreen } = useApp();
 
   return (
-    <aside className="w-56 bg-white border-r border-slate-200 flex flex-col select-none print:hidden flex-shrink-0 min-h-[calc(100vh-4rem)]">
+    <aside className="w-56 bg-white border-r border-slate-200 flex flex-col select-none print:hidden flex-shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] overflow-y-auto z-20">
       {/* Navigation Links */}
       <nav className="p-3 space-y-1">
         {NAV_ITEMS.map((item) => {
