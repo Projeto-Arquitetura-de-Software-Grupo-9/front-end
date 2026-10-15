@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { CreateExamScreen } from '@/components/screens/CreateExamScreen';
 
 export const metadata = {
@@ -6,5 +7,15 @@ export const metadata = {
 };
 
 export default function NewExamPage() {
-  return <CreateExamScreen />;
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-xs font-semibold text-slate-500">
+          Carregando assistente de provas...
+        </div>
+      }
+    >
+      <CreateExamScreen />
+    </Suspense>
+  );
 }

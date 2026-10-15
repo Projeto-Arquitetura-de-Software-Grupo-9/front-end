@@ -16,10 +16,12 @@ import {
   Calendar,
   ChevronRight,
   BookOpen,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 
 export const ExamsListScreen: React.FC = () => {
-  const { exams, searchQuery, setSearchQuery } = useApp();
+  const { exams, searchQuery, setSearchQuery, deleteExam, duplicateExam, resetExamDraft } = useApp();
   const [statusFilter, setStatusFilter] = useState<'Todos' | 'Corrigida' | 'Pendente' | 'Em Andamento'>('Todos');
   const [disciplineFilter, setDisciplineFilter] = useState<string>('Todas');
 
@@ -60,6 +62,7 @@ export const ExamsListScreen: React.FC = () => {
 
         <Link
           href="/provas/new"
+          onClick={() => resetExamDraft()}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" /> Criar Nova Prova
@@ -158,10 +161,39 @@ export const ExamsListScreen: React.FC = () => {
       {/* Clean Exams List */}
       <div className="space-y-3">
         {filteredExams.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 p-10 text-center space-y-2">
-            <FileText className="w-8 h-8 text-slate-300 mx-auto" />
-            <h3 className="text-sm font-bold text-slate-800">Nenhuma avaliação encontrada</h3>
-            <p className="text-xs text-slate-500">Tente ajustar seus filtros ou busca.</p>
+          <div className="bg-white rounded-xl border border-slate-200 p-10 text-center space-y-3">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">
+                {exams.length === 0 ? 'Nenhuma avaliação cadastrada' : 'Nenhuma avaliação encontrada'}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {exams.length === 0
+                  ? 'Crie sua primeira prova para gerar cadernos A4 e folhas de respostas OMR.'
+                  : 'Tente ajustar seus filtros ou termos de busca.'}
+              </p>
+            </div>
+            {exams.length === 0 ? (
+              <Link
+                href="/provas/new"
+                onClick={() => resetExamDraft()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> Criar Minha Primeira Prova
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter('Todos');
+                  setDisciplineFilter('Todas');
+                  setSearchQuery('');
+                }}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
+              >
+                Limpar Filtros
+              </button>
+            )}
           </div>
         ) : (
           filteredExams.map((exam) => (
@@ -216,10 +248,10 @@ export const ExamsListScreen: React.FC = () => {
               </div>
 
               {/* Action Buttons: Clean & Focused (1 Primary + 1 Secondary + Subtle Icon Actions) */}
-              <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+              <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
                 <Link
                   href={`/provas/${exam.id}?p=caderno`}
-                  className="inline-flex items-center gap-1 px-3.5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg transition shadow-xs"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg transition shadow-xs"
                   title="Abrir Caderno de Prova A4"
                 >
                   <span>Caderno A4</span>
@@ -228,30 +260,54 @@ export const ExamsListScreen: React.FC = () => {
 
                 <Link
                   href={`/provas/${exam.id}?p=folha`}
-                  className="inline-flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
                   title="Abrir Folha de Respostas OMR"
                 >
                   <FileText className="w-3.5 h-3.5 text-slate-500" />
                   <span>Folha OMR</span>
                 </Link>
 
-                {exam.status === 'Corrigida' ? (
-                  <Link
-                    href={`/resultados?examId=${exam.id}`}
-                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                    title="Ver Resultados"
-                  >
-                    <TrendingUp className="w-4 h-4 text-emerald-600" />
-                  </Link>
-                ) : (
+                <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 ml-0.5">
                   <Link
                     href={`/provas/new?edit=${exam.id}`}
-                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                    title="Editar Prova"
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                    title="Editar Avaliação"
                   >
-                    <Edit3 className="w-4 h-4" />
+                    <Edit3 className="w-3.5 h-3.5" />
                   </Link>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => duplicateExam(exam.id)}
+                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                    title="Duplicar Avaliação"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Deseja realmente excluir a prova "${exam.title}"?`)) {
+                        deleteExam(exam.id);
+                      }
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                    title="Excluir Avaliação"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {exam.status === 'Corrigida' && (
+                    <Link
+                      href={`/resultados?examId=${exam.id}`}
+                      className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                      title="Ver Resultados"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                    </Link>
+                  )}
+                </div>
               </div>
             </div>
           ))

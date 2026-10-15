@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { Question } from '@/lib/types';
+import { Question, Exam } from '@/lib/types';
 import { A4ExamSheet } from '@/components/common/A4ExamSheet';
 import {
   GripVertical,
@@ -26,6 +27,9 @@ import {
 } from 'lucide-react';
 
 export const CreateExamScreen: React.FC = () => {
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('edit');
+
   const {
     questions,
     examDraft,
@@ -33,12 +37,28 @@ export const CreateExamScreen: React.FC = () => {
     examWizardStep,
     setExamWizardStep,
     createExamFromDraft,
+    updateExam,
+    loadExamToDraft,
+    resetExamDraft,
     setCurrentScreen,
     navigateToPreview,
     navigateToFolha,
     students,
     addToast,
   } = useApp();
+
+  // Reset or load draft depending on whether editing or creating new
+  useEffect(() => {
+    if (editId) {
+      loadExamToDraft(editId);
+    } else {
+      if (examDraft.id) {
+        resetExamDraft();
+      } else {
+        setExamWizardStep(1);
+      }
+    }
+  }, [editId]);
 
   const [searchBankQuery, setSearchBankQuery] = useState('');
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
@@ -108,7 +128,69 @@ export const CreateExamScreen: React.FC = () => {
     });
   };
 
+  const handleAdvanceFromStep1 = () => {
+    if (!examDraft.title.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Título Obrigatório',
+        message: 'Por favor, informe o título da avaliação.',
+      });
+      return;
+    }
+    if (!examDraft.discipline.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Disciplina Obrigatória',
+        message: 'Por favor, informe a disciplina da avaliação.',
+      });
+      return;
+    }
+    setExamWizardStep(2);
+  };
+
+  const handleAdvanceFromStep2 = () => {
+    if (examDraft.selectedQuestionIds.length === 0) {
+      addToast({
+        type: 'error',
+        title: 'Selecione Questões',
+        message: 'Adicione pelo menos uma questão à prova antes de avançar.',
+      });
+      return;
+    }
+    setExamWizardStep(3);
+  };
+
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep >= 2 && !examDraft.title.trim()) {
+      addToast({
+        type: 'warning',
+        title: 'Título Obrigatório',
+        message: 'Informe o título da prova na Etapa 1 antes de avançar.',
+      });
+      return;
+    }
+    if (targetStep >= 3 && examDraft.selectedQuestionIds.length === 0) {
+      addToast({
+        type: 'warning',
+        title: 'Selecione Questões',
+        message: 'Selecione pelo menos uma questão na Etapa 2 antes de avançar.',
+      });
+      return;
+    }
+    setExamWizardStep(targetStep);
+  };
+
   const handleFinishAndGenerate = () => {
+    if (!examDraft.title.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Título Obrigatório',
+        message: 'A avaliação precisa de um título.',
+      });
+      setExamWizardStep(1);
+      return;
+    }
+
     if (examDraft.selectedQuestionIds.length === 0) {
       addToast({
         type: 'error',
@@ -119,8 +201,15 @@ export const CreateExamScreen: React.FC = () => {
       return;
     }
 
-    const created = createExamFromDraft(examDraft);
-    navigateToPreview(created.id);
+    let savedExam: Exam;
+    if (editId) {
+      savedExam = updateExam(editId, examDraft);
+    } else {
+      savedExam = createExamFromDraft(examDraft);
+    }
+
+    resetExamDraft();
+    navigateToPreview(savedExam.id);
   };
 
   return (
@@ -129,10 +218,12 @@ export const CreateExamScreen: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Criar Prova: {examDraft.title || 'Nova Avaliação'}
+            {editId ? 'Editar Prova' : 'Criar Prova'}: {examDraft.title || (editId ? 'Avaliação' : 'Nova Avaliação')}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Configure informações, selecione questões e gere variações de cadernos.
+            {editId
+              ? 'Atualize as informações, questões selecionadas e regras de cadernos da prova.'
+              : 'Configure informações, selecione questões e gere variações de cadernos.'}
           </p>
         </div>
 
@@ -148,7 +239,7 @@ export const CreateExamScreen: React.FC = () => {
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between overflow-x-auto">
         {[
           { step: 1, label: 'Informações' },
-          { step: 2, label: 'Questões (Ativo)' },
+          { step: 2, label: 'Questões' },
           { step: 3, label: 'Configurações' },
           { step: 4, label: 'Revisão' },
         ].map((item) => {
@@ -158,7 +249,7 @@ export const CreateExamScreen: React.FC = () => {
           return (
             <button
               key={item.step}
-              onClick={() => setExamWizardStep(item.step)}
+              onClick={() => handleStepClick(item.step)}
               className={`flex items-center gap-2.5 px-4 py-2 rounded-xl transition cursor-pointer text-xs font-semibold whitespace-nowrap ${
                 isCurrent
                   ? 'bg-blue-50 text-blue-700 border border-blue-200/80 shadow-xs'
@@ -329,7 +420,7 @@ export const CreateExamScreen: React.FC = () => {
 
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
-              onClick={() => setExamWizardStep(2)}
+              onClick={handleAdvanceFromStep1}
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
             >
               Avançar para Seleção de Questões <ArrowRight className="w-4 h-4" />
@@ -470,7 +561,7 @@ export const CreateExamScreen: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setExamWizardStep(3)}
+                onClick={handleAdvanceFromStep2}
                 className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
               >
                 Avançar para Configurações <ArrowRight className="w-4 h-4" />
@@ -1091,7 +1182,10 @@ export const CreateExamScreen: React.FC = () => {
                 onClick={handleFinishAndGenerate}
                 className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition cursor-pointer"
               >
-                <FileCheck className="w-4 h-4" /> Gerar Prova & Abrir Simulador Completo
+                <FileCheck className="w-4 h-4" />{' '}
+                {editId
+                  ? 'Salvar Alterações & Abrir Simulador'
+                  : 'Gerar Prova & Abrir Simulador Completo'}
               </button>
             </div>
           </div>

@@ -295,7 +295,7 @@ export const AnswerSheetScreen: React.FC = () => {
     });
   };
 
-  const examTitle = selectedExam ? selectedExam.discipline : 'Direito Constitucional';
+  const examTitle = selectedExam ? (selectedExam.title || selectedExam.discipline) : 'Direito Constitucional';
   const examCode = selectedExam ? selectedExam.code : '#DIR-CONST-2024.2';
 
   return (
