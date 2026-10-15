@@ -38,20 +38,40 @@ body {
 
 /* Print optimizations */
 @media print {
-  body {
-    background: #ffffff !important;
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
   }
   
-  .print\:hidden {
-    display: none !important;
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-
-  aside, header {
+  
+  aside, header, nav, .print\:hidden, .no-print {
     display: none !important;
   }
 
   main {
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .print\:break-after-page {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  .print\:break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 }

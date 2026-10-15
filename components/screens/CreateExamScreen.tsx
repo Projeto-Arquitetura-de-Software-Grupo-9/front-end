@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { Question } from '@/lib/types';
+import { A4ExamSheet } from '@/components/common/A4ExamSheet';
 import {
   GripVertical,
   Trash2,
@@ -37,6 +38,8 @@ export const CreateExamScreen: React.FC = () => {
 
   const [searchBankQuery, setSearchBankQuery] = useState('');
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
+  const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [showGabaritoInStep4, setShowGabaritoInStep4] = useState(false);
 
   // Selected questions objects
   const selectedQuestions = examDraft.selectedQuestionIds
@@ -688,6 +691,92 @@ export const CreateExamScreen: React.FC = () => {
             </div>
           </div>
 
+          {/* Live A4 Sheet Simulation Preview Card */}
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 p-3 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800">
+                  Pré-visualização da Folha Real (A4):
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Católica SC / Padrão OMR
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Caderno selector */}
+                <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200">
+                  {(['A', 'B', 'C', 'D'] as const)
+                    .slice(0, examDraft.numberOfVersions)
+                    .map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setPreviewCadernoInStep4(v)}
+                        className={`px-2.5 py-0.5 text-xs font-bold rounded transition cursor-pointer ${
+                          previewCadernoInStep4 === v
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Caderno {v}
+                      </button>
+                    ))}
+                </div>
+
+                {/* Toggle Gabarito */}
+                <button
+                  type="button"
+                  onClick={() => setShowGabaritoInStep4(!showGabaritoInStep4)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition cursor-pointer ${
+                    showGabaritoInStep4
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {showGabaritoInStep4 ? 'Ocultar Gabarito' : 'Ver Gabarito'}
+                </button>
+              </div>
+            </div>
+
+            {/* Simulated Drafting Table Surface */}
+            <div className="bg-slate-200/90 p-4 sm:p-8 rounded-2xl border border-slate-300 shadow-inner overflow-hidden flex justify-center">
+              <div className="origin-top scale-[0.65] sm:scale-[0.72] -my-24">
+                <A4ExamSheet
+                  exam={{
+                    title: examDraft.title || 'P1 - Avaliação Semestral',
+                    discipline: examDraft.discipline,
+                    course: examDraft.course,
+                    classGroup: examDraft.classGroup,
+                    semester: examDraft.semester,
+                    institution: examDraft.institution || 'Católica SC Centro Universitário',
+                    department: examDraft.department || 'Escola de Direito',
+                    code: '#DIR-EXAM-2024.2',
+                    date: examDraft.date,
+                    duration: examDraft.duration,
+                    instructions: examDraft.instructions,
+                  }}
+                  questions={
+                    selectedQuestions.slice(0, 3).map((q, idx) => ({
+                      id: q.id,
+                      orderIndex: idx + 1,
+                      statement: q.statement,
+                      alternatives: q.alternatives,
+                      correctAlternative: q.correctAlternative,
+                    }))
+                  }
+                  pageNumber={1}
+                  totalPages={2}
+                  versionLetter={previewCadernoInStep4}
+                  showAnswerKey={showGabaritoInStep4}
+                  showQrCode={true}
+                  includeBoxNota={true}
+                  scale={1}
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between pt-4 border-t border-slate-100">
             <button
               onClick={() => setExamWizardStep(3)}
@@ -701,7 +790,7 @@ export const CreateExamScreen: React.FC = () => {
                 onClick={handleFinishAndGenerate}
                 className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition cursor-pointer"
               >
-                <FileCheck className="w-4 h-4" /> Gerar Prova & Pré-visualizar
+                <FileCheck className="w-4 h-4" /> Gerar Prova & Abrir Simulador Completo
               </button>
             </div>
           </div>
