@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
-import { Search, Bell, User, BookOpen, FileCheck } from 'lucide-react';
+import { User } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const router = useRouter();
@@ -57,7 +57,7 @@ export const Header: React.FC = () => {
         <CorregeLogo />
       </Link>
 
-      {/* Right Controls: Search, Notifications, Profile */}
+      {/* Right Controls: Profile */}
       <div className="flex items-center gap-4 sm:gap-6">
         {/* Global Search Input */}
         <div className="relative w-64 sm:w-80">
