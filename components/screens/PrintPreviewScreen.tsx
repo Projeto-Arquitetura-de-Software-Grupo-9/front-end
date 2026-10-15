@@ -13,6 +13,7 @@ import {
   Layers,
   CheckCircle2,
   ZoomIn,
+  UserCheck,
 } from 'lucide-react';
 
 export const PrintPreviewScreen: React.FC = () => {
@@ -31,12 +32,29 @@ export const PrintPreviewScreen: React.FC = () => {
     previewPage,
     setPreviewPage,
     questions,
+    students,
     addToast,
   } = useApp();
 
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [includeBoxNota, setIncludeBoxNota] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('none');
+
+  const currentStudent =
+    selectedStudentId !== 'none'
+      ? students.find((s) => s.id === selectedStudentId) || null
+      : null;
+
+  const handleSelectStudent = (stdId: string) => {
+    setSelectedStudentId(stdId);
+    if (stdId !== 'none') {
+      const stdIdx = students.findIndex((s) => s.id === stdId);
+      const numV = (selectedExam?.numberOfVersions) || 4;
+      const assignedLetter = (['A', 'B', 'C', 'D'] as const)[stdIdx % numV];
+      setPreviewVersion(assignedLetter);
+    }
+  };
 
   const exam = selectedExam || {
     id: 'exam-default',
@@ -281,12 +299,38 @@ export const PrintPreviewScreen: React.FC = () => {
             </div>
           </div>
 
+          {/* Student Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <span className="text-xs font-semibold text-slate-500 pl-2 flex items-center gap-1">
+              <UserCheck className="w-3.5 h-3.5 text-blue-600" /> Aluno:
+            </span>
+            <select
+              value={selectedStudentId}
+              onChange={(e) => handleSelectStudent(e.target.value)}
+              className="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1 appearance-none cursor-pointer focus:outline-none"
+            >
+              <option value="none">Caderno Geral (Em Branco)</option>
+              {students.map((s, sIdx) => {
+                const numV = selectedExam?.numberOfVersions || 4;
+                const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                return (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.registration}) — Caderno {v}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           {/* Caderno Version Selector */}
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
             {(['A', 'B', 'C', 'D'] as const).map((v) => (
               <button
                 key={v}
-                onClick={() => setPreviewVersion(v)}
+                onClick={() => {
+                  setSelectedStudentId('none');
+                  setPreviewVersion(v);
+                }}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
                   previewVersion === v
                     ? 'bg-blue-600 text-white shadow-xs'
@@ -379,6 +423,11 @@ export const PrintPreviewScreen: React.FC = () => {
                 showAnswerKey={showAnswerKeyInPreview}
                 showQrCode={showQrCodeInPreview}
                 includeBoxNota={includeBoxNota}
+                student={
+                  currentStudent
+                    ? { name: currentStudent.name, registration: currentStudent.registration }
+                    : undefined
+                }
                 scale={previewZoom / 100}
               />
             </div>
@@ -398,6 +447,11 @@ export const PrintPreviewScreen: React.FC = () => {
                   showAnswerKey={showAnswerKeyInPreview}
                   showQrCode={showQrCodeInPreview}
                   includeBoxNota={includeBoxNota}
+                  student={
+                    currentStudent
+                      ? { name: currentStudent.name, registration: currentStudent.registration }
+                      : undefined
+                  }
                   scale={previewZoom / 100}
                 />
               </div>

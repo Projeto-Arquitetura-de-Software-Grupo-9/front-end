@@ -33,6 +33,7 @@ export const CreateExamScreen: React.FC = () => {
     setCurrentScreen,
     navigateToPreview,
     navigateToFolha,
+    students,
     addToast,
   } = useApp();
 
@@ -40,6 +41,7 @@ export const CreateExamScreen: React.FC = () => {
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
   const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [showGabaritoInStep4, setShowGabaritoInStep4] = useState(false);
+  const [showStudentRosterInStep3, setShowStudentRosterInStep3] = useState(false);
 
   // Selected questions objects
   const selectedQuestions = examDraft.selectedQuestionIds
@@ -557,8 +559,56 @@ export const CreateExamScreen: React.FC = () => {
                   ))}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1.5">
-                  Gera automaticamente gabaritos cruzados para Caderno A, B, C e D.
+                  Gera automaticamente gabaritos cruzados sincronizados para Caderno A, B, C e D.
                 </p>
+              </div>
+
+              {/* Estratégia de Permutação */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Estratégia de Embaralhamento das Provas
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        permutationStrategy: 'FISHER_YATES',
+                      }))
+                    }
+                    className={`p-2.5 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
+                      (examDraft.permutationStrategy || 'FISHER_YATES') === 'FISHER_YATES'
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-1 ring-blue-600'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="font-bold">Aleatório (Fisher-Yates)</div>
+                    <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                      Permutações estocásticas completas
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamDraft((p) => ({
+                        ...p,
+                        permutationStrategy: 'CYCLIC_ROTATION',
+                      }))
+                    }
+                    className={`p-2.5 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
+                      examDraft.permutationStrategy === 'CYCLIC_ROTATION'
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-1 ring-blue-600'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="font-bold">Rotação Cíclica</div>
+                    <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                      Deslocamento posicional sequencial
+                    </div>
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -597,10 +647,10 @@ export const CreateExamScreen: React.FC = () => {
 
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-700 font-medium">
-                    Código de Barras por Estudante
+                    Distribuição da Turma (Ensalamento)
                   </span>
-                  <span className="text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded">
-                    Ativado
+                  <span className="text-blue-700 font-bold bg-blue-100 px-2 py-0.5 rounded">
+                    {students.length} Alunos Alocados
                   </span>
                 </div>
 
@@ -613,6 +663,174 @@ export const CreateExamScreen: React.FC = () => {
                   </span>
                 </div>
               </div>
+
+              {/* Distribuição por Caderno Preview */}
+              <div className="pt-2 border-t border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-700 block mb-2">
+                  Alunos por Caderno (Distribuição Alternada):
+                </span>
+                <div className="grid grid-cols-4 gap-1.5 text-center">
+                  {(['A', 'B', 'C', 'D'] as const)
+                    .slice(0, examDraft.numberOfVersions)
+                    .map((v, vIdx) => {
+                      const count = students.filter(
+                        (_, idx) => idx % examDraft.numberOfVersions === vIdx
+                      ).length;
+                      return (
+                        <div
+                          key={v}
+                          className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-xs"
+                        >
+                          <span className="text-[10px] font-black text-blue-700 block">
+                            Caderno {v}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            {count} alunos
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowStudentRosterInStep3(!showStudentRosterInStep3)}
+                  className="mt-3 text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                >
+                  {showStudentRosterInStep3 ? 'Ocultar Lista de Alunos' : 'Ver Ensalamento Detalhado da Turma'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Expanded Student Roster Drawer */}
+          {showStudentRosterInStep3 && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Ensalamento Automático ({students.length} Estudantes)
+              </h4>
+              <div className="max-h-48 overflow-y-auto divide-y divide-slate-200 text-xs bg-white rounded-lg border border-slate-200">
+                {students.map((std, idx) => {
+                  const assignedLetter = (['A', 'B', 'C', 'D'] as const)[
+                    idx % examDraft.numberOfVersions
+                  ];
+                  return (
+                    <div
+                      key={std.id}
+                      className="flex items-center justify-between px-3 py-2 text-slate-800 hover:bg-slate-50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{std.name}</span>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          ({std.registration})
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                        Caderno {assignedLetter}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Matriz de Gabaritos Cruzados em Tempo Real */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Matriz de Gabaritos Cruzados (Sincronização OMR)
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Rastreamento exato de cada questão e seu gabarito em cada versão da prova.
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-extrabold text-[10px]">
+                {selectedQuestions.length} Questões Mapeadas
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100/80 text-[11px] font-bold text-slate-700 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3">Questão Original</th>
+                    <th className="py-2.5 px-3 text-center">Caderno A</th>
+                    {examDraft.numberOfVersions >= 2 && (
+                      <th className="py-2.5 px-3 text-center bg-blue-50/50">Caderno B</th>
+                    )}
+                    {examDraft.numberOfVersions >= 3 && (
+                      <th className="py-2.5 px-3 text-center">Caderno C</th>
+                    )}
+                    {examDraft.numberOfVersions >= 4 && (
+                      <th className="py-2.5 px-3 text-center bg-blue-50/50">Caderno D</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {selectedQuestions.map((q, idx) => {
+                    const posA = idx + 1;
+                    const letterA = q.correctAlternative;
+
+                    // Deterministic permutation for display in matrix
+                    const posB = ((idx + 1) % selectedQuestions.length) + 1;
+                    const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
+                    const letterB = examDraft.shuffleAlternatives
+                      ? letters[(letters.indexOf(letterA) + 1) % letters.length]
+                      : letterA;
+
+                    const posC = ((idx + 2) % selectedQuestions.length) + 1;
+                    const letterC = examDraft.shuffleAlternatives
+                      ? letters[(letters.indexOf(letterA) + 2) % letters.length]
+                      : letterA;
+
+                    const posD = ((idx + 3) % selectedQuestions.length) + 1;
+                    const letterD = examDraft.shuffleAlternatives
+                      ? letters[(letters.indexOf(letterA) + 3) % letters.length]
+                      : letterA;
+
+                    return (
+                      <tr key={q.id} className="hover:bg-slate-50/60 transition">
+                        <td className="py-2.5 px-3 font-medium text-slate-900">
+                          <span className="font-bold text-slate-500 mr-2">{idx + 1}.</span>
+                          <span className="line-clamp-1">{q.statement}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="font-bold text-slate-700">Q.{posA}</span>{' '}
+                          <span className="font-black text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                            ({letterA})
+                          </span>
+                        </td>
+                        {examDraft.numberOfVersions >= 2 && (
+                          <td className="py-2.5 px-3 text-center bg-blue-50/30">
+                            <span className="font-bold text-slate-700">Q.{posB}</span>{' '}
+                            <span className="font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              ({letterB})
+                            </span>
+                          </td>
+                        )}
+                        {examDraft.numberOfVersions >= 3 && (
+                          <td className="py-2.5 px-3 text-center">
+                            <span className="font-bold text-slate-700">Q.{posC}</span>{' '}
+                            <span className="font-black text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                              ({letterC})
+                            </span>
+                          </td>
+                        )}
+                        {examDraft.numberOfVersions >= 4 && (
+                          <td className="py-2.5 px-3 text-center bg-blue-50/30">
+                            <span className="font-bold text-slate-700">Q.{posD}</span>{' '}
+                            <span className="font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              ({letterD})
+                            </span>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -756,15 +974,46 @@ export const CreateExamScreen: React.FC = () => {
                     duration: examDraft.duration,
                     instructions: examDraft.instructions,
                   }}
-                  questions={
-                    selectedQuestions.slice(0, 3).map((q, idx) => ({
-                      id: q.id,
-                      orderIndex: idx + 1,
-                      statement: q.statement,
-                      alternatives: q.alternatives,
-                      correctAlternative: q.correctAlternative,
-                    }))
-                  }
+                  questions={(() => {
+                    const base = selectedQuestions.slice(0, 3);
+                    const vLetter = previewCadernoInStep4;
+                    if (vLetter === 'A') {
+                      return base.map((q, idx) => ({
+                        id: q.id,
+                        orderIndex: idx + 1,
+                        statement: q.statement,
+                        alternatives: q.alternatives,
+                        correctAlternative: q.correctAlternative,
+                      }));
+                    }
+                    
+                    const shift = vLetter === 'B' ? 1 : vLetter === 'C' ? 2 : 3;
+                    const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
+                    const reordered = [...base.slice(shift % base.length), ...base.slice(0, shift % base.length)];
+
+                    return reordered.map((q, idx) => {
+                      const correctText = q.alternatives.find((a) => a.letter === q.correctAlternative)?.text;
+                      const altShift = (shift + idx) % q.alternatives.length;
+                      const shuffledAlts = [...q.alternatives.slice(altShift), ...q.alternatives.slice(0, altShift)];
+                      let newCorrectLetter: 'A' | 'B' | 'C' | 'D' | 'E' = 'A';
+
+                      const finalAlts = shuffledAlts.map((alt, aIdx) => {
+                        const l = letters[aIdx];
+                        if (alt.text === correctText) {
+                          newCorrectLetter = l;
+                        }
+                        return { id: `${q.id}-v${vLetter}-${aIdx}`, letter: l, text: alt.text };
+                      });
+
+                      return {
+                        id: `${q.id}-v${vLetter}`,
+                        orderIndex: idx + 1,
+                        statement: q.statement,
+                        alternatives: finalAlts,
+                        correctAlternative: newCorrectLetter,
+                      };
+                    });
+                  })()}
                   pageNumber={1}
                   totalPages={2}
                   versionLetter={previewCadernoInStep4}

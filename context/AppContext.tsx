@@ -41,6 +41,7 @@ interface ExamDraft {
   shuffleAlternatives: boolean;
   numberOfVersions: number;
   maxScore: number;
+  permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
 }
 
 interface AppContextType {
@@ -136,6 +137,7 @@ const DEFAULT_EXAM_DRAFT: ExamDraft = {
   shuffleAlternatives: true,
   numberOfVersions: 4,
   maxScore: 10.0,
+  permutationStrategy: 'FISHER_YATES',
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -319,6 +321,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       draft.numberOfVersions
     );
 
+    const versionLetters: ('A' | 'B' | 'C' | 'D')[] = (['A', 'B', 'C', 'D'] as const).slice(
+      0,
+      draft.numberOfVersions
+    );
+    const studentAssignments = students.map((std, idx) => ({
+      studentId: std.id,
+      studentName: std.name,
+      registration: std.registration,
+      assignedVersion: versionLetters[idx % versionLetters.length],
+    }));
+
     const newExam: Exam = {
       id: `exam-${Date.now()}`,
       code: `#${draft.discipline.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
@@ -337,10 +350,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shuffleQuestions: draft.shuffleQuestions,
       shuffleAlternatives: draft.shuffleAlternatives,
       numberOfVersions: draft.numberOfVersions,
+      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
       selectedQuestionIds: draft.selectedQuestionIds,
       versions,
+      studentAssignments,
       maxScore: draft.maxScore,
-      totalStudents: 32,
+      totalStudents: students.length > 0 ? students.length : 32,
       averageScore: 0,
     };
 
