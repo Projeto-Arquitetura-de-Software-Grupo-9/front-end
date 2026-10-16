@@ -14,11 +14,15 @@ export const NewQuestionModal: React.FC = () => {
     addQuestion,
     updateQuestion,
     questions,
+    disciplines,
+    addDiscipline,
   } = useApp();
 
   const [questionType, setQuestionType] = useState<QuestionType>('objetiva');
   const [statement, setStatement] = useState('');
   const [discipline, setDiscipline] = useState('Direito Constitucional');
+  const [isCreatingDiscipline, setIsCreatingDiscipline] = useState(false);
+  const [newDisciplineName, setNewDisciplineName] = useState('');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('Médio');
   const [topic, setTopic] = useState('');
   const [points, setPoints] = useState<number>(1.0);
@@ -304,16 +308,55 @@ export const NewQuestionModal: React.FC = () => {
           {/* Row: Discipline, Difficulty, Points/MaxScore */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Disciplina
-              </label>
-              <input
-                type="text"
-                value={discipline}
-                onChange={(e) => setDiscipline(e.target.value)}
-                placeholder="Direito Constitucional"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700">
+                  Disciplina
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingDiscipline(!isCreatingDiscipline)}
+                  className="text-[10px] font-bold text-[#9E0B1A] hover:underline cursor-pointer"
+                >
+                  {isCreatingDiscipline ? 'Selecionar' : '+ Nova'}
+                </button>
+              </div>
+              {isCreatingDiscipline ? (
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={newDisciplineName}
+                    onChange={(e) => setNewDisciplineName(e.target.value)}
+                    placeholder="Nova disciplina..."
+                    className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newDisciplineName.trim()) {
+                        const created = addDiscipline({ name: newDisciplineName.trim() });
+                        setDiscipline(created.name);
+                        setNewDisciplineName('');
+                        setIsCreatingDiscipline(false);
+                      }
+                    }}
+                    className="px-2.5 py-2 bg-[#9E0B1A] text-white rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    OK
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={discipline}
+                  onChange={(e) => setDiscipline(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
+                >
+                  {disciplines.map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>

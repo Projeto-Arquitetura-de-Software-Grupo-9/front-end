@@ -21,6 +21,9 @@ import {
 
 export const TurmasScreen: React.FC = () => {
   const {
+    disciplines,
+    addDiscipline,
+    deleteDiscipline,
     classes,
     activeClassId,
     setActiveClassId,
@@ -35,10 +38,16 @@ export const TurmasScreen: React.FC = () => {
 
   const [isNewClassModalOpen, setIsNewClassModalOpen] = useState(false);
   const [newClassName, setNewClassName] = useState('');
-  const [newClassSubject, setNewClassSubject] = useState('Direito Constitucional I');
+  const [newClassSubject, setNewClassSubject] = useState(disciplines[0]?.name || 'Direito Constitucional');
   const [newClassTerm, setNewClassTerm] = useState('2026/1');
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  // Nova Disciplina modal state
+  const [isNewDisciplineModalOpen, setIsNewDisciplineModalOpen] = useState(false);
+  const [newDiscName, setNewDiscName] = useState('');
+  const [newDiscCode, setNewDiscCode] = useState('');
+  const [newDiscCourse, setNewDiscCourse] = useState('Direito');
 
   // Quick enroll student in class
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
@@ -57,10 +66,26 @@ export const TurmasScreen: React.FC = () => {
     setTimeout(() => setCopiedCodeId(null), 3000);
   };
 
+  const handleCreateDiscipline = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDiscName.trim()) return;
+    const created = addDiscipline({
+      name: newDiscName.trim(),
+      code: newDiscCode.trim() || undefined,
+      course: newDiscCourse.trim() || 'Direito',
+    });
+    setNewClassSubject(created.name);
+    setNewDiscName('');
+    setNewDiscCode('');
+    setIsNewDisciplineModalOpen(false);
+  };
+
   const handleCreateClass = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
+    const matchedDisc = disciplines.find((d) => d.name === newClassSubject);
     const created = addClass({
+      disciplineId: matchedDisc?.id,
       name: newClassName.trim(),
       subject: newClassSubject.trim(),
       term: newClassTerm.trim(),
@@ -83,25 +108,73 @@ export const TurmasScreen: React.FC = () => {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-[#9E0B1A] uppercase tracking-wider">
-            <GraduationCap className="w-4 h-4" />
-            <span>Feature 3 – Gestão de Turmas (Católica SC)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1">
-            Minhas Turmas e Alunos
+          <h1 className="text-2xl font-black text-slate-900">
+            Minhas Turmas & Disciplinas
           </h1>
-          <p className="text-xs text-slate-500">
-            Crie turmas, compartilhe códigos de convite para auto-matrícula dos alunos e gerencie o corpo discente.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Cadastre disciplinas, crie turmas e gerencie o corpo discente.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsNewClassModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nova Turma</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <button
+            onClick={() => setIsNewDisciplineModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+          >
+            <BookOpen className="w-4 h-4 text-[#9E0B1A]" />
+            <span>Nova Disciplina</span>
+          </button>
+
+          <button
+            onClick={() => setIsNewClassModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nova Turma</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Disciplinas Cadastradas */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-[#9E0B1A]" />
+            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Disciplinas Cadastradas ({disciplines.length})
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsNewDisciplineModalOpen(true)}
+            className="text-xs font-bold text-[#9E0B1A] hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> Cadastrar Disciplina
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {disciplines.map((disc) => (
+            <div
+              key={disc.id}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 group"
+            >
+              <span className="font-mono text-[10px] font-bold text-[#9E0B1A] bg-red-50 px-1.5 py-0.5 rounded">
+                {disc.code}
+              </span>
+              <span className="font-semibold">{disc.name}</span>
+              <span className="text-[10px] text-slate-400">({disc.course})</span>
+              <button
+                type="button"
+                onClick={() => deleteDiscipline(disc.id)}
+                className="text-slate-300 hover:text-red-600 transition cursor-pointer ml-0.5"
+                title="Remover disciplina"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Grid of Classes Cards */}
@@ -295,13 +368,46 @@ export const TurmasScreen: React.FC = () => {
               <h3 className="font-bold text-slate-900 text-sm">Criar Nova Turma</h3>
               <button
                 onClick={() => setIsNewClassModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg"
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleCreateClass} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateClass} className="space-y-3.5 text-xs">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700">
+                    Selecione a Disciplina *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNewClassModalOpen(false);
+                      setIsNewDisciplineModalOpen(true);
+                    }}
+                    className="text-[11px] font-bold text-[#9E0B1A] hover:underline cursor-pointer"
+                  >
+                    + Nova Disciplina
+                  </button>
+                </div>
+                <select
+                  required
+                  value={newClassSubject}
+                  onChange={(e) => setNewClassSubject(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                >
+                  <option value="" disabled>
+                    Selecione uma disciplina...
+                  </option>
+                  {disciplines.map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name} ({d.code} • {d.course})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
                   Nome da Turma *
@@ -312,21 +418,7 @@ export const TurmasScreen: React.FC = () => {
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
                   placeholder="Ex: Turma A - Matutino"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Disciplina *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newClassSubject}
-                  onChange={(e) => setNewClassSubject(e.target.value)}
-                  placeholder="Ex: Direito Constitucional I"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
                 />
               </div>
 
@@ -340,27 +432,104 @@ export const TurmasScreen: React.FC = () => {
                   value={newClassTerm}
                   onChange={(e) => setNewClassTerm(e.target.value)}
                   placeholder="Ex: 2026/1"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
                 />
               </div>
-
-              <p className="text-[11px] text-slate-400 bg-slate-50 p-2.5 rounded-xl">
-                💡 Um <strong>código de convite único</strong> será gerado automaticamente para que seus alunos se matriculem sozinhos.
-              </p>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsNewClassModalOpen(false)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold"
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#9E0B1A] text-white font-bold rounded-xl"
+                  className="px-4 py-2 bg-[#9E0B1A] text-white font-bold rounded-xl cursor-pointer"
                 >
                   Criar Turma
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nova Disciplina */}
+      {isNewDisciplineModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-[#9E0B1A]" />
+                <h3 className="font-bold text-slate-900 text-sm">Cadastrar Nova Disciplina</h3>
+              </div>
+              <button
+                onClick={() => setIsNewDisciplineModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDiscipline} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Nome da Disciplina *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newDiscName}
+                  onChange={(e) => setNewDiscName(e.target.value)}
+                  placeholder="Ex: Direito Cibernético"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Código (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newDiscCode}
+                    onChange={(e) => setNewDiscCode(e.target.value)}
+                    placeholder="Ex: DIR-801"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Curso
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newDiscCourse}
+                    onChange={(e) => setNewDiscCourse(e.target.value)}
+                    placeholder="Ex: Direito"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsNewDisciplineModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#9E0B1A] text-white font-bold rounded-xl cursor-pointer"
+                >
+                  Salvar Disciplina
                 </button>
               </div>
             </form>

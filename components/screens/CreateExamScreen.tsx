@@ -46,7 +46,13 @@ export const CreateExamScreen: React.FC = () => {
     navigateToFolha,
     students,
     addToast,
+    disciplines,
+    addDiscipline,
+    classes,
   } = useApp();
+
+  const [isCreatingDiscipline, setIsCreatingDiscipline] = useState(false);
+  const [newDisciplineName, setNewDisciplineName] = useState('');
 
   // Reset or load draft depending on whether editing or creating new
   useEffect(() => {
@@ -69,14 +75,17 @@ export const CreateExamScreen: React.FC = () => {
   const [showStudentRosterInStep3, setShowStudentRosterInStep3] = useState(false);
   const [isCrossMatrixExpanded, setIsCrossMatrixExpanded] = useState(false);
 
+  // Extract all unique tags across questions
   const availableTags = useMemo(() => {
-    const tagsSet = new Set<string>();
+    const set = new Set<string>();
     questions.forEach((q) => {
       if (q.tags && Array.isArray(q.tags)) {
-        q.tags.forEach((t) => tagsSet.add(t));
+        q.tags.forEach((tag) => {
+          if (tag && tag.trim()) set.add(tag.trim());
+        });
       }
     });
-    return ['Todas', ...Array.from(tagsSet)];
+    return ['Todas', ...Array.from(set)];
   }, [questions]);
 
   // Selected questions objects
@@ -332,18 +341,57 @@ export const CreateExamScreen: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                 Disciplina
-              </label>
-              <input
-                type="text"
-                value={examDraft.discipline}
-                onChange={(e) =>
-                  setExamDraft((p) => ({ ...p, discipline: e.target.value }))
-                }
-                placeholder="Ex: Direito Constitucional"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Disciplina
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingDiscipline(!isCreatingDiscipline)}
+                  className="text-[11px] font-bold text-[#9E0B1A] hover:underline cursor-pointer"
+                >
+                  {isCreatingDiscipline ? 'Selecionar existente' : '+ Nova Disciplina'}
+                </button>
+              </div>
+              {isCreatingDiscipline ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newDisciplineName}
+                    onChange={(e) => setNewDisciplineName(e.target.value)}
+                    placeholder="Nome da nova disciplina..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newDisciplineName.trim()) {
+                        const created = addDiscipline({ name: newDisciplineName.trim(), course: examDraft.course });
+                        setExamDraft((p) => ({ ...p, discipline: created.name }));
+                        setNewDisciplineName('');
+                        setIsCreatingDiscipline(false);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    Criar
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={examDraft.discipline}
+                  onChange={(e) =>
+                    setExamDraft((p) => ({ ...p, discipline: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
+                >
+                  {disciplines.map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name} ({d.code})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
@@ -366,15 +414,26 @@ export const CreateExamScreen: React.FC = () => {
                 Turma / Semestre
               </label>
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
+                <select
                   value={examDraft.classGroup}
-                  onChange={(e) =>
-                    setExamDraft((p) => ({ ...p, classGroup: e.target.value }))
-                  }
-                  placeholder="Turma A"
+                  onChange={(e) => {
+                    const selectedName = e.target.value;
+                    const foundClass = classes.find((c) => c.name === selectedName);
+                    setExamDraft((p) => ({
+                      ...p,
+                      classGroup: selectedName,
+                      discipline: foundClass ? foundClass.subject : p.discipline,
+                      semester: foundClass ? foundClass.term : p.semester,
+                    }));
+                  }}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
-                />
+                >
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name} — {c.subject}
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="text"
                   value={examDraft.semester}
@@ -1290,20 +1349,10 @@ export const CreateExamScreen: React.FC = () => {
               Voltar
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={handleFinishAndGenerate}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                <FileCheck className="w-4 h-4" /> Pré-visualizar Prova
-              </button>
-
-              <button
-                onClick={() => {
-                  createExamFromDraft(examDraft);
-                  setCurrentScreen('aplicacoes');
-                }}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-md shadow-red-950/20 transition cursor-pointer"
               >
                 <FileCheck className="w-4 h-4" />{' '}
                 {editId

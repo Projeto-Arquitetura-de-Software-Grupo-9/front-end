@@ -18,6 +18,7 @@ import {
   BookOpen,
   Copy,
   Trash2,
+  ClipboardCheck,
 } from 'lucide-react';
 
 export const ExamsListScreen: React.FC = () => {
@@ -247,8 +248,19 @@ export const ExamsListScreen: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Buttons: Clean & Focused (1 Primary + 1 Secondary + Subtle Icon Actions) */}
-              <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
+              {/* Action Buttons: Clean & Focused */}
+              <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
+                {exam.status !== 'Corrigida' && (
+                  <Link
+                    href={`/provas/${exam.id}?p=lancamento`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-lg transition"
+                    title="Lançamento Manual de Notas desta Prova"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Lançamento Manual</span>
+                  </Link>
+                )}
+
                 <Link
                   href={`/provas/${exam.id}?p=caderno`}
                   className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg transition shadow-xs"

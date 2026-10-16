@@ -22,9 +22,19 @@ export interface User {
   anonymizedAt?: string;
 }
 
+export interface Discipline {
+  id: string;
+  teacherId: string;
+  code: string; // ex: "DIR-101"
+  name: string; // ex: "Direito Constitucional"
+  course: string; // ex: "Direito"
+  createdAt: string;
+}
+
 export interface Class {
   id: string;
   teacherId: string;
+  disciplineId?: string;
   name: string;
   subject: string;
   term: string; // ex: "2026/1"
@@ -117,6 +127,7 @@ export interface Application {
   answerKeyPublished: boolean;
   publicCode: string;
   versions?: ExamVersion[];
+  assignments?: ExamAssignment[];
 }
 
 export interface ExamQuestionConfig {
@@ -132,15 +143,15 @@ export interface Exam {
   title: string; // e.g. "P1 - Cálculo I - 2024.2"
   description?: string;
   subtitle?: string;
-  institution?: string;
-  department?: string;
-  course?: string;
+  institution: string;
+  department: string;
+  course: string;
   discipline: string;
-  classGroup?: string;
-  semester?: string;
-  date?: string;
-  duration?: string;
-  instructions?: string;
+  classGroup: string;
+  semester: string;
+  date: string;
+  duration: string;
+  instructions: string;
   status: 'draft' | 'ready' | 'closed' | 'Corrigida' | 'Pendente' | 'Em Andamento';
   questionsConfig?: ExamQuestionConfig[]; // Spec model
   shuffleQuestions: boolean;
@@ -159,6 +170,13 @@ export interface Exam {
     registration: string;
     assignedVersion: 'A' | 'B' | 'C' | 'D';
   }[];
+}
+
+export interface ExamAssignment {
+  id: string;
+  examVersionId: string;
+  studentId: string;
+  qrCodePayload: string;
 }
 
 export interface Student {

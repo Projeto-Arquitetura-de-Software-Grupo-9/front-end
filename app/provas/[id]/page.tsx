@@ -6,12 +6,14 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { PrintPreviewScreen } from '@/components/screens/PrintPreviewScreen';
 import { AnswerSheetScreen } from '@/components/screens/AnswerSheetScreen';
+import { LancamentoManualScreen } from '@/components/screens/LancamentoManualScreen';
 import {
   ChevronLeft,
   FileText,
   Eye,
   Edit3,
   TrendingUp,
+  ClipboardCheck,
 } from 'lucide-react';
 
 function ExamHubContent() {
@@ -20,8 +22,9 @@ function ExamHubContent() {
   const { exams, activeExamId, setActiveExamId, selectedExam } = useApp();
 
   const id = (params?.id as string) || activeExamId;
-  const p = searchParams.get('p'); // 'folha' | 'caderno'
-  const activeTab: 'caderno' | 'folha' = p === 'folha' ? 'folha' : 'caderno';
+  const p = searchParams.get('p'); // 'folha' | 'caderno' | 'lancamento'
+  const activeTab: 'caderno' | 'folha' | 'lancamento' =
+    p === 'folha' ? 'folha' : p === 'lancamento' ? 'lancamento' : 'caderno';
 
   useEffect(() => {
     if (id && id !== activeExamId) {
@@ -102,11 +105,29 @@ function ExamHubContent() {
             <FileText className="w-4 h-4" />
             <span>Folha de Respostas (OMR)</span>
           </Link>
+
+          <Link
+            href={`/provas/${id}?p=lancamento`}
+            className={`pb-3 text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
+              activeTab === 'lancamento'
+                ? 'border-amber-600 text-amber-700 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            <span>Lançamento Manual</span>
+          </Link>
         </div>
       </div>
 
       {/* Screen Content based on ?p= query param */}
-      {activeTab === 'folha' ? <AnswerSheetScreen /> : <PrintPreviewScreen />}
+      {activeTab === 'folha' ? (
+        <AnswerSheetScreen />
+      ) : activeTab === 'lancamento' ? (
+        <LancamentoManualScreen />
+      ) : (
+        <PrintPreviewScreen />
+      )}
     </div>
   );
 }
