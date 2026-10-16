@@ -73,7 +73,7 @@ export const QrCodeGraphic: React.FC<QrCodeGraphicProps> = ({
         sem tampar nenhum módulo ou margem do código.
       */}
       {showBadge && versionLetter && (
-        <span className="mt-1.5 inline-flex items-center justify-center bg-blue-700 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full shadow-xs tracking-wider">
+        <span className="mt-1.5 inline-flex items-center justify-center bg-[#9E0B1A] text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full shadow-xs tracking-wider">
           Caderno {versionLetter}
         </span>
       )}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -24,6 +24,7 @@ import {
   RotateCcw,
   ShieldCheck,
   ChevronDown,
+  Tag,
 } from 'lucide-react';
 
 export const CreateExamScreen: React.FC = () => {
@@ -62,10 +63,21 @@ export const CreateExamScreen: React.FC = () => {
 
   const [searchBankQuery, setSearchBankQuery] = useState('');
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
+  const [selectedTag, setSelectedTag] = useState<string>('Todas');
   const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [showGabaritoInStep4, setShowGabaritoInStep4] = useState(false);
   const [showStudentRosterInStep3, setShowStudentRosterInStep3] = useState(false);
   const [isCrossMatrixExpanded, setIsCrossMatrixExpanded] = useState(false);
+
+  const availableTags = useMemo(() => {
+    const tagsSet = new Set<string>();
+    questions.forEach((q) => {
+      if (q.tags && Array.isArray(q.tags)) {
+        q.tags.forEach((t) => tagsSet.add(t));
+      }
+    });
+    return ['Todas', ...Array.from(tagsSet)];
+  }, [questions]);
 
   // Selected questions objects
   const selectedQuestions = examDraft.selectedQuestionIds
@@ -268,7 +280,7 @@ export const CreateExamScreen: React.FC = () => {
               onClick={() => handleStepClick(item.step)}
               className={`flex items-center gap-2.5 px-4 py-2 rounded-xl transition cursor-pointer text-xs font-semibold whitespace-nowrap ${
                 isCurrent
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80 shadow-xs'
+                  ? 'bg-red-50 text-[#9E0B1A] border border-red-200/80 shadow-xs'
                   : isDone
                   ? 'text-emerald-700 hover:bg-emerald-50'
                   : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
@@ -277,7 +289,7 @@ export const CreateExamScreen: React.FC = () => {
               <span
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                   isCurrent
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-[#9E0B1A] text-white'
                     : isDone
                     ? 'bg-emerald-600 text-white'
                     : 'bg-slate-200 text-slate-600'
@@ -315,13 +327,13 @@ export const CreateExamScreen: React.FC = () => {
                   setExamDraft((p) => ({ ...p, title: e.target.value }))
                 }
                 placeholder="Ex: P1 - Direito Constitucional I - Turma A"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Disciplina
+                 Disciplina
               </label>
               <input
                 type="text"
@@ -330,7 +342,7 @@ export const CreateExamScreen: React.FC = () => {
                   setExamDraft((p) => ({ ...p, discipline: e.target.value }))
                 }
                 placeholder="Ex: Direito Constitucional"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
@@ -345,7 +357,7 @@ export const CreateExamScreen: React.FC = () => {
                   setExamDraft((p) => ({ ...p, course: e.target.value }))
                 }
                 placeholder="Ex: Direito"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
@@ -361,7 +373,7 @@ export const CreateExamScreen: React.FC = () => {
                     setExamDraft((p) => ({ ...p, classGroup: e.target.value }))
                   }
                   placeholder="Turma A"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
                 />
                 <input
                   type="text"
@@ -370,7 +382,7 @@ export const CreateExamScreen: React.FC = () => {
                     setExamDraft((p) => ({ ...p, semester: e.target.value }))
                   }
                   placeholder="2024.2"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
                 />
               </div>
             </div>
@@ -386,7 +398,7 @@ export const CreateExamScreen: React.FC = () => {
                   setExamDraft((p) => ({ ...p, date: e.target.value }))
                 }
                 placeholder="12 Mar, 2024"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
@@ -401,7 +413,7 @@ export const CreateExamScreen: React.FC = () => {
                   setExamDraft((p) => ({ ...p, duration: e.target.value }))
                 }
                 placeholder="2 horas"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
@@ -415,7 +427,7 @@ export const CreateExamScreen: React.FC = () => {
                 onChange={(e) =>
                   setExamDraft((p) => ({ ...p, institution: e.target.value }))
                 }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
@@ -429,7 +441,7 @@ export const CreateExamScreen: React.FC = () => {
                 onChange={(e) =>
                   setExamDraft((p) => ({ ...p, instructions: e.target.value }))
                 }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
           </div>
@@ -437,7 +449,7 @@ export const CreateExamScreen: React.FC = () => {
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
               onClick={handleAdvanceFromStep1}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
+              className="inline-flex items-center gap-2 bg-[#9E0B1A] hover:bg-[#850916] text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
             >
               Avançar para Seleção de Questões <ArrowRight className="w-4 h-4" />
             </button>
@@ -457,7 +469,7 @@ export const CreateExamScreen: React.FC = () => {
                 </h2>
                 <button
                   onClick={handleAutoSelect}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+                  className="text-xs font-semibold text-[#9E0B1A] hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" /> Auto-selecionar
                 </button>
@@ -472,7 +484,7 @@ export const CreateExamScreen: React.FC = () => {
                     placeholder="Filtrar questões ou tags..."
                     value={searchBankQuery}
                     onChange={(e) => setSearchBankQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20"
                   />
                   {searchBankQuery && (
                     <button
@@ -489,7 +501,7 @@ export const CreateExamScreen: React.FC = () => {
                   <select
                     value={selectedTag}
                     onChange={(e) => setSelectedTag(e.target.value)}
-                    className="w-full sm:w-auto text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 pr-8 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition"
+                    className="w-full sm:w-auto text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 pr-8 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 transition"
                   >
                     {availableTags.map((tag) => (
                       <option key={tag} value={tag}>
@@ -509,13 +521,13 @@ export const CreateExamScreen: React.FC = () => {
               {selectedTag !== 'Todas' && (
                 <div className="flex items-center gap-1.5 mb-3">
                   <span className="text-[11px] text-slate-400">Filtrando por:</span>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/60">
-                    <Tag className="w-3 h-3 text-blue-500" />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-red-50 text-[#9E0B1A] border border-red-200/60">
+                    <Tag className="w-3 h-3 text-[#9E0B1A]" />
                     {selectedTag}
                     <button
                       type="button"
                       onClick={() => setSelectedTag('Todas')}
-                      className="ml-1 hover:text-blue-900 cursor-pointer text-xs leading-none"
+                      className="ml-1 hover:text-red-950 cursor-pointer text-xs leading-none"
                       title="Limpar filtro de etiqueta"
                     >
                       ✕
@@ -568,7 +580,7 @@ export const CreateExamScreen: React.FC = () => {
                               onClick={() => setSelectedTag(tag === selectedTag ? 'Todas' : tag)}
                               className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md border transition cursor-pointer ${
                                 selectedTag === tag
-                                  ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                                  ? 'bg-[#9E0B1A] text-white border-[#9E0B1A] font-semibold'
                                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
                               }`}
                               title={`Filtrar por ${tag}`}
@@ -581,12 +593,12 @@ export const CreateExamScreen: React.FC = () => {
                       )}
 
                       <div className="flex items-center justify-between pt-1">
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-100/70 text-blue-700">
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200/60">
                           {q.discipline}
                         </span>
                         <button
                           onClick={() => handleAddQuestion(q.id)}
-                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer shadow-xs"
+                          className="px-3.5 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-semibold transition cursor-pointer shadow-xs"
                         >
                           Adicionar
                         </button>
@@ -605,7 +617,7 @@ export const CreateExamScreen: React.FC = () => {
                 <h2 className="text-base font-bold text-slate-900">
                   Questões Selecionadas para esta Prova
                 </h2>
-                <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+                <span className="text-xs font-semibold text-[#9E0B1A] bg-red-50 px-2.5 py-1 rounded-full border border-red-200">
                   {selectedQuestions.length} Questões Selecionadas
                 </span>
               </div>
@@ -622,7 +634,7 @@ export const CreateExamScreen: React.FC = () => {
                   selectedQuestions.map((q, index) => (
                     <div
                       key={q.id}
-                      className="flex items-center gap-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/20 hover:border-blue-300 transition group"
+                      className="flex items-center gap-3 p-3.5 rounded-xl border border-red-200 bg-red-50/20 hover:border-red-300 transition group"
                     >
                       <div className="text-slate-400 group-hover:text-slate-600 cursor-grab">
                         <GripVertical className="w-4 h-4" />
@@ -630,7 +642,7 @@ export const CreateExamScreen: React.FC = () => {
 
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-slate-900 truncate">
-                          <span className="font-bold mr-1.5 text-blue-700">
+                          <span className="font-bold mr-1.5 text-[#9E0B1A]">
                             {index + 1}.
                           </span>
                           {q.statement}
@@ -663,7 +675,7 @@ export const CreateExamScreen: React.FC = () => {
 
               <button
                 onClick={handleAdvanceFromStep2}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
               >
                 Avançar para Configurações <ArrowRight className="w-4 h-4" />
               </button>
@@ -684,7 +696,7 @@ export const CreateExamScreen: React.FC = () => {
                 Configure os cadernos, regras de embaralhamento e distribuição de alunos.
               </p>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 self-start sm:self-center">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-50 text-[#9E0B1A] border border-red-200 self-start sm:self-center">
               {selectedQuestions.length} questões selecionadas
             </span>
           </div>
@@ -707,7 +719,7 @@ export const CreateExamScreen: React.FC = () => {
                       }
                       className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                         examDraft.numberOfVersions === num
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          ? 'bg-[#9E0B1A] text-white border-[#9E0B1A] shadow-xs'
                           : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
@@ -717,7 +729,7 @@ export const CreateExamScreen: React.FC = () => {
                       <span
                         className={`text-[10px] font-normal ${
                           examDraft.numberOfVersions === num
-                            ? 'text-blue-100'
+                            ? 'text-red-100'
                             : 'text-slate-400'
                         }`}
                       >
@@ -750,7 +762,7 @@ export const CreateExamScreen: React.FC = () => {
                         shuffleQuestions: e.target.checked,
                       }))
                     }
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                    className="mt-0.5 rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-4 h-4 cursor-pointer"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-800 block">
@@ -772,7 +784,7 @@ export const CreateExamScreen: React.FC = () => {
                         shuffleAlternatives: e.target.checked,
                       }))
                     }
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                    className="mt-0.5 rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-4 h-4 cursor-pointer"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-800 block">
@@ -801,7 +813,7 @@ export const CreateExamScreen: React.FC = () => {
                     }
                     className={`p-2.5 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
                       (examDraft.permutationStrategy || 'FISHER_YATES') === 'FISHER_YATES'
-                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-1 ring-blue-600'
+                        ? 'bg-red-50 border-[#9E0B1A] text-red-950 ring-1 ring-[#9E0B1A]'
                         : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
@@ -821,7 +833,7 @@ export const CreateExamScreen: React.FC = () => {
                     }
                     className={`p-2.5 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
                       examDraft.permutationStrategy === 'CYCLIC_ROTATION'
-                        ? 'bg-blue-50 border-blue-600 text-blue-900 ring-1 ring-blue-600'
+                        ? 'bg-red-50 border-[#9E0B1A] text-red-950 ring-1 ring-[#9E0B1A]'
                         : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
@@ -850,7 +862,7 @@ export const CreateExamScreen: React.FC = () => {
                         maxScore: parseFloat(e.target.value) || 10,
                       }))
                     }
-                    className="w-28 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-28 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
                   />
                   <span className="text-xs text-slate-500 font-medium">
                     {(examDraft.maxScore / (selectedQuestions.length || 1)).toFixed(2)} pts por questão
@@ -866,7 +878,7 @@ export const CreateExamScreen: React.FC = () => {
                   <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                     Ensalamento da Turma
                   </h3>
-                  <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full">
+                  <span className="text-xs font-bold text-[#9E0B1A] bg-red-100 px-2.5 py-0.5 rounded-full">
                     {students.length} Estudantes
                   </span>
                 </div>
@@ -888,7 +900,7 @@ export const CreateExamScreen: React.FC = () => {
                           key={v}
                           className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs text-center"
                         >
-                          <span className="text-xs font-black text-blue-700 block">
+                          <span className="text-xs font-black text-[#9E0B1A] block">
                             Caderno {v}
                           </span>
                           <span className="text-sm font-extrabold text-slate-900 block mt-0.5">
@@ -941,7 +953,7 @@ export const CreateExamScreen: React.FC = () => {
                                 ({std.registration})
                               </span>
                             </div>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-800 border border-blue-200">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-red-50 text-[#9E0B1A] border border-red-200">
                               Caderno {assignedLetter}
                             </span>
                           </div>
@@ -1001,13 +1013,13 @@ export const CreateExamScreen: React.FC = () => {
                       <th className="py-2.5 px-3">Questão Original</th>
                       <th className="py-2.5 px-3 text-center">Caderno A</th>
                       {examDraft.numberOfVersions >= 2 && (
-                        <th className="py-2.5 px-3 text-center bg-blue-50/50">Caderno B</th>
+                        <th className="py-2.5 px-3 text-center bg-slate-50">Caderno B</th>
                       )}
                       {examDraft.numberOfVersions >= 3 && (
                         <th className="py-2.5 px-3 text-center">Caderno C</th>
                       )}
                       {examDraft.numberOfVersions >= 4 && (
-                        <th className="py-2.5 px-3 text-center bg-blue-50/50">Caderno D</th>
+                        <th className="py-2.5 px-3 text-center bg-slate-50">Caderno D</th>
                       )}
                     </tr>
                   </thead>
@@ -1040,12 +1052,12 @@ export const CreateExamScreen: React.FC = () => {
                           </td>
                           <td className="py-2 px-3 text-center">
                             <span className="font-semibold text-slate-600">Q.{posA}</span>{' '}
-                            <span className="font-black text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                            <span className="font-black text-[#9E0B1A] bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                               ({letterA})
                             </span>
                           </td>
                           {examDraft.numberOfVersions >= 2 && (
-                            <td className="py-2 px-3 text-center bg-blue-50/30">
+                            <td className="py-2 px-3 text-center bg-slate-50/50">
                               <span className="font-semibold text-slate-600">Q.{posB}</span>{' '}
                               <span className="font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                 ({letterB})
@@ -1061,7 +1073,7 @@ export const CreateExamScreen: React.FC = () => {
                             </td>
                           )}
                           {examDraft.numberOfVersions >= 4 && (
-                            <td className="py-2 px-3 text-center bg-blue-50/30">
+                            <td className="py-2 px-3 text-center bg-slate-50/50">
                               <span className="font-semibold text-slate-600">Q.{posD}</span>{' '}
                               <span className="font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                 ({letterD})
@@ -1088,7 +1100,7 @@ export const CreateExamScreen: React.FC = () => {
 
             <button
               onClick={() => setExamWizardStep(4)}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
             >
               Avançar para Revisão <ArrowRight className="w-4 h-4" />
             </button>
@@ -1109,7 +1121,7 @@ export const CreateExamScreen: React.FC = () => {
           </div>
 
           {/* Summary Box */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-xl bg-blue-50/60 border border-blue-100">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-xl bg-red-50/50 border border-red-200/80">
             <div>
               <span className="text-[11px] font-semibold text-slate-500 block">
                 Disciplina
@@ -1122,7 +1134,7 @@ export const CreateExamScreen: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-500 block">
                 Total de Questões
               </span>
-              <span className="text-sm font-bold text-blue-700">
+              <span className="text-sm font-bold text-[#9E0B1A]">
                 {selectedQuestions.length} questões
               </span>
             </div>
@@ -1177,7 +1189,7 @@ export const CreateExamScreen: React.FC = () => {
                         onClick={() => setPreviewCadernoInStep4(v)}
                         className={`px-2.5 py-0.5 text-xs font-bold rounded transition cursor-pointer ${
                           previewCadernoInStep4 === v
-                            ? 'bg-blue-600 text-white shadow-xs'
+                            ? 'bg-[#9E0B1A] text-white shadow-xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >

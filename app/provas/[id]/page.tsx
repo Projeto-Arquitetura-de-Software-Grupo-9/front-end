@@ -83,7 +83,7 @@ function ExamHubContent() {
             href={`/provas/${id}?p=caderno`}
             className={`pb-3 text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
               activeTab === 'caderno'
-                ? 'border-blue-600 text-blue-600 font-bold'
+                ? 'border-[#9E0B1A] text-[#9E0B1A] font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
             }`}
           >
@@ -95,7 +95,7 @@ function ExamHubContent() {
             href={`/provas/${id}?p=folha`}
             className={`pb-3 text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
               activeTab === 'folha'
-                ? 'border-blue-600 text-blue-600 font-bold'
+                ? 'border-[#9E0B1A] text-[#9E0B1A] font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
             }`}
           >

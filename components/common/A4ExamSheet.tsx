@@ -19,10 +19,10 @@ export interface A4ExamSheetProps {
   exam: {
     title: string;
     discipline: string;
-    course: string;
-    classGroup: string;
-    semester: string;
-    institution: string;
+    course?: string;
+    classGroup?: string;
+    semester?: string;
+    institution?: string;
     department?: string;
     code?: string;
     date?: string;
@@ -82,7 +82,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1 flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="inline-block w-2.5 h-2.5 bg-blue-700 rounded-xs" />
+                  <span className="inline-block w-2.5 h-2.5 bg-[#9E0B1A] rounded-xs" />
                   <h2 className="text-sm font-extrabold tracking-wide uppercase text-slate-950 leading-tight">
                     {exam.institution || 'Católica SC Centro Universitário'}
                   </h2>
@@ -93,18 +93,18 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                 </p>
 
                 <div className="text-[11px] text-slate-600 font-medium pt-0.5 leading-snug flex flex-wrap gap-x-2">
-                  <span><strong>Curso:</strong> {exam.course}</span>
+                  <span><strong>Curso:</strong> {exam.course || 'Graduação'}</span>
                   <span>•</span>
                   <span><strong>Disciplina:</strong> {exam.discipline}</span>
                   <span>•</span>
-                  <span><strong>Turma:</strong> {exam.classGroup}</span>
+                  <span><strong>Turma:</strong> {exam.classGroup || 'Turma Única'}</span>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
                   <h3 className="text-xs font-bold text-slate-900 uppercase">
-                    {exam.title} — {exam.semester}
+                    {exam.title} {exam.semester ? `— ${exam.semester}` : ''}
                   </h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-red-50 text-[#9E0B1A] border border-red-200">
                     CADERNO {versionLetter}
                   </span>
                 </div>
@@ -220,7 +220,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
               — <span className="font-semibold">{exam.title}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded">
+              <span className="px-2 py-0.5 bg-red-50 text-[#9E0B1A] text-[10px] font-bold rounded">
                 Caderno {versionLetter}
               </span>
               <span className="font-mono text-[10px] text-slate-500">
@@ -258,7 +258,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                       key={alt.id}
                       className={`flex items-start justify-between py-0.5 px-2 rounded-xs transition-colors ${
                         showHighlight
-                          ? 'bg-blue-50/80 border border-blue-200 text-blue-900 font-semibold'
+                          ? 'bg-red-50/80 border border-red-200 text-[#9E0B1A] font-semibold'
                           : 'text-slate-800 hover:bg-slate-50/50'
                       }`}
                     >

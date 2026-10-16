@@ -115,7 +115,7 @@ export const AplicacoesScreen: React.FC = () => {
               {/* Badges of Mode */}
               <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-slate-100 text-[11px]">
                 {app.withStudentIdentification ? (
-                  <span className="inline-flex items-center gap-1 font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                  <span className="inline-flex items-center gap-1 font-semibold text-[#9E0B1A] bg-red-50 px-2 py-0.5 rounded">
                     <UserCheck className="w-3 h-3" />
                     Com Identificação do Aluno (QR único)
                   </span>

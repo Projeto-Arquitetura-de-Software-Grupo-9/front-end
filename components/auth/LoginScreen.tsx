@@ -101,7 +101,7 @@ export const LoginScreen: React.FC = () => {
               onClick={() => handleTabChange('estudante')}
               className={`py-2 px-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
                 activeTab === 'estudante'
-                  ? 'bg-white text-blue-700 shadow-xs'
+                  ? 'bg-white text-[#9E0B1A] shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >

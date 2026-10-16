@@ -99,6 +99,26 @@ export interface ExamVersion {
   qrCodePayload?: string;
 }
 
+export interface Application {
+  id: string;
+  examId: string;
+  classId: string;
+  teacherId?: string;
+  title: string;
+  className: string;
+  discipline: string;
+  status: 'draft' | 'generated' | 'closed';
+  withStudentIdentification: boolean;
+  shuffleQuestions: boolean;
+  shuffleAlternatives: boolean;
+  numberOfVersions: number;
+  pdfUrl?: string;
+  createdAt: string;
+  answerKeyPublished: boolean;
+  publicCode: string;
+  versions?: ExamVersion[];
+}
+
 export interface ExamQuestionConfig {
   questionId: string;
   order: number;
@@ -132,6 +152,7 @@ export interface Exam {
   totalStudents?: number;
   averageScore?: number;
   permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
+  createdAt?: string;
   studentAssignments?: {
     studentId: string;
     studentName: string;

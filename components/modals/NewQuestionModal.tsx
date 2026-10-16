@@ -424,7 +424,7 @@ export const NewQuestionModal: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleAddAlternative}
-                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] text-[#9E0B1A] hover:text-[#850916] font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3 h-3" /> Adicionar Alternativa
                     </button>

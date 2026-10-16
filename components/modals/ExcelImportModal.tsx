@@ -139,14 +139,14 @@ export const ExcelImportModal: React.FC = () => {
         </div>
 
         {/* Dropzone Area */}
-        <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-blue-500 hover:bg-blue-50/20 transition group relative cursor-pointer">
+        <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-[#9E0B1A] hover:bg-red-50/20 transition group relative cursor-pointer">
           <input
             type="file"
             accept=".xlsx,.xls,.csv"
             onChange={handleFileUpload}
             className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
           />
-          <Upload className="w-8 h-8 text-slate-400 group-hover:text-blue-600 mx-auto mb-2 transition" />
+          <Upload className="w-8 h-8 text-slate-400 group-hover:text-[#9E0B1A] mx-auto mb-2 transition" />
           <p className="text-xs font-bold text-slate-800">
             Arraste seu arquivo Excel (.xlsx) ou clique para procurar
           </p>
@@ -161,7 +161,7 @@ export const ExcelImportModal: React.FC = () => {
                 e.stopPropagation();
                 handleLoadSample();
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[11px] rounded-lg transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-[#9E0B1A] font-semibold text-[11px] rounded-lg transition"
             >
               <Sparkles className="w-3.5 h-3.5" /> Carregar Planilha de Demonstração
             </button>
@@ -226,7 +226,7 @@ export const ExcelImportModal: React.FC = () => {
             type="button"
             disabled={previewRows.length === 0}
             onClick={handleConfirmImport}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+            className="px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] disabled:opacity-40 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
           >
             Confirmar e Importar {previewRows.length > 0 ? `(${previewRows.length})` : ''}
           </button>

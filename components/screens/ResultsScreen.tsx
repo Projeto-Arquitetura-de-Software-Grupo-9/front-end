@@ -305,8 +305,8 @@ export const ResultsScreen: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Média Geral</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Star className="w-4 h-4 fill-blue-600/10" />
+            <div className="w-8 h-8 rounded-lg bg-red-50 text-[#9E0B1A] flex items-center justify-center font-bold">
+              <Star className="w-4 h-4 fill-[#9E0B1A]/10" />
             </div>
           </div>
           <div className="mt-3">
@@ -443,7 +443,7 @@ export const ResultsScreen: React.FC = () => {
               onClick={() => setQuestionViewFilter('all')}
               className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
                 questionViewFilter === 'all'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -453,7 +453,7 @@ export const ResultsScreen: React.FC = () => {
               onClick={() => setQuestionViewFilter('1-6')}
               className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
                 questionViewFilter === '1-6'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -463,7 +463,7 @@ export const ResultsScreen: React.FC = () => {
               onClick={() => setQuestionViewFilter('7-12')}
               className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
                 questionViewFilter === '7-12'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -473,7 +473,7 @@ export const ResultsScreen: React.FC = () => {
               onClick={() => setQuestionViewFilter('13-15')}
               className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
                 questionViewFilter === '13-15'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >

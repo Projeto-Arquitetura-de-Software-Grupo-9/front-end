@@ -42,7 +42,7 @@ export const NewStudentModal: React.FC = () => {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 sm:p-8 space-y-6 animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center">
               <UserPlus className="w-5 h-5" />
             </div>
             <div>
@@ -74,7 +74,7 @@ export const NewStudentModal: React.FC = () => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex: Amanda Silva Castro"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
             />
           </div>
 
@@ -89,7 +89,7 @@ export const NewStudentModal: React.FC = () => {
                 value={registration}
                 onChange={(e) => setRegistration(e.target.value)}
                 placeholder="2024.1.001"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
 
@@ -102,7 +102,7 @@ export const NewStudentModal: React.FC = () => {
                 value={classGroup}
                 onChange={(e) => setClassGroup(e.target.value)}
                 placeholder="Turma A"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
               />
             </div>
           </div>
@@ -116,7 +116,7 @@ export const NewStudentModal: React.FC = () => {
               value={course}
               onChange={(e) => setCourse(e.target.value)}
               placeholder="Engenharia Civil"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
             />
           </div>
 
@@ -129,7 +129,7 @@ export const NewStudentModal: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="aluno@universidade.edu.br"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
             />
           </div>
 
@@ -144,7 +144,7 @@ export const NewStudentModal: React.FC = () => {
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
+              className="px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
             >
               Cadastrar Aluno
             </button>

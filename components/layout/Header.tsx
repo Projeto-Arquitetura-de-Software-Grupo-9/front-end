@@ -5,17 +5,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
-import { User, LogOut, ArrowLeftRight, GraduationCap, BookOpen, Settings } from 'lucide-react';
+import { User, LogOut, ArrowLeftRight, GraduationCap, BookOpen, Settings, Bell } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { currentUser, login, logout, setCurrentScreen } = useApp();
+  const { currentUser, login, logout, searchQuery, setSearchQuery, setCurrentScreen, setActiveExamId } = useApp();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const router = useRouter();
 
   const isStudent = currentUser.role === 'estudante';
-  const router = useRouter();
-  const { searchQuery, setSearchQuery, setCurrentScreen, setActiveExamId } = useApp();
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const notifications = [
     {
@@ -80,7 +78,7 @@ export const Header: React.FC = () => {
         >
           <ArrowLeftRight className="w-3.5 h-3.5 text-slate-500" />
           <span className="hidden md:inline">Alternar: </span>
-          <span className={isStudent ? 'text-[#9E0B1A] font-bold' : 'text-blue-700 font-bold'}>
+          <span className="text-[#9E0B1A] font-bold">
             {isStudent ? 'Ver como Professor' : 'Ver como Aluno'}
           </span>
         </button>
@@ -88,8 +86,11 @@ export const Header: React.FC = () => {
         {/* User Profile Dropdown */}
         <div className="relative">
           <button
-            onClick={() => setShowProfileMenu(!showProfileMenu)}
-            className="flex items-center gap-2.5 text-left hover:opacity-90 transition cursor-pointer p-1 rounded-xl hover:bg-slate-50"
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              setShowProfileMenu(false);
+            }}
+            className="flex items-center gap-2.5 text-left hover:opacity-90 transition cursor-pointer p-1 rounded-xl hover:bg-slate-50 relative"
           >
             <Bell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white"></span>
@@ -99,7 +100,7 @@ export const Header: React.FC = () => {
             <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl py-3 z-40 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-4 pb-2.5 border-b border-slate-100 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900">Notificações</span>
-                <span className="text-[10px] font-semibold text-blue-600 cursor-pointer hover:underline">
+                <span className="text-[10px] font-semibold text-[#9E0B1A] cursor-pointer hover:underline">
                   Marcar lidas
                 </span>
               </div>
@@ -110,7 +111,7 @@ export const Header: React.FC = () => {
                     onClick={n.action}
                     className="w-full p-3 text-left hover:bg-slate-50/80 transition flex items-start gap-2.5 cursor-pointer"
                   >
-                    <div className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 flex-shrink-0"></div>
+                    <div className="w-2 h-2 rounded-full bg-[#9E0B1A] mt-1.5 flex-shrink-0"></div>
                     <div>
                       <p className="text-xs font-semibold text-slate-800">{n.title}</p>
                       <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{n.desc}</p>
@@ -141,9 +142,7 @@ export const Header: React.FC = () => {
               </span>
             </div>
 
-            <div className={`relative w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-              isStudent ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-[#9E0B1A]'
-            }`}>
+            <div className="relative w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 bg-red-100 text-[#9E0B1A]">
               {isStudent ? (
                 <GraduationCap className="w-4 h-4" />
               ) : (
@@ -157,11 +156,7 @@ export const Header: React.FC = () => {
               <div className="px-4 py-3 border-b border-slate-100">
                 <p className="text-xs font-bold text-slate-800">{currentUser.fullName}</p>
                 <p className="text-[11px] text-slate-400 font-mono mt-0.5">{currentUser.email}</p>
-                <span className={`inline-block mt-2 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${
-                  isStudent
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'bg-red-50 text-[#9E0B1A]'
-                }`}>
+                <span className="inline-block mt-2 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A]">
                   {isStudent ? 'Estudante (@catolicasc.edu.br)' : 'Docente Titular (@catolicasc.org.br)'}
                 </span>
               </div>

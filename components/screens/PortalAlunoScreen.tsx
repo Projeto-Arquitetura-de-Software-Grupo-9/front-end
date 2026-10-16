@@ -126,7 +126,7 @@ export const PortalAlunoScreen: React.FC = () => {
 
         {/* Student identification badge */}
         <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-3.5 py-2 rounded-2xl shadow-2xs self-start sm:self-auto">
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-bold flex items-center justify-center text-xs">
+          <div className="w-8 h-8 rounded-full bg-red-100 text-[#9E0B1A] font-bold flex items-center justify-center text-xs">
             AD
           </div>
           <div className="text-left text-xs">

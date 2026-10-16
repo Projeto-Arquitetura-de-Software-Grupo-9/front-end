@@ -211,7 +211,7 @@ export const PrintPreviewScreen: React.FC = () => {
                   }}
                   className={`px-2.5 py-1 text-xs font-bold rounded-md transition cursor-pointer ${
                     previewVersion === v
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-[#9E0B1A] text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -228,7 +228,7 @@ export const PrintPreviewScreen: React.FC = () => {
               onChange={(e) => handleSelectStudent(e.target.value)}
               className={`text-xs font-bold rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none border ${
                 isBatchMode
-                  ? 'bg-blue-50 border-blue-300 text-blue-900'
+                  ? 'bg-red-50 border-red-300 text-red-950'
                   : 'bg-slate-50 border-slate-200 text-slate-800'
               }`}
             >
@@ -321,7 +321,7 @@ export const PrintPreviewScreen: React.FC = () => {
                 type="checkbox"
                 checked={includeBoxNota}
                 onChange={(e) => setIncludeBoxNota(e.target.checked)}
-                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+                className="rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
               />
               <span>Box NOTA</span>
             </label>
@@ -331,7 +331,7 @@ export const PrintPreviewScreen: React.FC = () => {
                 type="checkbox"
                 checked={showAnswerKeyInPreview}
                 onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
-                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+                className="rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
               />
               <span>Gabarito</span>
             </label>
@@ -341,7 +341,7 @@ export const PrintPreviewScreen: React.FC = () => {
                 type="checkbox"
                 checked={showQrCodeInPreview}
                 onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
-                className="rounded text-blue-600 w-3.5 h-3.5 cursor-pointer"
+                className="rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
               />
               <span>QR Code</span>
             </label>
@@ -362,7 +362,7 @@ export const PrintPreviewScreen: React.FC = () => {
             <button
               onClick={handlePrint}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs ${
-                isBatchMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-900 hover:bg-black'
+                isBatchMode ? 'bg-[#9E0B1A] hover:bg-[#850916]' : 'bg-slate-900 hover:bg-black'
               }`}
             >
               <Printer className="w-3.5 h-3.5" />
@@ -377,26 +377,26 @@ export const PrintPreviewScreen: React.FC = () => {
         <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
           {/* Batch Print Mode Banner */}
           {isBatchMode && (
-            <div className="w-full max-w-[210mm] bg-blue-50 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
+            <div className="w-full max-w-[210mm] bg-red-50 border border-red-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-[#9E0B1A] text-white flex items-center justify-center flex-shrink-0">
                   <Printer className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-blue-950 flex items-center gap-2">
+                  <div className="text-xs font-bold text-red-950 flex items-center gap-2">
                     <span>Lote de Impressão Nominal: Turma Completa</span>
-                    <span className="px-2 py-0.2 rounded bg-blue-200/70 text-blue-800 text-[10px] font-bold">
+                    <span className="px-2 py-0.2 rounded bg-red-200/70 text-[#9E0B1A] text-[10px] font-bold">
                       {students.length} Provas
                     </span>
                   </div>
-                  <p className="text-[11px] text-blue-700">
+                  <p className="text-[11px] text-red-800">
                     Provas nominais com distribuição de Cadernos A, B, C e D e quebras de página automáticas.
                   </p>
                 </div>
               </div>
               <button
                 onClick={handlePrint}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer flex-shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-bold transition cursor-pointer flex-shrink-0"
               >
                 <Printer className="w-3.5 h-3.5" /> Imprimir Todas as Provas
               </button>
@@ -422,7 +422,7 @@ export const PrintPreviewScreen: React.FC = () => {
                         ({batchItem.student.registration})
                       </span>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-bold">
+                    <span className="px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[11px] font-bold">
                       Caderno {batchItem.assignedLetter}
                     </span>
                   </div>

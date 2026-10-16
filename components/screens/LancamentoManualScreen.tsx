@@ -208,7 +208,7 @@ export const LancamentoManualScreen: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Turma Selecionada</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-lg bg-red-50 text-[#9E0B1A] flex items-center justify-center font-bold">
               <GraduationCap className="w-4 h-4" />
             </div>
           </div>
@@ -255,7 +255,7 @@ export const LancamentoManualScreen: React.FC = () => {
 
           <button
             onClick={() => setCurrentScreen('resultados')}
-            className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer pb-4"
+            className="text-xs font-bold text-[#9E0B1A] hover:text-[#850916] flex items-center gap-1 cursor-pointer pb-4"
           >
             <span>Ver Estatísticas Gerais</span>
             <ArrowRight className="w-3.5 h-3.5" />

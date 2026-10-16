@@ -104,7 +104,7 @@ export const StudentsScreen: React.FC = () => {
 
           <button
             onClick={() => setIsNewStudentModalOpen(true)}
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
+            className="inline-flex items-center gap-2 bg-[#9E0B1A] hover:bg-[#850916] text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             Novo Aluno
@@ -120,7 +120,7 @@ export const StudentsScreen: React.FC = () => {
             <select
               value={selectedDiscipline}
               onChange={(e) => setSelectedDiscipline(e.target.value)}
-              className="text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 pr-9 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 pr-9 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
             >
               {disciplines.map((d) => (
                 <option key={d} value={d}>
@@ -139,7 +139,7 @@ export const StudentsScreen: React.FC = () => {
               placeholder="Buscar por nome, matrícula ou e-mail..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
             />
           </div>
         </div>
@@ -168,7 +168,7 @@ export const StudentsScreen: React.FC = () => {
                     type="checkbox"
                     checked={isAllSelected}
                     onChange={(e) => handleSelectAll(e.target.checked)}
-                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                    className="w-4 h-4 rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] border-slate-300 cursor-pointer"
                   />
                 </th>
                 <th className="py-4 px-4 font-semibold">Nome Completo</th>
@@ -197,7 +197,7 @@ export const StudentsScreen: React.FC = () => {
                     <tr
                       key={std.id}
                       className={`hover:bg-slate-50/70 transition ${
-                        isChecked ? 'bg-blue-50/30' : ''
+                        isChecked ? 'bg-red-50/40' : ''
                       }`}
                     >
                       <td className="py-4 px-6">
@@ -205,7 +205,7 @@ export const StudentsScreen: React.FC = () => {
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleStudent(std.id)}
-                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                          className="w-4 h-4 rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] border-slate-300 cursor-pointer"
                         />
                       </td>
 

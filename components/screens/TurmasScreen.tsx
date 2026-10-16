@@ -192,7 +192,7 @@ export const TurmasScreen: React.FC = () => {
                 <h2 className="text-lg font-bold text-slate-900">
                   Alunos Matriculados em {activeClass.name}
                 </h2>
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-red-50 text-[#9E0B1A] border border-red-200/60">
                   {filteredStudents.length} alunos
                 </span>
               </div>
