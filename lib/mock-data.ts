@@ -1,4 +1,14 @@
-import { Question, Exam, Student, ExamReport, ExamVersion, Class, Application, Correction, User } from './types';
+import { Question, Exam, Student, ExamReport, ExamVersion, Class, Application, Correction, User, Discipline } from './types';
+
+export const INITIAL_DISCIPLINES: Discipline[] = [
+  { id: 'disc-1', teacherId: 'usr-prof-1', code: 'DIR-101', name: 'Direito Constitucional', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+  { id: 'disc-2', teacherId: 'usr-prof-1', code: 'DIR-202', name: 'Direito Penal', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+  { id: 'disc-3', teacherId: 'usr-prof-1', code: 'DIR-301', name: 'Direito Civil', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+  { id: 'disc-4', teacherId: 'usr-prof-1', code: 'DIR-401', name: 'Direito Administrativo', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+  { id: 'disc-5', teacherId: 'usr-prof-1', code: 'DIR-501', name: 'Direito Processual Civil', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+  { id: 'disc-6', teacherId: 'usr-prof-1', code: 'DIR-601', name: 'Direito Tributário', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+  { id: 'disc-7', teacherId: 'usr-prof-1', code: 'DIR-701', name: 'Direito do Trabalho', course: 'Direito', createdAt: '2026-02-01T08:00:00Z' },
+];
 
 export const INITIAL_QUESTIONS: Question[] = [
   {

@@ -12,6 +12,7 @@ import {
   DifficultyLevel,
   Alternative,
   Class,
+  Discipline,
   Application,
   Correction,
   User,
@@ -23,6 +24,7 @@ import {
   INITIAL_EXAMS,
   INITIAL_REPORT,
   INITIAL_CLASSES,
+  INITIAL_DISCIPLINES,
   INITIAL_APPLICATIONS,
   INITIAL_CORRECTIONS,
   CURRENT_USER,
@@ -70,6 +72,11 @@ interface AppContextType {
   // Search
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+
+  // Disciplines
+  disciplines: Discipline[];
+  addDiscipline: (data: { name: string; code?: string; course?: string }) => Discipline;
+  deleteDiscipline: (id: string) => void;
 
   // Classes (Turmas - Feature 3)
   classes: Class[];
@@ -198,7 +205,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('banco-questoes');
+  const [currentScreen, setCurrentScreenState] = useState<ScreenType>('banco-questoes');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Auth & LGPD
@@ -207,6 +214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Core Data
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
+  const [disciplines, setDisciplines] = useState<Discipline[]>(INITIAL_DISCIPLINES);
   const [classes, setClasses] = useState<Class[]>(INITIAL_CLASSES);
   const [activeClassId, setActiveClassId] = useState<string>('class-1');
   const [exams, setExams] = useState<Exam[]>(INITIAL_EXAMS);
@@ -226,7 +234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [examDraft, setExamDraft] = useState<ExamDraft>(BLANK_EXAM_DRAFT);
   const [examWizardStep, setExamWizardStep] = useState<number>(1);
 
-  // LocalStorage Persistence for Exams
+  // LocalStorage Persistence for Exams & Disciplines
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -238,8 +246,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (parsed[0]?.id) setActiveExamId(parsed[0].id);
           }
         }
+        const storedDisc = localStorage.getItem('correge_disciplines_v1');
+        if (storedDisc) {
+          const parsedDisc = JSON.parse(storedDisc);
+          if (Array.isArray(parsedDisc) && parsedDisc.length > 0) {
+            setDisciplines(parsedDisc);
+          }
+        }
       } catch (e) {
-        console.error('Failed to load exams from localStorage:', e);
+        console.error('Failed to load from localStorage:', e);
       }
     }
   }, []);
@@ -401,7 +416,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email: email || CURRENT_STUDENT_USER.email,
       });
       setIsAuthenticated(true);
-      setCurrentScreen('portal-aluno');
+      setCurrentScreenState('portal-aluno');
+      router.push('/portal-aluno');
       addToast({
         type: 'success',
         title: 'Bem-vinda, Amanda!',
@@ -413,7 +429,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email: email || CURRENT_USER.email,
       });
       setIsAuthenticated(true);
-      setCurrentScreen('banco-questoes');
+      setCurrentScreenState('banco-questoes');
+      router.push('/provas');
       addToast({
         type: 'success',
         title: 'Bem-vindo, Professor!',
@@ -428,6 +445,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'info',
       title: 'Sessão Encerrada',
       message: 'Você saiu da conta institucional.',
+    });
+  };
+
+  // Discipline operations
+  const persistDisciplines = (next: Discipline[]) => {
+    setDisciplines(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('correge_disciplines_v1', JSON.stringify(next));
+      } catch (e) {
+        console.error('Failed to save disciplines:', e);
+      }
+    }
+  };
+
+  const addDiscipline = (data: { name: string; code?: string; course?: string }): Discipline => {
+    const cleanName = data.name.trim();
+    const existing = disciplines.find((d) => d.name.toLowerCase() === cleanName.toLowerCase());
+    if (existing) return existing;
+
+    const generatedCode =
+      data.code?.trim().toUpperCase() ||
+      `${cleanName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newDisc: Discipline = {
+      id: `disc-${Date.now()}`,
+      teacherId: currentUser.id,
+      code: generatedCode,
+      name: cleanName,
+      course: data.course?.trim() || 'Direito',
+      createdAt: new Date().toISOString(),
+    };
+
+    const next = [...disciplines, newDisc];
+    persistDisciplines(next);
+    addToast({
+      type: 'success',
+      title: 'Disciplina Criada!',
+      message: `${newDisc.name} (${newDisc.code}) adicionada ao sistema.`,
+    });
+    return newDisc;
+  };
+
+  const deleteDiscipline = (id: string) => {
+    const target = disciplines.find((d) => d.id === id);
+    const next = disciplines.filter((d) => d.id !== id);
+    persistDisciplines(next);
+    addToast({
+      type: 'info',
+      title: 'Disciplina Removida',
+      message: target ? `"${target.name}" foi removida.` : 'Disciplina removida.',
     });
   };
 
@@ -867,40 +935,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Navigation helpers
+  const handleSetCurrentScreen = (screen: ScreenType) => {
+    setCurrentScreenState(screen);
+    const routeMap: Record<ScreenType, string> = {
+      'banco-questoes': '/banco-questoes',
+      'turmas': '/turmas',
+      'criar-prova': '/provas/new',
+      'aplicacoes': '/provas',
+      'folha-respostas': `/provas/${activeExamId || 'exam-1'}?p=folha`,
+      'pre-visualizacao': `/provas/${activeExamId || 'exam-1'}?p=caderno`,
+      'resultados': '/resultados',
+      'lancamento-manual': `/provas/${activeExamId || 'exam-2'}?p=lancamento`,
+      'alunos': '/alunos',
+      'portal-aluno': '/portal-aluno',
+      'configuracoes': '/configuracoes',
+    };
+    if (routeMap[screen]) {
+      router.push(routeMap[screen]);
+    }
+  };
+
   const navigateToPreview = (examId?: string) => {
     const targetId = examId || activeExamId;
     if (targetId) setActiveExamId(targetId);
-    setCurrentScreen('pre-visualizacao');
+    setCurrentScreenState('pre-visualizacao');
     if (targetId) router.push(`/provas/${targetId}?p=caderno`);
   };
 
   const navigateToResults = (examId?: string) => {
     const targetId = examId || activeExamId;
     if (targetId) setActiveExamId(targetId);
-    setCurrentScreen('resultados');
+    setCurrentScreenState('resultados');
     router.push(targetId ? `/resultados?examId=${targetId}` : '/resultados');
   };
 
   const navigateToFolha = (examId?: string) => {
     const targetId = examId || activeExamId;
     if (targetId) setActiveExamId(targetId);
-    setCurrentScreen('folha-respostas');
+    setCurrentScreenState('folha-respostas');
     if (targetId) router.push(`/provas/${targetId}?p=folha`);
   };
 
   const navigateToTurmas = () => {
-    setCurrentScreen('turmas');
+    setCurrentScreenState('turmas');
+    router.push('/turmas');
   };
 
   const navigateToAplicacoes = () => {
-    setCurrentScreen('aplicacoes');
+    setCurrentScreenState('aplicacoes');
+    router.push('/provas');
   };
 
   return (
     <AppContext.Provider
       value={{
         currentScreen,
-        setCurrentScreen,
+        setCurrentScreen: handleSetCurrentScreen,
         isAuthenticated,
         currentUser,
         login,
@@ -908,6 +998,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         anonymizeUser,
         searchQuery,
         setSearchQuery,
+        disciplines,
+        addDiscipline,
+        deleteDiscipline,
         classes,
         activeClassId,
         setActiveClassId,
@@ -928,6 +1021,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateExam,
         deleteExam,
         duplicateExam,
+        applications,
+        activeApplicationId,
+        setActiveApplicationId,
+        selectedApplication,
+        createApplication,
+        publishAnswerKey,
+        corrections,
+        assignCorrection,
         examDraft,
         setExamDraft,
         examWizardStep,

@@ -5,16 +5,24 @@ import { useApp } from '@/context/AppContext';
 import { X, UserPlus, GraduationCap } from 'lucide-react';
 
 export const NewStudentModal: React.FC = () => {
-  const { isNewStudentModalOpen, setIsNewStudentModalOpen, addStudent } = useApp();
+  const { isNewStudentModalOpen, setIsNewStudentModalOpen, addStudent, classes, disciplines } = useApp();
 
   const [name, setName] = useState('');
-  const [registration, setRegistration] = useState('2024.1.');
+  const [registration, setRegistration] = useState('2026.1.');
   const [course, setCourse] = useState('Direito');
   const [email, setEmail] = useState('');
-  const [classGroup, setClassGroup] = useState('Turma A');
-  const [discipline, setDiscipline] = useState('Direito Constitucional');
+  const [classGroup, setClassGroup] = useState(classes[0]?.name || 'Turma A');
+  const [discipline, setDiscipline] = useState(classes[0]?.subject || disciplines[0]?.name || 'Direito Constitucional');
 
   if (!isNewStudentModalOpen) return null;
+
+  const handleClassChange = (selectedClassName: string) => {
+    setClassGroup(selectedClassName);
+    const matchedClass = classes.find((c) => c.name === selectedClassName);
+    if (matchedClass) {
+      setDiscipline(matchedClass.subject);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +32,7 @@ export const NewStudentModal: React.FC = () => {
       name: name.trim(),
       registration: registration.trim(),
       course: course.trim(),
-      email: email.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@universidade.edu.br`,
+      email: email.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@catolicasc.edu.br`,
       classGroup,
       discipline,
       examsTaken: 0,
@@ -32,7 +40,7 @@ export const NewStudentModal: React.FC = () => {
     });
 
     setName('');
-    setRegistration('2024.1.');
+    setRegistration('2026.1.');
     setEmail('');
     setIsNewStudentModalOpen(false);
   };
@@ -88,36 +96,59 @@ export const NewStudentModal: React.FC = () => {
                 required
                 value={registration}
                 onChange={(e) => setRegistration(e.target.value)}
-                placeholder="2024.1.001"
+                placeholder="2026.1.001"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
             <div>
               <label className="block font-bold text-slate-700 mb-1">
-                Turma
+                Turma *
               </label>
-              <input
-                type="text"
+              <select
                 value={classGroup}
-                onChange={(e) => setClassGroup(e.target.value)}
-                placeholder="Turma A"
+                onChange={(e) => handleClassChange(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
+              >
+                {classes.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name} ({c.subject})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">
-              Curso Universitário
-            </label>
-            <input
-              type="text"
-              value={course}
-              onChange={(e) => setCourse(e.target.value)}
-              placeholder="Engenharia Civil"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                Disciplina
+              </label>
+              <select
+                value={discipline}
+                onChange={(e) => setDiscipline(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                {disciplines.map((d) => (
+                  <option key={d.id} value={d.name}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                Curso Universitário
+              </label>
+              <input
+                type="text"
+                value={course}
+                onChange={(e) => setCourse(e.target.value)}
+                placeholder="Direito"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
           </div>
 
           <div>

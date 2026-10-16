@@ -20,8 +20,8 @@ import { CorregeLogo } from '@/components/common/CorregeLogo';
 export const LoginScreen: React.FC = () => {
   const { login, addToast } = useApp();
 
-  const [activeTab, setActiveTab] = useState<UserRole | 'invite_code'>('estudante');
-  const [email, setEmail] = useState('amanda.dolores@catolicasc.edu.br');
+  const [activeTab, setActiveTab] = useState<UserRole | 'invite_code'>('professor');
+  const [email, setEmail] = useState('ricardo.silveira@catolicasc.org.br');
   const [password, setPassword] = useState('••••••••');
   const [inviteCode, setInviteCode] = useState('');
   const [studentName, setStudentName] = useState('');
@@ -88,53 +88,21 @@ export const LoginScreen: React.FC = () => {
             Sistema de Geração de Provas
           </h1>
           <p className="text-xs text-slate-400">
-            Plataforma acadêmica unificada para professores e estudantes.
+            Acesso exclusivo para docentes da instituição.
           </p>
         </div>
 
         {/* Card */}
         <div className="bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 border border-slate-100">
-          {/* Tabs Selector (Feature 1: Separado por tipo de usuário) */}
-          <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1.5 rounded-2xl text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => handleTabChange('estudante')}
-              className={`py-2 px-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
-                activeTab === 'estudante'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <GraduationCap className="w-3.5 h-3.5" />
-              <span>Sou Aluno</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleTabChange('professor')}
-              className={`py-2 px-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
-                activeTab === 'professor'
-                  ? 'bg-white text-[#9E0B1A] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>Sou Professor</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleTabChange('invite_code')}
-              className={`py-2 px-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
-                activeTab === 'invite_code'
-                  ? 'bg-white text-emerald-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Auto-matrícula via código de turma"
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              <span>Código</span>
-            </button>
+          {/* Header do Card (Acesso Docente) */}
+          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
+            <div className="w-8 h-8 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center">
+              <BookOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Acesso Docente</h2>
+              <p className="text-[11px] text-slate-500">Entre com suas credenciais institucionais</p>
+            </div>
           </div>
 
           {/* Form */}
@@ -258,7 +226,7 @@ export const LoginScreen: React.FC = () => {
 
         {/* Footer info */}
         <div className="text-center text-[11px] text-slate-400">
-          Centro Universitário Católica de Santa Catarina • Conformidade com LGPD
+          Centro Universitário Católica de Santa Catarina
         </div>
       </div>
     </div>
