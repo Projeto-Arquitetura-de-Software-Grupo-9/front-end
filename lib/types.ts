@@ -22,9 +22,19 @@ export interface User {
   anonymizedAt?: string;
 }
 
+export interface Discipline {
+  id: string;
+  teacherId: string;
+  code: string; // ex: "DIR-101"
+  name: string; // ex: "Direito Constitucional"
+  course: string; // ex: "Direito"
+  createdAt: string;
+}
+
 export interface Class {
   id: string;
   teacherId: string;
+  disciplineId?: string;
   name: string;
   subject: string;
   term: string; // ex: "2026/1"
@@ -112,15 +122,15 @@ export interface Exam {
   title: string; // e.g. "P1 - Cálculo I - 2024.2"
   description?: string;
   subtitle?: string;
-  institution?: string;
-  department?: string;
-  course?: string;
+  institution: string;
+  department: string;
+  course: string;
   discipline: string;
-  classGroup?: string;
-  semester?: string;
-  date?: string;
-  duration?: string;
-  instructions?: string;
+  classGroup: string;
+  semester: string;
+  date: string;
+  duration: string;
+  instructions: string;
   status: 'draft' | 'ready' | 'closed' | 'Corrigida' | 'Pendente' | 'Em Andamento';
   questionsConfig?: ExamQuestionConfig[]; // Spec model
   shuffleQuestions: boolean;
@@ -131,6 +141,7 @@ export interface Exam {
   maxScore: number;
   totalStudents?: number;
   averageScore?: number;
+  createdAt?: string;
   permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
   studentAssignments?: {
     studentId: string;
@@ -138,6 +149,34 @@ export interface Exam {
     registration: string;
     assignedVersion: 'A' | 'B' | 'C' | 'D';
   }[];
+}
+
+export interface ExamAssignment {
+  id: string;
+  examVersionId: string;
+  studentId: string;
+  qrCodePayload: string;
+}
+
+export interface Application {
+  id: string;
+  examId: string;
+  classId: string;
+  teacherId: string;
+  title: string;
+  className: string;
+  discipline: string;
+  status: 'draft' | 'generated' | 'closed';
+  withStudentIdentification: boolean;
+  shuffleQuestions: boolean;
+  shuffleAlternatives: boolean;
+  numberOfVersions: number;
+  pdfUrl?: string;
+  createdAt: string;
+  versions: ExamVersion[];
+  assignments?: ExamAssignment[];
+  answerKeyPublished: boolean;
+  publicCode: string;
 }
 
 export interface Student {
