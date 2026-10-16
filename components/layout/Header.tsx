@@ -8,7 +8,7 @@ import { CorregeLogo } from '@/components/common/CorregeLogo';
 import { User, LogOut, ArrowLeftRight, GraduationCap, BookOpen, Settings, Bell } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { currentUser, login, logout, setCurrentScreen, setActiveExamId } = useApp();
+  const { currentUser, login, logout, setCurrentScreen, setActiveExamId, isBackendOnline, backendUrl } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const router = useRouter();
@@ -60,6 +60,19 @@ export const Header: React.FC = () => {
         <span className="hidden sm:inline-block text-[11px] font-semibold text-slate-400 border-l border-slate-200 pl-3">
           Católica SC • SGP
         </span>
+
+        {/* Backend QAS Status Badge */}
+        <div
+          title={isBackendOnline ? `Conectado ao Backend QAS (${backendUrl})` : `Backend Offline (Modo Local)`}
+          className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition ${
+            isBackendOnline
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-amber-50 text-amber-700 border border-amber-200'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+          {isBackendOnline ? 'QAS Conectado' : 'Modo Local'}
+        </div>
       </div>
 
       {/* Right Controls: Notifications + User Profile */}

@@ -30,6 +30,7 @@ import {
   CURRENT_USER,
   CURRENT_STUDENT_USER,
 } from '@/lib/mock-data';
+import { api, API_BASE_URL } from '@/lib/api';
 
 interface Toast {
   id: string;
@@ -179,6 +180,10 @@ interface AppContextType {
   navigateToFolha: (examId?: string) => void;
   navigateToTurmas: () => void;
   navigateToAplicacoes: () => void;
+
+  // Backend QAS Connection Status
+  isBackendOnline: boolean;
+  backendUrl: string;
 }
 
 const BLANK_EXAM_DRAFT: ExamDraft = {
@@ -233,6 +238,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Exam Wizard Draft: starts cleanly on Step 1 with clean draft
   const [examDraft, setExamDraft] = useState<ExamDraft>(BLANK_EXAM_DRAFT);
   const [examWizardStep, setExamWizardStep] = useState<number>(1);
+
+  // Backend QAS Connectivity State
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
+  const [backendUrl] = useState<string>(API_BASE_URL);
+
+  // Sincronização inicial com o backend em QAS
+  useEffect(() => {
+    let isMounted = true;
+    async function syncWithBackend() {
+      try {
+        const health = await api.checkHealth();
+        if (isMounted) {
+          setIsBackendOnline(health.online);
+          if (health.online) {
+            console.log('🌐 Conectado ao backend QAS:', API_BASE_URL);
+            try {
+              const [remoteStudents, remoteDisciplines, remoteClasses] = await Promise.all([
+                api.getStudents().catch(() => []),
+                api.getDisciplinas().catch(() => []),
+                api.getTurmas().catch(() => []),
+              ]);
+              if (isMounted) {
+                if (remoteStudents.length > 0) setStudents(remoteStudents);
+                if (remoteDisciplines.length > 0) setDisciplines(remoteDisciplines);
+                if (remoteClasses.length > 0) setClasses(remoteClasses);
+              }
+            } catch (syncErr) {
+              console.warn('Sincronização parcial com QAS:', syncErr);
+            }
+          }
+        }
+      } catch (err) {
+        if (isMounted) setIsBackendOnline(false);
+      }
+    }
+    syncWithBackend();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // LocalStorage Persistence for Exams & Disciplines
   useEffect(() => {
@@ -1071,6 +1116,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         navigateToFolha,
         navigateToTurmas,
         navigateToAplicacoes,
+        isBackendOnline,
+        backendUrl,
       }}
     >
       {children}

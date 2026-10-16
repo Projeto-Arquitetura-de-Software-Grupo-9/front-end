@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { A4ExamSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
+import { api } from '@/lib/api';
 import {
   Download,
   Printer,
@@ -164,7 +165,12 @@ export const PrintPreviewScreen: React.FC = () => {
     setIsExporting(true);
     try {
       const examId = exam.id || 'exam-catolica-01';
-      const backendUrl = `http://localhost:3001/api/v1/exams/${examId}/download-pdf?versionLetter=${previewVersion}&showAnswerKey=${showAnswerKeyInPreview}&showQrCode=${showQrCodeInPreview}&includeBoxNota=${includeBoxNota}`;
+      const backendUrl = api.getExamPdfUrl(examId, {
+        versionLetter: previewVersion,
+        showAnswerKey: showAnswerKeyInPreview,
+        showQrCode: showQrCodeInPreview,
+        includeBoxNota,
+      });
 
       const response = await fetch(backendUrl);
       if (response.ok) {
