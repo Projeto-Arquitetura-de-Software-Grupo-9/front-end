@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { A4ExamSheet, A4BlankVersoSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
+import { A4AnswerSheet, A4AnswerSheetQuestion } from '@/components/common/A4AnswerSheet';
 import { api } from '@/lib/api';
 import {
   Download,
@@ -36,8 +37,9 @@ export const PrintPreviewScreen: React.FC = () => {
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [includeBoxNota, setIncludeBoxNota] = useState(true);
   const [isDuplexMode, setIsDuplexMode] = useState<boolean>(true);
+  const [includeAnswerSheet, setIncludeAnswerSheet] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState(false);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('none');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('all_students');
 
   const isBatchMode = selectedStudentId === 'all_students';
 
@@ -141,22 +143,93 @@ export const PrintPreviewScreen: React.FC = () => {
     return { totalPages, pagesData };
   };
 
-  const singleVersionQuestions = getQuestionsForVersion(previewVersion);
-  const { totalPages, pagesData } = paginateQuestions(singleVersionQuestions);
-  const needsSingleBlankVerso = isDuplexMode && totalPages % 2 !== 0;
-  const effectiveTotalPages = needsSingleBlankVerso ? totalPages + 1 : totalPages;
+  const getAnswerSheetQuestionsForVersion = (vLetter: 'A' | 'B' | 'C' | 'D'): A4AnswerSheetQuestion[] => {
+    const vQuestions = getQuestionsForVersion(vLetter);
+    return vQuestions.map((q) => ({
+      orderIndex: q.orderIndex,
+      letters:
+        q.alternatives && q.alternatives.length > 0
+          ? q.alternatives.map((a) => a.letter)
+          : ['A', 'B', 'C', 'D', 'E'],
+    }));
+  };
+
+  type SheetItem =
+    | { type: 'question'; pageNumber: number; questions: A4ExamQuestion[] }
+    | { type: 'booklet_blank_verso'; pageNumber: number }
+    | { type: 'answer_sheet'; pageNumber: number; questions: A4AnswerSheetQuestion[] }
+    | { type: 'answer_sheet_blank_verso'; pageNumber: number };
+
+  const buildStudentSheets = (
+    assignedLetter: 'A' | 'B' | 'C' | 'D'
+  ): { sheets: SheetItem[]; totalPagesCount: number } => {
+    const vQuestions = getQuestionsForVersion(assignedLetter);
+    const { pagesData } = paginateQuestions(vQuestions);
+    const numQPages = pagesData.length;
+
+    const sheets: SheetItem[] = [];
+    let curPage = 1;
+
+    // 1. Regular Question Pages
+    pagesData.forEach((p) => {
+      sheets.push({
+        type: 'question',
+        pageNumber: curPage++,
+        questions: p.questions,
+      });
+    });
+
+    if (includeAnswerSheet) {
+      // If duplex and question booklet ends on an odd page, insert blank verso
+      // so the answer sheet starts cleanly on its own fresh physical sheet
+      if (isDuplexMode && numQPages % 2 !== 0) {
+        sheets.push({
+          type: 'booklet_blank_verso',
+          pageNumber: curPage++,
+        });
+      }
+
+      // 2. Official OMR Answer Sheet
+      const ansQuestions = getAnswerSheetQuestionsForVersion(assignedLetter);
+      sheets.push({
+        type: 'answer_sheet',
+        pageNumber: curPage++,
+        questions: ansQuestions,
+      });
+
+      // 3. Verso of Answer Sheet (if duplex mode, to prevent bleeding into next student and provide draft space)
+      if (isDuplexMode) {
+        sheets.push({
+          type: 'answer_sheet_blank_verso',
+          pageNumber: curPage++,
+        });
+      }
+    } else {
+      // Only Question Booklet
+      if (isDuplexMode && numQPages % 2 !== 0) {
+        sheets.push({
+          type: 'booklet_blank_verso',
+          pageNumber: curPage++,
+        });
+      }
+    }
+
+    return { sheets, totalPagesCount: sheets.length };
+  };
+
+  const singleStudentSheets = buildStudentSheets(previewVersion);
+  const effectiveTotalPages = singleStudentSheets.totalPagesCount;
 
   const allStudentsBatch = students.map((std, stdIdx) => {
-    const numV = (selectedExam?.numberOfVersions) || 4;
+    const numV = selectedExam?.numberOfVersions || 4;
     const assignedLetter = (['A', 'B', 'C', 'D'] as const)[stdIdx % numV];
-    const stdQuestions = getQuestionsForVersion(assignedLetter);
-    const { totalPages: stdTotalPages, pagesData: stdPagesData } = paginateQuestions(stdQuestions);
+    const { sheets, totalPagesCount } = buildStudentSheets(assignedLetter);
     return {
       student: std,
       studentIndex: stdIdx,
       assignedLetter,
-      totalPages: stdTotalPages,
-      pagesData: stdPagesData,
+      sheets,
+      totalPages: totalPagesCount,
     };
   });
 
@@ -174,6 +247,7 @@ export const PrintPreviewScreen: React.FC = () => {
         showQrCode: showQrCodeInPreview,
         includeBoxNota,
         isDuplex: isDuplexMode,
+        includeAnswerSheet,
       });
 
       const response = await fetch(backendUrl);
@@ -328,6 +402,21 @@ export const PrintPreviewScreen: React.FC = () => {
           <div className="flex items-center gap-3 text-xs text-slate-600 font-medium border-l border-slate-200 pl-3">
             <label
               className="flex items-center gap-1.5 cursor-pointer select-none"
+              title="Anexar a Folha de Respostas OMR ao caderno de prova em uma única impressão"
+            >
+              <input
+                type="checkbox"
+                checked={includeAnswerSheet}
+                onChange={(e) => setIncludeAnswerSheet(e.target.checked)}
+                className="rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
+              />
+              <span className={`font-semibold ${includeAnswerSheet ? 'text-slate-900 font-bold' : 'text-slate-600'}`}>
+                Cartão-Resposta
+              </span>
+            </label>
+
+            <label
+              className="flex items-center gap-1.5 cursor-pointer select-none"
               title="Imprimir em frente e verso (duplex) com margens espelhadas e compensação de verso em branco"
             >
               <input
@@ -408,7 +497,7 @@ export const PrintPreviewScreen: React.FC = () => {
                   <Printer className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-red-950 flex items-center gap-2">
+                  <div className="text-xs font-bold text-red-950 flex flex-wrap items-center gap-2">
                     <span>Lote de Impressão Nominal: Turma Completa</span>
                     <span className="px-2 py-0.2 rounded bg-red-200/70 text-[#9E0B1A] text-[10px] font-bold">
                       {students.length} Provas
@@ -416,9 +505,14 @@ export const PrintPreviewScreen: React.FC = () => {
                     <span className="px-2 py-0.2 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
                       {isDuplexMode ? 'Frente e Verso (Duplex Ativo)' : 'Modo Simplex'}
                     </span>
+                    {includeAnswerSheet && (
+                      <span className="px-2 py-0.2 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold">
+                        Com Cartão-Resposta OMR
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-red-800">
-                    Provas nominais com distribuição de Cadernos A, B, C e D {isDuplexMode ? 'e compensação automática de verso em branco.' : 'e quebras de página automáticas.'}
+                    Provas nominais com distribuição de Cadernos A, B, C e D {includeAnswerSheet ? '+ Cartão-Resposta OMR individual' : ''} {isDuplexMode ? 'e compensação automática de verso em branco.' : 'e quebras de página automáticas.'}
                   </p>
                 </div>
               </div>
@@ -434,74 +528,119 @@ export const PrintPreviewScreen: React.FC = () => {
           {isBatchMode ? (
             /* BATCH PRINT MODE: Render all students' full exams */
             <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
-              {allStudentsBatch.map((batchItem) => {
-                const needsBlankVerso = isDuplexMode && batchItem.totalPages % 2 !== 0;
-                const studentTotalPages = needsBlankVerso ? batchItem.totalPages + 1 : batchItem.totalPages;
-
-                return (
-                  <div
-                    key={batchItem.student.id}
-                    className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
-                  >
-                    {/* Student Section Header in Preview Screen */}
-                    <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
-                      <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
-                          {batchItem.studentIndex + 1}
-                        </span>
-                        <span>{batchItem.student.name}</span>
-                        <span className="text-slate-400 font-mono text-[11px]">
-                          ({batchItem.student.registration})
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isDuplexMode && (
-                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                            Duplex ({studentTotalPages} pág{studentTotalPages > 1 ? 's' : ''})
-                          </span>
-                        )}
-                        <span className="px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[11px] font-bold">
-                          Caderno {batchItem.assignedLetter}
-                        </span>
-                      </div>
+              {allStudentsBatch.map((batchItem) => (
+                <div
+                  key={batchItem.student.id}
+                  className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
+                >
+                  {/* Student Section Header in Preview Screen */}
+                  <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
+                        {batchItem.studentIndex + 1}
+                      </span>
+                      <span>{batchItem.student.name}</span>
+                      <span className="text-slate-400 font-mono text-[11px]">
+                        ({batchItem.student.registration})
+                      </span>
                     </div>
-
-                    {/* Render each page for this student with print:break-after-page */}
-                    {batchItem.pagesData.map((page) => (
-                      <A4ExamSheet
-                        key={`${batchItem.student.id}-p${page.pageNumber}`}
-                        exam={exam}
-                        questions={page.questions}
-                        pageNumber={page.pageNumber}
-                        totalPages={studentTotalPages}
-                        versionLetter={batchItem.assignedLetter}
-                        showAnswerKey={showAnswerKeyInPreview}
-                        showQrCode={showQrCodeInPreview}
-                        includeBoxNota={includeBoxNota}
-                        isDuplex={isDuplexMode}
-                        student={{
-                          name: batchItem.student.name,
-                          registration: batchItem.student.registration,
-                        }}
-                        scale={previewZoom / 100}
-                      />
-                    ))}
-
-                    {/* Compensating blank verso page if total pages is odd */}
-                    {needsBlankVerso && (
-                      <A4BlankVersoSheet
-                        key={`${batchItem.student.id}-blank-verso`}
-                        versionLetter={batchItem.assignedLetter}
-                        examCode={exam.code || '#CAT-DIR-2026.1'}
-                        pageNumber={studentTotalPages}
-                        totalPages={studentTotalPages}
-                        studentName={batchItem.student.name}
-                        scale={previewZoom / 100}
-                      />
-                    )}
+                    <div className="flex items-center gap-2">
+                      {isDuplexMode && (
+                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                          Duplex ({batchItem.totalPages} pág{batchItem.totalPages > 1 ? 's' : ''})
+                        </span>
+                      )}
+                      {includeAnswerSheet && (
+                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                          + Cartão OMR
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[11px] font-bold">
+                        Caderno {batchItem.assignedLetter}
+                      </span>
+                    </div>
                   </div>
-                );
-              })}
+
+                  {/* Render sheets in order */}
+                  {batchItem.sheets.map((sheet) => {
+                    if (sheet.type === 'question') {
+                      return (
+                        <A4ExamSheet
+                          key={`${batchItem.student.id}-p${sheet.pageNumber}`}
+                          exam={exam}
+                          questions={sheet.questions}
+                          pageNumber={sheet.pageNumber}
+                          totalPages={batchItem.totalPages}
+                          versionLetter={batchItem.assignedLetter}
+                          showAnswerKey={showAnswerKeyInPreview}
+                          showQrCode={showQrCodeInPreview}
+                          includeBoxNota={includeBoxNota}
+                          isDuplex={isDuplexMode}
+                          student={{
+                            name: batchItem.student.name,
+                            registration: batchItem.student.registration,
+                          }}
+                          scale={previewZoom / 100}
+                        />
+                      );
+                    }
+                    if (sheet.type === 'booklet_blank_verso') {
+                      return (
+                        <A4BlankVersoSheet
+                          key={`${batchItem.student.id}-booklet-blank-verso`}
+                          versionLetter={batchItem.assignedLetter}
+                          examCode={exam.code || '#CAT-DIR-2026.1'}
+                          pageNumber={sheet.pageNumber}
+                          totalPages={batchItem.totalPages}
+                          studentName={batchItem.student.name}
+                          scale={previewZoom / 100}
+                        />
+                      );
+                    }
+                    if (sheet.type === 'answer_sheet') {
+                      return (
+                        <A4AnswerSheet
+                          key={`${batchItem.student.id}-answer-sheet`}
+                          examTitle={exam.title}
+                          examCode={exam.code || '#CAT-DIR-2026.1'}
+                          discipline={exam.discipline}
+                          classGroup={exam.classGroup}
+                          institution={exam.institution}
+                          versionLetter={batchItem.assignedLetter}
+                          questions={sheet.questions}
+                          pageNumber={sheet.pageNumber}
+                          totalPages={batchItem.totalPages}
+                          isDuplex={isDuplexMode}
+                          student={{
+                            name: batchItem.student.name,
+                            registration: batchItem.student.registration,
+                            discipline: exam.discipline,
+                            classGroup: exam.classGroup,
+                          }}
+                          scale={previewZoom / 100}
+                        />
+                      );
+                    }
+                    if (sheet.type === 'answer_sheet_blank_verso') {
+                      return (
+                        <A4BlankVersoSheet
+                          key={`${batchItem.student.id}-ans-blank-verso`}
+                          versionLetter={batchItem.assignedLetter}
+                          examCode={exam.code || '#CAT-DIR-2026.1'}
+                          pageNumber={sheet.pageNumber}
+                          totalPages={batchItem.totalPages}
+                          studentName={batchItem.student.name}
+                          badgeLabel="Verso / Rascunho"
+                          noticeTitle="Verso em Branco / Espaço para Rascunho"
+                          noticeDescription="Esta página foi inserida para permitir a impressão frente e verso (duplex) do Cartão-Resposta sem interferir na próxima prova. Pode ser utilizada livremente pelo estudante como folha de rascunho."
+                          scale={previewZoom / 100}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              ))}
             </div>
           ) : viewMode === 'single' ? (
             /* Single Sheet View */
@@ -516,89 +655,196 @@ export const PrintPreviewScreen: React.FC = () => {
                 {currentStudent && ` • Aluno: ${currentStudent.name}`}
               </div>
 
-              {previewPage > totalPages ? (
-                <A4BlankVersoSheet
-                  versionLetter={previewVersion}
-                  examCode={exam.code || '#CAT-DIR-2026.1'}
-                  pageNumber={effectiveTotalPages}
-                  totalPages={effectiveTotalPages}
-                  studentName={currentStudent?.name}
-                  scale={previewZoom / 100}
-                />
-              ) : (
-                <A4ExamSheet
-                  exam={exam}
-                  questions={
-                    pagesData.find((p) => p.pageNumber === previewPage)?.questions ||
-                    pagesData[0].questions
-                  }
-                  pageNumber={previewPage}
-                  totalPages={effectiveTotalPages}
-                  versionLetter={previewVersion}
-                  showAnswerKey={showAnswerKeyInPreview}
-                  showQrCode={showQrCodeInPreview}
-                  includeBoxNota={includeBoxNota}
-                  isDuplex={isDuplexMode}
-                  student={
-                    currentStudent
-                      ? { name: currentStudent.name, registration: currentStudent.registration }
-                      : undefined
-                  }
-                  scale={previewZoom / 100}
-                />
-              )}
+              {(() => {
+                const activeSheet =
+                  singleStudentSheets.sheets[previewPage - 1] || singleStudentSheets.sheets[0];
+                if (!activeSheet) return null;
+
+                if (activeSheet.type === 'question') {
+                  return (
+                    <A4ExamSheet
+                      exam={exam}
+                      questions={activeSheet.questions}
+                      pageNumber={activeSheet.pageNumber}
+                      totalPages={effectiveTotalPages}
+                      versionLetter={previewVersion}
+                      showAnswerKey={showAnswerKeyInPreview}
+                      showQrCode={showQrCodeInPreview}
+                      includeBoxNota={includeBoxNota}
+                      isDuplex={isDuplexMode}
+                      student={
+                        currentStudent
+                          ? { name: currentStudent.name, registration: currentStudent.registration }
+                          : undefined
+                      }
+                      scale={previewZoom / 100}
+                    />
+                  );
+                }
+                if (activeSheet.type === 'booklet_blank_verso') {
+                  return (
+                    <A4BlankVersoSheet
+                      versionLetter={previewVersion}
+                      examCode={exam.code || '#CAT-DIR-2026.1'}
+                      pageNumber={activeSheet.pageNumber}
+                      totalPages={effectiveTotalPages}
+                      studentName={currentStudent?.name}
+                      scale={previewZoom / 100}
+                    />
+                  );
+                }
+                if (activeSheet.type === 'answer_sheet') {
+                  return (
+                    <A4AnswerSheet
+                      examTitle={exam.title}
+                      examCode={exam.code || '#CAT-DIR-2026.1'}
+                      discipline={exam.discipline}
+                      classGroup={exam.classGroup}
+                      institution={exam.institution}
+                      versionLetter={previewVersion}
+                      questions={activeSheet.questions}
+                      pageNumber={activeSheet.pageNumber}
+                      totalPages={effectiveTotalPages}
+                      isDuplex={isDuplexMode}
+                      student={
+                        currentStudent
+                          ? {
+                              name: currentStudent.name,
+                              registration: currentStudent.registration,
+                              discipline: exam.discipline,
+                              classGroup: exam.classGroup,
+                            }
+                          : undefined
+                      }
+                      scale={previewZoom / 100}
+                    />
+                  );
+                }
+                if (activeSheet.type === 'answer_sheet_blank_verso') {
+                  return (
+                    <A4BlankVersoSheet
+                      versionLetter={previewVersion}
+                      examCode={exam.code || '#CAT-DIR-2026.1'}
+                      pageNumber={activeSheet.pageNumber}
+                      totalPages={effectiveTotalPages}
+                      studentName={currentStudent?.name}
+                      badgeLabel="Verso / Rascunho"
+                      noticeTitle="Verso em Branco / Espaço para Rascunho"
+                      noticeDescription="Esta página foi inserida para permitir a impressão frente e verso (duplex) do Cartão-Resposta sem interferir na próxima prova. Pode ser utilizada livremente pelo estudante como folha de rascunho."
+                      scale={previewZoom / 100}
+                    />
+                  );
+                }
+                return null;
+              })()}
             </div>
           ) : (
             /* All Sheets View for Selected Version */
             <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
-              {pagesData.map((page) => (
-                <div key={page.pageNumber} className="flex flex-col items-center print:w-full">
-                  <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
-                    Folha {page.pageNumber} de {effectiveTotalPages} • Caderno {previewVersion}
-                    {isDuplexMode && (
-                      <span className="ml-2 font-bold text-slate-700">
-                        [{page.pageNumber % 2 === 0 ? 'Verso' : 'Frente'}]
-                      </span>
-                    )}
-                    {currentStudent && ` • Aluno: ${currentStudent.name}`}
-                  </div>
-                  <A4ExamSheet
-                    exam={exam}
-                    questions={page.questions}
-                    pageNumber={page.pageNumber}
-                    totalPages={effectiveTotalPages}
-                    versionLetter={previewVersion}
-                    showAnswerKey={showAnswerKeyInPreview}
-                    showQrCode={showQrCodeInPreview}
-                    includeBoxNota={includeBoxNota}
-                    isDuplex={isDuplexMode}
-                    student={
-                      currentStudent
-                        ? { name: currentStudent.name, registration: currentStudent.registration }
-                        : undefined
-                    }
-                    scale={previewZoom / 100}
-                  />
-                </div>
-              ))}
-
-              {/* Compensating blank verso page in All Sheets View if odd */}
-              {needsSingleBlankVerso && (
-                <div className="flex flex-col items-center print:w-full">
-                  <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
-                    Folha {effectiveTotalPages} de {effectiveTotalPages} (Verso em Branco) • Caderno {previewVersion}
-                    <span className="ml-2 font-bold text-amber-700">[Verso Compensatório]</span>
-                  </div>
-                  <A4BlankVersoSheet
-                    versionLetter={previewVersion}
-                    examCode={exam.code || '#CAT-DIR-2026.1'}
-                    pageNumber={effectiveTotalPages}
-                    totalPages={effectiveTotalPages}
-                    studentName={currentStudent?.name}
-                    scale={previewZoom / 100}
-                  />
-                </div>
-              )}
+              {singleStudentSheets.sheets.map((sheet) => {
+                if (sheet.type === 'question') {
+                  return (
+                    <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
+                      <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                        Folha {sheet.pageNumber} de {effectiveTotalPages} • Caderno {previewVersion}
+                        {isDuplexMode && (
+                          <span className="ml-2 font-bold text-slate-700">
+                            [{sheet.pageNumber % 2 === 0 ? 'Verso' : 'Frente'}]
+                          </span>
+                        )}
+                        {currentStudent && ` • Aluno: ${currentStudent.name}`}
+                      </div>
+                      <A4ExamSheet
+                        exam={exam}
+                        questions={sheet.questions}
+                        pageNumber={sheet.pageNumber}
+                        totalPages={effectiveTotalPages}
+                        versionLetter={previewVersion}
+                        showAnswerKey={showAnswerKeyInPreview}
+                        showQrCode={showQrCodeInPreview}
+                        includeBoxNota={includeBoxNota}
+                        isDuplex={isDuplexMode}
+                        student={
+                          currentStudent
+                            ? { name: currentStudent.name, registration: currentStudent.registration }
+                            : undefined
+                        }
+                        scale={previewZoom / 100}
+                      />
+                    </div>
+                  );
+                }
+                if (sheet.type === 'booklet_blank_verso') {
+                  return (
+                    <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
+                      <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                        Folha {sheet.pageNumber} de {effectiveTotalPages} (Verso do Caderno) • Caderno {previewVersion}
+                      </div>
+                      <A4BlankVersoSheet
+                        versionLetter={previewVersion}
+                        examCode={exam.code || '#CAT-DIR-2026.1'}
+                        pageNumber={sheet.pageNumber}
+                        totalPages={effectiveTotalPages}
+                        studentName={currentStudent?.name}
+                        scale={previewZoom / 100}
+                      />
+                    </div>
+                  );
+                }
+                if (sheet.type === 'answer_sheet') {
+                  return (
+                    <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
+                      <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                        Folha {sheet.pageNumber} de {effectiveTotalPages} (Cartão-Resposta OMR) • Caderno {previewVersion}
+                      </div>
+                      <A4AnswerSheet
+                        examTitle={exam.title}
+                        examCode={exam.code || '#CAT-DIR-2026.1'}
+                        discipline={exam.discipline}
+                        classGroup={exam.classGroup}
+                        institution={exam.institution}
+                        versionLetter={previewVersion}
+                        questions={sheet.questions}
+                        pageNumber={sheet.pageNumber}
+                        totalPages={effectiveTotalPages}
+                        isDuplex={isDuplexMode}
+                        student={
+                          currentStudent
+                            ? {
+                                name: currentStudent.name,
+                                registration: currentStudent.registration,
+                                discipline: exam.discipline,
+                                classGroup: exam.classGroup,
+                              }
+                            : undefined
+                        }
+                        scale={previewZoom / 100}
+                      />
+                    </div>
+                  );
+                }
+                if (sheet.type === 'answer_sheet_blank_verso') {
+                  return (
+                    <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
+                      <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                        Folha {sheet.pageNumber} de {effectiveTotalPages} (Verso / Rascunho) • Caderno {previewVersion}
+                      </div>
+                      <A4BlankVersoSheet
+                        versionLetter={previewVersion}
+                        examCode={exam.code || '#CAT-DIR-2026.1'}
+                        pageNumber={sheet.pageNumber}
+                        totalPages={effectiveTotalPages}
+                        studentName={currentStudent?.name}
+                        badgeLabel="Verso / Rascunho"
+                        noticeTitle="Verso em Branco / Espaço para Rascunho"
+                        noticeDescription="Esta página foi inserida para permitir a impressão frente e verso (duplex) do Cartão-Resposta sem interferir na próxima prova. Pode ser utilizada livremente pelo estudante como folha de rascunho."
+                        scale={previewZoom / 100}
+                      />
+                    </div>
+                  );
+                }
+                return null;
+              })}
             </div>
           )}
         </div>

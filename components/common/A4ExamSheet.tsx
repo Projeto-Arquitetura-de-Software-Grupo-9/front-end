@@ -338,6 +338,9 @@ export interface A4BlankVersoSheetProps {
   pageNumber: number;
   totalPages: number;
   studentName?: string;
+  badgeLabel?: string;
+  noticeTitle?: string;
+  noticeDescription?: string;
   scale?: number;
   className?: string;
 }
@@ -348,6 +351,9 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
   pageNumber,
   totalPages,
   studentName,
+  badgeLabel = 'Verso em Branco',
+  noticeTitle = 'Página em Branco Intencional (Modo Frente e Verso)',
+  noticeDescription = 'Esta página foi inserida para permitir a impressão frente e verso (duplex) deste caderno sem que o conteúdo da próxima avaliação seja impresso no verso desta folha física.',
   scale = 1,
   className = '',
 }) => {
@@ -375,7 +381,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-[10px] font-bold rounded border border-amber-200">
-            Verso em Branco
+            {badgeLabel}
           </span>
           <span className="font-mono text-[10px] text-slate-500">
             Pág. {pageNumber}/{totalPages}
@@ -391,10 +397,10 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
           </svg>
         </div>
         <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">
-          Página em Branco Intencional (Modo Frente e Verso)
+          {noticeTitle}
         </h4>
         <p className="text-[11px] text-slate-600 leading-relaxed print:text-slate-400">
-          Esta página foi inserida para permitir a impressão <strong>frente e verso (duplex)</strong> deste caderno sem que o conteúdo da próxima avaliação seja impresso no verso desta folha física.
+          {noticeDescription}
         </p>
         <span className="inline-block text-[10px] font-mono text-slate-400">
           Caderno {versionLetter} • Verso da Folha Final
