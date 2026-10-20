@@ -630,9 +630,10 @@ export const PrintPreviewScreen: React.FC = () => {
                           pageNumber={sheet.pageNumber}
                           totalPages={batchItem.totalPages}
                           studentName={batchItem.student.name}
-                          badgeLabel="Verso / Rascunho"
-                          noticeTitle="Verso em Branco / Espaço para Rascunho"
-                          noticeDescription="Esta página foi inserida para permitir a impressão frente e verso (duplex) do Cartão-Resposta sem interferir na próxima prova. Pode ser utilizada livremente pelo estudante como folha de rascunho."
+                          badgeLabel="Verso 100% em Branco"
+                          noticeTitle="Verso Totalmente em Branco (0% de Tinta)"
+                          noticeDescription="Esta folha física não receberá nenhuma impressão no verso, garantindo que o Cartão-Resposta venha separado e totalmente limpo para devolução ao professor."
+                          pureBlankInPrint={true}
                           scale={previewZoom / 100}
                         />
                       );
@@ -728,9 +729,10 @@ export const PrintPreviewScreen: React.FC = () => {
                       pageNumber={activeSheet.pageNumber}
                       totalPages={effectiveTotalPages}
                       studentName={currentStudent?.name}
-                      badgeLabel="Verso / Rascunho"
-                      noticeTitle="Verso em Branco / Espaço para Rascunho"
-                      noticeDescription="Esta página foi inserida para permitir a impressão frente e verso (duplex) do Cartão-Resposta sem interferir na próxima prova. Pode ser utilizada livremente pelo estudante como folha de rascunho."
+                      badgeLabel="Verso 100% em Branco"
+                      noticeTitle="Verso Totalmente em Branco (0% de Tinta)"
+                      noticeDescription="Esta folha física não receberá nenhuma impressão no verso, garantindo que o Cartão-Resposta venha separado e totalmente limpo para devolução ao professor."
+                      pureBlankInPrint={true}
                       scale={previewZoom / 100}
                     />
                   );
@@ -827,7 +829,7 @@ export const PrintPreviewScreen: React.FC = () => {
                   return (
                     <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
                       <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
-                        Folha {sheet.pageNumber} de {effectiveTotalPages} (Verso / Rascunho) • Caderno {previewVersion}
+                        Folha {sheet.pageNumber} de {effectiveTotalPages} (Verso 100% em Branco) • Caderno {previewVersion}
                       </div>
                       <A4BlankVersoSheet
                         versionLetter={previewVersion}
@@ -835,9 +837,10 @@ export const PrintPreviewScreen: React.FC = () => {
                         pageNumber={sheet.pageNumber}
                         totalPages={effectiveTotalPages}
                         studentName={currentStudent?.name}
-                        badgeLabel="Verso / Rascunho"
-                        noticeTitle="Verso em Branco / Espaço para Rascunho"
-                        noticeDescription="Esta página foi inserida para permitir a impressão frente e verso (duplex) do Cartão-Resposta sem interferir na próxima prova. Pode ser utilizada livremente pelo estudante como folha de rascunho."
+                        badgeLabel="Verso 100% em Branco"
+                        noticeTitle="Verso Totalmente em Branco (0% de Tinta)"
+                        noticeDescription="Esta folha física não receberá nenhuma impressão no verso, garantindo que o Cartão-Resposta venha separado e totalmente limpo para devolução ao professor."
+                        pureBlankInPrint={true}
                         scale={previewZoom / 100}
                       />
                     </div>

@@ -121,7 +121,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
               </span>
               {isDuplex && (
                 <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-800 rounded border border-blue-200 print:hidden">
-                  Folha Destacável
+                  Folha Separada para Entrega (Verso em Branco)
                 </span>
               )}
             </div>

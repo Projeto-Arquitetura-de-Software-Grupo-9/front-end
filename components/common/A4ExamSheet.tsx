@@ -341,6 +341,7 @@ export interface A4BlankVersoSheetProps {
   badgeLabel?: string;
   noticeTitle?: string;
   noticeDescription?: string;
+  pureBlankInPrint?: boolean;
   scale?: number;
   className?: string;
 }
@@ -352,8 +353,9 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
   totalPages,
   studentName,
   badgeLabel = 'Verso em Branco',
-  noticeTitle = 'Página em Branco Intencional (Modo Frente e Verso)',
-  noticeDescription = 'Esta página foi inserida para permitir a impressão frente e verso (duplex) deste caderno sem que o conteúdo da próxima avaliação seja impresso no verso desta folha física.',
+  noticeTitle = 'Verso Totalmente em Branco (Sem Impressão)',
+  noticeDescription = 'Esta página foi inserida para permitir a impressão frente e verso (duplex). Nenhuma tinta será impressa no verso desta folha física, garantindo que a página de respostas venha separada e totalmente limpa para devolução ao professor.',
+  pureBlankInPrint = true,
   scale = 1,
   className = '',
 }) => {
@@ -363,19 +365,23 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
         transform: scale !== 1 ? `scale(${scale})` : undefined,
         transformOrigin: 'top center',
       }}
-      className={`relative bg-slate-50/70 text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-dashed border-slate-300 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:bg-white print:shadow-none print:border-none print:p-[12mm] print:m-0 print:w-full print:min-h-screen print:break-after-page print:duplex-verso ${className}`}
+      className={`relative bg-slate-50/70 text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-dashed border-slate-300 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:bg-white print:shadow-none print:border-none print:p-0 print:m-0 print:w-full print:min-h-screen print:break-after-page print:duplex-verso ${className}`}
     >
-      {/* OMR Fiducial Corner Alignment Markers */}
-      <div className="absolute top-3 left-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
-      <div className="absolute top-3 right-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
-      <div className="absolute bottom-3 left-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
-      <div className="absolute bottom-3 right-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+      {/* OMR Fiducial Corner Alignment Markers (hidden in print if pureBlankInPrint) */}
+      {!pureBlankInPrint && (
+        <>
+          <div className="absolute top-3 left-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute top-3 right-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute bottom-3 left-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute bottom-3 right-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+        </>
+      )}
 
-      {/* Top Header info */}
+      {/* Top Header info (hidden during physical print) */}
       <header className="border-b border-dashed border-slate-300 pb-2.5 flex items-center justify-between text-xs text-slate-500 print:hidden">
         <div>
           <span className="font-bold text-slate-700 uppercase text-[11px]">
-            Compensação Frente e Verso (Duplex)
+            Compensação Física Frente e Verso (Duplex)
           </span>{' '}
           {studentName && `— Aluno: ${studentName}`}
         </div>
@@ -389,26 +395,30 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
         </div>
       </header>
 
-      {/* Center Notice */}
-      <div className="my-auto text-center space-y-3 px-8 py-10 rounded-xl bg-white/80 border border-slate-200/80 max-w-md mx-auto shadow-xs print:border-none print:bg-transparent print:shadow-none print:my-auto">
-        <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center mx-auto print:hidden">
+      {/* Center Notice (visible in drafting preview, completely 100% hidden in physical print) */}
+      <div className={`my-auto text-center space-y-3 px-8 py-10 rounded-xl bg-white/80 border border-slate-200/80 max-w-md mx-auto shadow-xs ${
+        pureBlankInPrint ? 'print:hidden' : 'print:border-none print:bg-transparent print:shadow-none print:my-auto'
+      }`}>
+        <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center mx-auto print:hidden">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
         <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">
           {noticeTitle}
         </h4>
-        <p className="text-[11px] text-slate-600 leading-relaxed print:text-slate-400">
+        <p className="text-[11px] text-slate-600 leading-relaxed">
           {noticeDescription}
         </p>
-        <span className="inline-block text-[10px] font-mono text-slate-400">
-          Caderno {versionLetter} • Verso da Folha Final
+        <span className="inline-block text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+          Caderno {versionLetter} • 0% de Tinta no Verso
         </span>
       </div>
 
-      {/* Footer */}
-      <footer className="pt-4 mt-6 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+      {/* Footer (hidden in print when pureBlankInPrint) */}
+      <footer className={`pt-4 mt-6 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400 font-mono ${
+        pureBlankInPrint ? 'print:hidden' : ''
+      }`}>
         <div className="flex items-center gap-2">
           <span className="font-semibold text-slate-600">Correge</span>
           <span>•</span>
@@ -418,7 +428,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
           <span>Caderno {versionLetter}</span>
           <span>•</span>
           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 print:hidden">
-            Verso
+            Verso em Branco
           </span>
           <span>•</span>
           <span className="font-bold text-slate-600">
