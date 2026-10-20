@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { A4ExamSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
+import { A4ExamSheet, A4BlankVersoSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
 import { api } from '@/lib/api';
 import {
   Download,
@@ -35,6 +35,7 @@ export const PrintPreviewScreen: React.FC = () => {
 
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const [includeBoxNota, setIncludeBoxNota] = useState(true);
+  const [isDuplexMode, setIsDuplexMode] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('none');
 
@@ -142,6 +143,8 @@ export const PrintPreviewScreen: React.FC = () => {
 
   const singleVersionQuestions = getQuestionsForVersion(previewVersion);
   const { totalPages, pagesData } = paginateQuestions(singleVersionQuestions);
+  const needsSingleBlankVerso = isDuplexMode && totalPages % 2 !== 0;
+  const effectiveTotalPages = needsSingleBlankVerso ? totalPages + 1 : totalPages;
 
   const allStudentsBatch = students.map((std, stdIdx) => {
     const numV = (selectedExam?.numberOfVersions) || 4;
@@ -170,6 +173,7 @@ export const PrintPreviewScreen: React.FC = () => {
         showAnswerKey: showAnswerKeyInPreview,
         showQrCode: showQrCodeInPreview,
         includeBoxNota,
+        isDuplex: isDuplexMode,
       });
 
       const response = await fetch(backendUrl);
@@ -291,10 +295,10 @@ export const PrintPreviewScreen: React.FC = () => {
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-              <span className="px-1">{previewPage} / {totalPages}</span>
+              <span className="px-1">{previewPage} / {effectiveTotalPages}</span>
               <button
-                onClick={() => setPreviewPage(Math.min(totalPages, previewPage + 1))}
-                disabled={previewPage === totalPages}
+                onClick={() => setPreviewPage(Math.min(effectiveTotalPages, previewPage + 1))}
+                disabled={previewPage === effectiveTotalPages}
                 className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -322,6 +326,21 @@ export const PrintPreviewScreen: React.FC = () => {
 
           {/* Compact Toggles */}
           <div className="flex items-center gap-3 text-xs text-slate-600 font-medium border-l border-slate-200 pl-3">
+            <label
+              className="flex items-center gap-1.5 cursor-pointer select-none"
+              title="Imprimir em frente e verso (duplex) com margens espelhadas e compensação de verso em branco"
+            >
+              <input
+                type="checkbox"
+                checked={isDuplexMode}
+                onChange={(e) => setIsDuplexMode(e.target.checked)}
+                className="rounded accent-[#9E0B1A] text-[#9E0B1A] focus:ring-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
+              />
+              <span className={`font-semibold ${isDuplexMode ? 'text-slate-900 font-bold' : 'text-slate-600'}`}>
+                Frente e Verso
+              </span>
+            </label>
+
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -394,9 +413,12 @@ export const PrintPreviewScreen: React.FC = () => {
                     <span className="px-2 py-0.2 rounded bg-red-200/70 text-[#9E0B1A] text-[10px] font-bold">
                       {students.length} Provas
                     </span>
+                    <span className="px-2 py-0.2 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
+                      {isDuplexMode ? 'Frente e Verso (Duplex Ativo)' : 'Modo Simplex'}
+                    </span>
                   </div>
                   <p className="text-[11px] text-red-800">
-                    Provas nominais com distribuição de Cadernos A, B, C e D e quebras de página automáticas.
+                    Provas nominais com distribuição de Cadernos A, B, C e D {isDuplexMode ? 'e compensação automática de verso em branco.' : 'e quebras de página automáticas.'}
                   </p>
                 </div>
               </div>
@@ -412,93 +434,111 @@ export const PrintPreviewScreen: React.FC = () => {
           {isBatchMode ? (
             /* BATCH PRINT MODE: Render all students' full exams */
             <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
-              {allStudentsBatch.map((batchItem) => (
-                <div
-                  key={batchItem.student.id}
-                  className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
-                >
-                  {/* Student Section Header in Preview Screen */}
-                  <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
-                        {batchItem.studentIndex + 1}
-                      </span>
-                      <span>{batchItem.student.name}</span>
-                      <span className="text-slate-400 font-mono text-[11px]">
-                        ({batchItem.student.registration})
-                      </span>
-                    </div>
-                    <span className="px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[11px] font-bold">
-                      Caderno {batchItem.assignedLetter}
-                    </span>
-                  </div>
+              {allStudentsBatch.map((batchItem) => {
+                const needsBlankVerso = isDuplexMode && batchItem.totalPages % 2 !== 0;
+                const studentTotalPages = needsBlankVerso ? batchItem.totalPages + 1 : batchItem.totalPages;
 
-                  {/* Render each page for this student with print:break-after-page */}
-                  {batchItem.pagesData.map((page) => (
-                    <A4ExamSheet
-                      key={`${batchItem.student.id}-p${page.pageNumber}`}
-                      exam={exam}
-                      questions={page.questions}
-                      pageNumber={page.pageNumber}
-                      totalPages={batchItem.totalPages}
-                      versionLetter={batchItem.assignedLetter}
-                      showAnswerKey={showAnswerKeyInPreview}
-                      showQrCode={showQrCodeInPreview}
-                      includeBoxNota={includeBoxNota}
-                      student={{
-                        name: batchItem.student.name,
-                        registration: batchItem.student.registration,
-                      }}
-                      scale={previewZoom / 100}
-                    />
-                  ))}
-                </div>
-              ))}
+                return (
+                  <div
+                    key={batchItem.student.id}
+                    className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
+                  >
+                    {/* Student Section Header in Preview Screen */}
+                    <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
+                          {batchItem.studentIndex + 1}
+                        </span>
+                        <span>{batchItem.student.name}</span>
+                        <span className="text-slate-400 font-mono text-[11px]">
+                          ({batchItem.student.registration})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isDuplexMode && (
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                            Duplex ({studentTotalPages} pág{studentTotalPages > 1 ? 's' : ''})
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[11px] font-bold">
+                          Caderno {batchItem.assignedLetter}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Render each page for this student with print:break-after-page */}
+                    {batchItem.pagesData.map((page) => (
+                      <A4ExamSheet
+                        key={`${batchItem.student.id}-p${page.pageNumber}`}
+                        exam={exam}
+                        questions={page.questions}
+                        pageNumber={page.pageNumber}
+                        totalPages={studentTotalPages}
+                        versionLetter={batchItem.assignedLetter}
+                        showAnswerKey={showAnswerKeyInPreview}
+                        showQrCode={showQrCodeInPreview}
+                        includeBoxNota={includeBoxNota}
+                        isDuplex={isDuplexMode}
+                        student={{
+                          name: batchItem.student.name,
+                          registration: batchItem.student.registration,
+                        }}
+                        scale={previewZoom / 100}
+                      />
+                    ))}
+
+                    {/* Compensating blank verso page if total pages is odd */}
+                    {needsBlankVerso && (
+                      <A4BlankVersoSheet
+                        key={`${batchItem.student.id}-blank-verso`}
+                        versionLetter={batchItem.assignedLetter}
+                        examCode={exam.code || '#CAT-DIR-2026.1'}
+                        pageNumber={studentTotalPages}
+                        totalPages={studentTotalPages}
+                        studentName={batchItem.student.name}
+                        scale={previewZoom / 100}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : viewMode === 'single' ? (
             /* Single Sheet View */
             <div className="flex flex-col items-center">
               <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
-                Folha {previewPage} de {totalPages} • Caderno {previewVersion}
+                Folha {previewPage} de {effectiveTotalPages} • Caderno {previewVersion}
+                {isDuplexMode && (
+                  <span className="ml-2 font-bold text-amber-700">
+                    [{previewPage % 2 === 0 ? 'Verso' : 'Frente'}]
+                  </span>
+                )}
                 {currentStudent && ` • Aluno: ${currentStudent.name}`}
               </div>
-              <A4ExamSheet
-                exam={exam}
-                questions={
-                  pagesData.find((p) => p.pageNumber === previewPage)?.questions ||
-                  pagesData[0].questions
-                }
-                pageNumber={previewPage}
-                totalPages={totalPages}
-                versionLetter={previewVersion}
-                showAnswerKey={showAnswerKeyInPreview}
-                showQrCode={showQrCodeInPreview}
-                includeBoxNota={includeBoxNota}
-                student={
-                  currentStudent
-                    ? { name: currentStudent.name, registration: currentStudent.registration }
-                    : undefined
-                }
-                scale={previewZoom / 100}
-              />
-            </div>
-          ) : (
-            /* All Sheets View for Selected Version */
-            pagesData.map((page) => (
-              <div key={page.pageNumber} className="flex flex-col items-center print:w-full">
-                <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
-                  Folha {page.pageNumber} de {totalPages} • Caderno {previewVersion}
-                  {currentStudent && ` • Aluno: ${currentStudent.name}`}
-                </div>
+
+              {previewPage > totalPages ? (
+                <A4BlankVersoSheet
+                  versionLetter={previewVersion}
+                  examCode={exam.code || '#CAT-DIR-2026.1'}
+                  pageNumber={effectiveTotalPages}
+                  totalPages={effectiveTotalPages}
+                  studentName={currentStudent?.name}
+                  scale={previewZoom / 100}
+                />
+              ) : (
                 <A4ExamSheet
                   exam={exam}
-                  questions={page.questions}
-                  pageNumber={page.pageNumber}
-                  totalPages={totalPages}
+                  questions={
+                    pagesData.find((p) => p.pageNumber === previewPage)?.questions ||
+                    pagesData[0].questions
+                  }
+                  pageNumber={previewPage}
+                  totalPages={effectiveTotalPages}
                   versionLetter={previewVersion}
                   showAnswerKey={showAnswerKeyInPreview}
                   showQrCode={showQrCodeInPreview}
                   includeBoxNota={includeBoxNota}
+                  isDuplex={isDuplexMode}
                   student={
                     currentStudent
                       ? { name: currentStudent.name, registration: currentStudent.registration }
@@ -506,8 +546,60 @@ export const PrintPreviewScreen: React.FC = () => {
                   }
                   scale={previewZoom / 100}
                 />
-              </div>
-            ))
+              )}
+            </div>
+          ) : (
+            /* All Sheets View for Selected Version */
+            <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
+              {pagesData.map((page) => (
+                <div key={page.pageNumber} className="flex flex-col items-center print:w-full">
+                  <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                    Folha {page.pageNumber} de {effectiveTotalPages} • Caderno {previewVersion}
+                    {isDuplexMode && (
+                      <span className="ml-2 font-bold text-slate-700">
+                        [{page.pageNumber % 2 === 0 ? 'Verso' : 'Frente'}]
+                      </span>
+                    )}
+                    {currentStudent && ` • Aluno: ${currentStudent.name}`}
+                  </div>
+                  <A4ExamSheet
+                    exam={exam}
+                    questions={page.questions}
+                    pageNumber={page.pageNumber}
+                    totalPages={effectiveTotalPages}
+                    versionLetter={previewVersion}
+                    showAnswerKey={showAnswerKeyInPreview}
+                    showQrCode={showQrCodeInPreview}
+                    includeBoxNota={includeBoxNota}
+                    isDuplex={isDuplexMode}
+                    student={
+                      currentStudent
+                        ? { name: currentStudent.name, registration: currentStudent.registration }
+                        : undefined
+                    }
+                    scale={previewZoom / 100}
+                  />
+                </div>
+              ))}
+
+              {/* Compensating blank verso page in All Sheets View if odd */}
+              {needsSingleBlankVerso && (
+                <div className="flex flex-col items-center print:w-full">
+                  <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
+                    Folha {effectiveTotalPages} de {effectiveTotalPages} (Verso em Branco) • Caderno {previewVersion}
+                    <span className="ml-2 font-bold text-amber-700">[Verso Compensatório]</span>
+                  </div>
+                  <A4BlankVersoSheet
+                    versionLetter={previewVersion}
+                    examCode={exam.code || '#CAT-DIR-2026.1'}
+                    pageNumber={effectiveTotalPages}
+                    totalPages={effectiveTotalPages}
+                    studentName={currentStudent?.name}
+                    scale={previewZoom / 100}
+                  />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

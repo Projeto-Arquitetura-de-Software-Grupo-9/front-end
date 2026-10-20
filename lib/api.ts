@@ -169,12 +169,13 @@ export const api = {
   },
 
   // 6. Provas & Download PDF
-  getExamPdfUrl(examId: string, options: { versionLetter: string; showAnswerKey?: boolean; showQrCode?: boolean; includeBoxNota?: boolean }) {
+  getExamPdfUrl(examId: string, options: { versionLetter: string; showAnswerKey?: boolean; showQrCode?: boolean; includeBoxNota?: boolean; isDuplex?: boolean }) {
     const params = new URLSearchParams({
       versionLetter: options.versionLetter,
       showAnswerKey: String(options.showAnswerKey ?? false),
       showQrCode: String(options.showQrCode ?? true),
       includeBoxNota: String(options.includeBoxNota ?? true),
+      isDuplex: String(options.isDuplex ?? false),
     });
     return `${API_BASE_URL}/exams/${examId}/download-pdf?${params.toString()}`;
   },
