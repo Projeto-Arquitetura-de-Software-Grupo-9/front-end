@@ -74,4 +74,15 @@ body {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
+  /* Duplex (Frente e Verso) Print Optimization & Binding Gutters */
+  .print\:duplex-recto {
+    padding-left: 18mm !important;
+    padding-right: 12mm !important;
+  }
+
+  .print\:duplex-verso {
+    padding-left: 12mm !important;
+    padding-right: 18mm !important;
+  }
 }
