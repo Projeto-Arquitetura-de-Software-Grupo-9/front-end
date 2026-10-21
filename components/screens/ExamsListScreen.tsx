@@ -224,7 +224,19 @@ export const ExamsListScreen: React.FC = () => {
                   )}
 
                   <span className="text-[11px] font-medium text-slate-500">
-                    {exam.numberOfVersions || 4} Cadernos (A-D)
+                    {exam.numberOfVersions || 4}{' '}
+                    {(exam.numberOfVersions || 4) === 1
+                      ? 'Caderno (A)'
+                      : `Cadernos (A-${String.fromCharCode(64 + (exam.numberOfVersions || 4))})`}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                      exam.withStudentIdentification === false
+                        ? 'bg-slate-50 text-slate-700 border-slate-200'
+                        : 'bg-blue-50 text-blue-800 border-blue-200'
+                    }`}
+                  >
+                    {exam.withStudentIdentification === false ? 'Não Nominal' : 'Nominal'}
                   </span>
                 </div>
 

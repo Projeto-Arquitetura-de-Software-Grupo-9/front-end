@@ -13,6 +13,8 @@ export interface A4ExamQuestion {
     text: string;
   }[];
   correctAlternative: 'A' | 'B' | 'C' | 'D' | 'E';
+  explanation?: string;
+  topic?: string;
 }
 
 export interface A4ExamSheetProps {
@@ -32,8 +34,9 @@ export interface A4ExamSheetProps {
   questions: A4ExamQuestion[];
   pageNumber: number;
   totalPages: number;
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   showAnswerKey?: boolean;
+  showConceptExplanations?: boolean;
   showQrCode?: boolean;
   includeBoxNota?: boolean;
   student?: {
@@ -52,15 +55,17 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
   totalPages,
   versionLetter,
   showAnswerKey = false,
+  showConceptExplanations = false,
   showQrCode = true,
-  includeBoxNota = true,
+  includeBoxNota = false,
   student,
-  isDuplex = false,
+  isDuplex = true,
   scale = 1,
   className = '',
 }) => {
   const isFirstPage = pageNumber === 1;
   const isVerso = isDuplex && pageNumber % 2 === 0;
+  const effectiveShowAnswerKey = showAnswerKey || showConceptExplanations;
 
   return (
     <div
@@ -68,7 +73,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
         transform: scale !== 1 ? `scale(${scale})` : undefined,
         transformOrigin: 'top center',
       }}
-      className={`relative bg-white text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-slate-200/90 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:shadow-none print:border-none print:p-[12mm] print:m-0 print:w-full print:min-h-screen print:break-after-page ${
+      className={`a4-print-sheet relative bg-white text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-slate-200/90 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:shadow-none print:border-none print:p-[12mm] print:m-0 print:w-full print:min-h-screen print:break-after-page ${
         isDuplex
           ? isVerso
             ? 'print:duplex-verso'
@@ -86,7 +91,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
       <div className="space-y-5">
         {/* FIRST PAGE HEADER */}
         {isFirstPage ? (
-          <header className="space-y-4">
+          <div className="space-y-4">
             {/* Top row: Institutional metadata + Box NOTA + QR Code */}
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1 flex-1 min-w-0">
@@ -109,13 +114,18 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                   <span><strong>Turma:</strong> {exam.classGroup || 'Turma Única'}</span>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <h3 className="text-xs font-bold text-slate-900 uppercase">
                     {exam.title} {exam.semester ? `— ${exam.semester}` : ''}
                   </h3>
                   <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-red-50 text-[#9E0B1A] border border-red-200">
                     CADERNO {versionLetter}
                   </span>
+                  {showConceptExplanations && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-50 text-emerald-900 border border-emerald-300 uppercase">
+                      Gabarito Comentado & Conceitos (Pós-Prova)
+                    </span>
+                  )}
                   {isDuplex && (
                     <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200 print:hidden">
                       Frente (Folha 1)
@@ -216,17 +226,21 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
             {/* Official Exam Instructions Box (matching prova.jpg) */}
             <div className="border border-slate-300 bg-slate-50/80 p-2.5 rounded-xs text-[10px] text-slate-700 leading-relaxed space-y-1">
               <span className="font-bold uppercase tracking-wider text-slate-900 block text-[9.5px]">
-                Orientações para a Realização da Avaliação:
+                {showConceptExplanations
+                  ? 'Caderno de Correção e Fundamentação Conceitual (Pós-Fechamento da Avaliação):'
+                  : 'Orientações para a Realização da Avaliação:'}
               </span>
               <p className="italic">
-                {exam.instructions ||
-                  '1. Preencha completamente as respostas no gabarito oficial com caneta esferográfica preta ou azul. 2. Celulares e relógios inteligentes devem ser mantidos desligados e guardados. 3. Rasuras na folha de respostas anularão a questão. 4. A interpretação das questões faz parte integrante da avaliação.'}
+                {showConceptExplanations
+                  ? 'Este caderno apresenta as respostas oficiais do gabarito acompanhadas da explicação teórica e fundamentação conceitual de cada questão para fins de revisão docente e devolutiva pedagógica após o encerramento da prova.'
+                  : exam.instructions ||
+                    '1. Preencha completamente as respostas no gabarito oficial com caneta esferográfica preta ou azul. 2. Celulares e relógios inteligentes devem ser mantidos desligados e guardados. 3. Rasuras na folha de respostas anularão a questão. 4. A interpretação das questões faz parte integrante da avaliação.'}
               </p>
             </div>
-          </header>
+          </div>
         ) : (
           /* CONTINUATION PAGE HEADER */
-          <header className="border-b border-slate-300 pb-2.5 flex items-center justify-between text-xs text-slate-600">
+          <div className="border-b border-slate-300 pb-2.5 flex items-center justify-between text-xs text-slate-600">
             <div>
               <span className="font-bold text-slate-900 uppercase text-[11px]">
                 {exam.institution || 'Católica SC Centro Universitário'}
@@ -237,6 +251,11 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
               <span className="px-2 py-0.5 bg-red-50 text-[#9E0B1A] text-[10px] font-bold rounded">
                 Caderno {versionLetter}
               </span>
+              {showConceptExplanations && (
+                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9px] font-bold rounded">
+                  Gabarito Comentado
+                </span>
+              )}
               {isDuplex && (
                 <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border print:hidden ${
                   isVerso ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'
@@ -248,7 +267,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                 Pág. {pageNumber}/{totalPages}
               </span>
             </div>
-          </header>
+          </div>
         )}
 
         {/* QUESTIONS LIST */}
@@ -272,14 +291,14 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
               <div className="space-y-1 pl-5">
                 {q.alternatives.map((alt) => {
                   const isCorrect = alt.letter === q.correctAlternative;
-                  const showHighlight = showAnswerKey && isCorrect;
+                  const showHighlight = effectiveShowAnswerKey && isCorrect;
 
                   return (
                     <div
                       key={alt.id}
                       className={`flex items-start justify-between py-0.5 px-2 rounded-xs transition-colors ${
                         showHighlight
-                          ? 'bg-red-50/80 border border-red-200 text-[#9E0B1A] font-semibold'
+                          ? 'bg-emerald-50/90 border border-emerald-300 text-emerald-950 font-semibold'
                           : 'text-slate-800 hover:bg-slate-50/50'
                       }`}
                     >
@@ -289,21 +308,41 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                       </div>
 
                       {showHighlight && (
-                        <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 shrink-0 ml-3 border border-emerald-300">
-                          GABARITO
+                        <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-600 text-white shrink-0 ml-3">
+                          GABARITO ({alt.letter})
                         </span>
                       )}
                     </div>
                   );
                 })}
               </div>
+
+              {/* Post-Exam Conceptual Explanation Box */}
+              {showConceptExplanations && (
+                <div className="ml-5 mt-2 p-2.5 rounded-sm bg-slate-50 border-l-4 border-emerald-600 border-y border-r border-slate-200 text-[10.5px] text-slate-800 space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-extrabold uppercase tracking-wider text-emerald-900 text-[9.5px]">
+                       Explicação dos Conceitos & Fundamentação da Resposta (Alternativa {q.correctAlternative})
+                    </span>
+                    {q.topic && (
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-100/80 text-emerald-900 font-semibold text-[9px]">
+                        Conceito-Chave: {q.topic}
+                      </span>
+                    )}
+                  </div>
+                  <p className="leading-relaxed text-slate-700">
+                    {q.explanation ||
+                      `A alternativa correta é a (${q.correctAlternative}). O conceito avaliado fundamenta-se nos dispositivos normativos e doutrinários aplicáveis ao tema "${q.topic || exam.discipline}", excluindo-se as demais proposições por incorreção técnica ou incompatibilidade legal.`}
+                  </p>
+                </div>
+              )}
             </article>
           ))}
         </main>
       </div>
 
       {/* FOOTER */}
-      <footer className="pt-4 mt-6 border-t border-slate-300 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+      <div className="pt-4 mt-6 border-t border-slate-300 flex items-center justify-between text-[10px] text-slate-500 font-mono">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-slate-700">Correge</span>
           <span>•</span>
@@ -327,13 +366,13 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
             Folha {pageNumber} de {totalPages}
           </span>
         </div>
-      </footer>
+      </div>
     </div>
   );
 };
 
 export interface A4BlankVersoSheetProps {
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   examCode?: string;
   pageNumber: number;
   totalPages: number;
@@ -365,7 +404,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
         transform: scale !== 1 ? `scale(${scale})` : undefined,
         transformOrigin: 'top center',
       }}
-      className={`relative bg-slate-50/70 text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-dashed border-slate-300 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:bg-white print:shadow-none print:border-none print:p-0 print:m-0 print:w-full print:min-h-screen print:break-after-page print:duplex-verso ${className}`}
+      className={`a4-print-sheet relative bg-slate-50/70 text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-dashed border-slate-300 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:bg-white print:shadow-none print:border-none print:p-0 print:m-0 print:w-full print:min-h-screen print:break-after-page print:duplex-verso ${className}`}
     >
       {/* OMR Fiducial Corner Alignment Markers (hidden in print if pureBlankInPrint) */}
       {!pureBlankInPrint && (
@@ -378,7 +417,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
       )}
 
       {/* Top Header info (hidden during physical print) */}
-      <header className="border-b border-dashed border-slate-300 pb-2.5 flex items-center justify-between text-xs text-slate-500 print:hidden">
+      <div className="border-b border-dashed border-slate-300 pb-2.5 flex items-center justify-between text-xs text-slate-500 print:hidden">
         <div>
           <span className="font-bold text-slate-700 uppercase text-[11px]">
             Compensação Física Frente e Verso (Duplex)
@@ -393,7 +432,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
             Pág. {pageNumber}/{totalPages}
           </span>
         </div>
-      </header>
+      </div>
 
       {/* Center Notice (visible in drafting preview, completely 100% hidden in physical print) */}
       <div className={`my-auto text-center space-y-3 px-8 py-10 rounded-xl bg-white/80 border border-slate-200/80 max-w-md mx-auto shadow-xs ${
@@ -416,7 +455,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
       </div>
 
       {/* Footer (hidden in print when pureBlankInPrint) */}
-      <footer className={`pt-4 mt-6 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400 font-mono ${
+      <div className={`pt-4 mt-6 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400 font-mono ${
         pureBlankInPrint ? 'print:hidden' : ''
       }`}>
         <div className="flex items-center gap-2">
@@ -435,7 +474,7 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
             Folha {pageNumber} de {totalPages}
           </span>
         </div>
-      </footer>
+      </div>
     </div>
   );
 };

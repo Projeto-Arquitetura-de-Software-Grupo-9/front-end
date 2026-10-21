@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { Question, Exam } from '@/lib/types';
+import { getVersionLetters, generateRandomStudentAssignments } from '@/lib/mock-data';
 import { A4ExamSheet } from '@/components/common/A4ExamSheet';
 import {
   GripVertical,
@@ -25,6 +26,9 @@ import {
   ShieldCheck,
   ChevronDown,
   Tag,
+  Shuffle,
+  Users,
+  UserX,
 } from 'lucide-react';
 
 export const CreateExamScreen: React.FC = () => {
@@ -70,10 +74,25 @@ export const CreateExamScreen: React.FC = () => {
   const [searchBankQuery, setSearchBankQuery] = useState('');
   const [filterDiscipline, setFilterDiscipline] = useState('Todas');
   const [selectedTag, setSelectedTag] = useState<string>('Todas');
-  const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [previewCadernoInStep4, setPreviewCadernoInStep4] = useState<string>('A');
   const [showGabaritoInStep4, setShowGabaritoInStep4] = useState(false);
   const [showStudentRosterInStep3, setShowStudentRosterInStep3] = useState(false);
   const [isCrossMatrixExpanded, setIsCrossMatrixExpanded] = useState(false);
+  const [showAdvancedHeaderFields, setShowAdvancedHeaderFields] = useState(false);
+  const [rosterShuffleCount, setRosterShuffleCount] = useState(0);
+
+  const draftVersionLetters = useMemo(
+    () => getVersionLetters(examDraft.numberOfVersions || 4),
+    [examDraft.numberOfVersions]
+  );
+
+  // Randomized student assignments in Step 3 (never sequential A, B, C, D)
+  const randomizedRoster = useMemo(() => {
+    return generateRandomStudentAssignments(
+      students,
+      examDraft.numberOfVersions || 4
+    );
+  }, [students, examDraft.numberOfVersions, rosterShuffleCount]);
 
   // Extract all unique tags across questions
   const availableTags = useMemo(() => {
@@ -461,47 +480,170 @@ export const CreateExamScreen: React.FC = () => {
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Duração Máxima
-              </label>
-              <input
-                type="text"
-                value={examDraft.duration}
-                onChange={(e) =>
-                  setExamDraft((p) => ({ ...p, duration: e.target.value }))
-                }
-                placeholder="2 horas"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
-              />
+            {/* Formato Rápido: Nominal vs Não Nominal & N Cadernos */}
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Identificação na Impressão
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamDraft((p) => ({ ...p, withStudentIdentification: true }))
+                    }
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      (examDraft.withStudentIdentification ?? true)
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Nominal (Turma)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExamDraft((p) => ({ ...p, withStudentIdentification: false }))
+                    }
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      examDraft.withStudentIdentification === false
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <UserX className="w-3.5 h-3.5" />
+                    <span>Não Nominal (Avulsa)</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  {(examDraft.withStudentIdentification ?? true)
+                    ? 'Cada aluno da chamada recebe uma prova sorteada aleatoriamente.'
+                    : 'Provas geradas sem nome pré-impresso (linha em branco para assinar).'}
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Quantidade de Cadernos Diferentes (N)
+                  </label>
+                  <span className="text-[11px] font-bold text-[#9E0B1A]">
+                    {examDraft.numberOfVersions === 1
+                      ? 'Caderno Único (Ordem Fixa)'
+                      : `${examDraft.numberOfVersions} Cadernos (A–${draftVersionLetters[draftVersionLetters.length - 1]})`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[1, 2, 3, 4, 5, 6].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() =>
+                        setExamDraft((p) => ({
+                          ...p,
+                          numberOfVersions: num,
+                          shuffleQuestions: num > 1,
+                        }))
+                      }
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                        examDraft.numberOfVersions === num
+                          ? 'bg-[#9E0B1A] text-white border-[#9E0B1A]'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {num === 1 ? '1 (Fixa)' : `${num}`}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min={1}
+                    max={26}
+                    value={examDraft.numberOfVersions}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(26, parseInt(e.target.value) || 1));
+                      setExamDraft((p) => ({
+                        ...p,
+                        numberOfVersions: val,
+                        shuffleQuestions: val > 1,
+                      }));
+                    }}
+                    title="Digite qualquer quantidade N de cadernos (1 a 26)"
+                    className="w-16 px-2.5 py-2 text-center font-bold bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#9E0B1A]"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  Escolha 1 para ordem fixa ou N cadernos com questões embaralhadas.
+                </p>
+              </div>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Instituição Universitária
-              </label>
-              <input
-                type="text"
-                value={examDraft.institution}
-                onChange={(e) =>
-                  setExamDraft((p) => ({ ...p, institution: e.target.value }))
-                }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
-              />
-            </div>
+            {/* Secondary Institutional Fields (Collapsible to keep Step 1 clean & fast) */}
+            <div className="md:col-span-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedHeaderFields(!showAdvancedHeaderFields)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+              >
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    showAdvancedHeaderFields ? 'rotate-180' : ''
+                  }`}
+                />
+                <span>
+                  {showAdvancedHeaderFields
+                    ? 'Ocultar opções de cabeçalho institucional e instruções'
+                    : 'Editar cabeçalho institucional, duração e instruções (opcional)'}
+                </span>
+              </button>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Instruções Gerais para o Estudante
-              </label>
-              <textarea
-                rows={3}
-                value={examDraft.instructions}
-                onChange={(e) =>
-                  setExamDraft((p) => ({ ...p, instructions: e.target.value }))
-                }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-[#9E0B1A]"
-              />
+              {showAdvancedHeaderFields && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 p-4 rounded-xl bg-slate-50/70 border border-slate-200/70">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Instituição Universitária
+                    </label>
+                    <input
+                      type="text"
+                      value={examDraft.institution}
+                      onChange={(e) =>
+                        setExamDraft((p) => ({ ...p, institution: e.target.value }))
+                      }
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#9E0B1A]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Duração Máxima
+                    </label>
+                    <input
+                      type="text"
+                      value={examDraft.duration}
+                      onChange={(e) =>
+                        setExamDraft((p) => ({ ...p, duration: e.target.value }))
+                      }
+                      placeholder="2 horas"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#9E0B1A]"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Instruções Gerais para o Estudante
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={examDraft.instructions}
+                      onChange={(e) =>
+                        setExamDraft((p) => ({ ...p, instructions: e.target.value }))
+                      }
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#9E0B1A]"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -724,20 +866,29 @@ export const CreateExamScreen: React.FC = () => {
             </div>
 
             {/* Bottom Navigation Buttons */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-slate-100">
               <button
                 onClick={() => setExamWizardStep(1)}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
               >
                 Voltar
               </button>
 
-              <button
-                onClick={handleAdvanceFromStep2}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
-              >
-                Avançar para Configurações <ArrowRight className="w-4 h-4" />
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleAdvanceFromStep2}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+                >
+                  Configurar Ensalamento <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={handleFinishAndGenerate}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Gerar Prova & Ver Impressão Agora
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -763,18 +914,29 @@ export const CreateExamScreen: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
             {/* Left Column: Variações & Embaralhamento */}
             <div className="space-y-5">
-              {/* Quantidade de Cadernos */}
+              {/* Quantidade de Cadernos (N) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Quantidade de Cadernos (Versões)
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[1, 2, 3, 4].map((num) => (
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Quantidade de Cadernos Diferentes (N)
+                  </label>
+                  <span className="text-[11px] font-bold text-[#9E0B1A]">
+                    {examDraft.numberOfVersions === 1
+                      ? 'Apenas Caderno A'
+                      : `${examDraft.numberOfVersions} Cadernos (A–${draftVersionLetters[draftVersionLetters.length - 1]})`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5, 6, 8, 10].map((num) => (
                     <button
                       key={num}
                       type="button"
                       onClick={() =>
-                        setExamDraft((p) => ({ ...p, numberOfVersions: num }))
+                        setExamDraft((p) => ({
+                          ...p,
+                          numberOfVersions: num,
+                          shuffleQuestions: num > 1 ? true : p.shuffleQuestions,
+                        }))
                       }
                       className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                         examDraft.numberOfVersions === num
@@ -794,14 +956,27 @@ export const CreateExamScreen: React.FC = () => {
                       >
                         {num === 1
                           ? 'Apenas A'
-                          : num === 2
-                          ? 'A e B'
-                          : num === 3
-                          ? 'A, B e C'
-                          : 'A, B, C e D'}
+                          : `A até ${String.fromCharCode(64 + num)}`}
                       </span>
                     </button>
                   ))}
+
+                  <div className="col-span-2 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                    <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                      Outro N:
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={26}
+                      value={examDraft.numberOfVersions}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(26, parseInt(e.target.value) || 1));
+                        setExamDraft((p) => ({ ...p, numberOfVersions: val }));
+                      }}
+                      className="w-full px-2 py-1 text-center font-bold bg-white border border-slate-200 rounded-lg text-xs text-slate-900"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -930,47 +1105,54 @@ export const CreateExamScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Column: Ensalamento & Distribuição */}
+            {/* Right Column: Ensalamento & Distribuição Aleatória */}
             <div className="space-y-4">
               <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    Ensalamento da Turma
-                  </h3>
-                  <span className="text-xs font-bold text-[#9E0B1A] bg-red-100 px-2.5 py-0.5 rounded-full">
-                    {students.length} Estudantes
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Sorteio Aleatório de Alunos
+                    </h3>
+                    <span className="text-[10px] text-emerald-700 font-semibold">
+                      Distribuição não sequencial (Fisher-Yates)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRosterShuffleCount((c) => c + 1)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-red-50 hover:border-red-200 text-[#9E0B1A] text-xs font-bold transition cursor-pointer shadow-2xs"
+                  >
+                    <Shuffle className="w-3.5 h-3.5" /> Sortear Novamente
+                  </button>
                 </div>
 
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Os alunos são distribuídos sequencialmente entre os cadernos ativos para evitar versões idênticas lado a lado.
+                  Os cadernos são sorteados aleatoriamente entre os alunos da chamada (o 1º da lista nunca recebe previsivelmente o Caderno A).
                 </p>
 
                 {/* Distribution cards per caderno */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['A', 'B', 'C', 'D'] as const)
-                    .slice(0, examDraft.numberOfVersions)
-                    .map((v, vIdx) => {
-                      const count = students.filter(
-                        (_, idx) => idx % examDraft.numberOfVersions === vIdx
-                      ).length;
-                      return (
-                        <div
-                          key={v}
-                          className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs text-center"
-                        >
-                          <span className="text-xs font-black text-[#9E0B1A] block">
-                            Caderno {v}
-                          </span>
-                          <span className="text-sm font-extrabold text-slate-900 block mt-0.5">
-                            {count}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            {count === 1 ? 'aluno' : 'alunos'}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  {draftVersionLetters.map((v) => {
+                    const count = randomizedRoster.filter(
+                      (item) => item.assignedVersion === v
+                    ).length;
+                    return (
+                      <div
+                        key={v}
+                        className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs text-center"
+                      >
+                        <span className="text-xs font-black text-[#9E0B1A] block">
+                          Caderno {v}
+                        </span>
+                        <span className="text-sm font-extrabold text-slate-900 block mt-0.5">
+                          {count}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {count === 1 ? 'aluno' : 'alunos'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Toggle nominal roster */}
@@ -982,8 +1164,8 @@ export const CreateExamScreen: React.FC = () => {
                   >
                     <span>
                       {showStudentRosterInStep3
-                        ? 'Ocultar Ensalamento Detalhado'
-                        : 'Ver Alocação Nominal de Alunos'}
+                        ? 'Ocultar Sorteio Nominal Detalhado'
+                        : 'Ver Sorteio Aleatório de Alunos'}
                     </span>
                     <ChevronDown
                       className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
@@ -994,30 +1176,25 @@ export const CreateExamScreen: React.FC = () => {
 
                   {showStudentRosterInStep3 && (
                     <div className="mt-3 max-h-48 overflow-y-auto divide-y divide-slate-100 bg-white rounded-xl border border-slate-200 text-xs">
-                      {students.map((std, idx) => {
-                        const assignedLetter = (['A', 'B', 'C', 'D'] as const)[
-                          idx % examDraft.numberOfVersions
-                        ];
-                        return (
-                          <div
-                            key={std.id}
-                            className="flex items-center justify-between px-3 py-2 text-slate-800 hover:bg-slate-50"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="w-5 text-[10px] text-slate-400 font-mono">
-                                {idx + 1}.
-                              </span>
-                              <span className="font-semibold">{std.name}</span>
-                              <span className="font-mono text-[10px] text-slate-400">
-                                ({std.registration})
-                              </span>
-                            </div>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-red-50 text-[#9E0B1A] border border-red-200">
-                              Caderno {assignedLetter}
+                      {randomizedRoster.map((item, idx) => (
+                        <div
+                          key={item.studentId}
+                          className="flex items-center justify-between px-3 py-2 text-slate-800 hover:bg-slate-50"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 text-[10px] text-slate-400 font-mono">
+                              {idx + 1}.
+                            </span>
+                            <span className="font-semibold">{item.studentName}</span>
+                            <span className="font-mono text-[10px] text-slate-400">
+                              ({item.registration})
                             </span>
                           </div>
-                        );
-                      })}
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-red-50 text-[#9E0B1A] border border-red-200">
+                            Caderno {item.assignedVersion}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1238,23 +1415,21 @@ export const CreateExamScreen: React.FC = () => {
 
               <div className="flex items-center gap-3">
                 {/* Caderno selector */}
-                <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200">
-                  {(['A', 'B', 'C', 'D'] as const)
-                    .slice(0, examDraft.numberOfVersions)
-                    .map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => setPreviewCadernoInStep4(v)}
-                        className={`px-2.5 py-0.5 text-xs font-bold rounded transition cursor-pointer ${
-                          previewCadernoInStep4 === v
-                            ? 'bg-[#9E0B1A] text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        Caderno {v}
-                      </button>
-                    ))}
+                <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 flex-wrap">
+                  {draftVersionLetters.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setPreviewCadernoInStep4(v)}
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded transition cursor-pointer ${
+                        previewCadernoInStep4 === v
+                          ? 'bg-[#9E0B1A] text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Caderno {v}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Toggle Gabarito */}
@@ -1334,7 +1509,8 @@ export const CreateExamScreen: React.FC = () => {
                   versionLetter={previewCadernoInStep4}
                   showAnswerKey={showGabaritoInStep4}
                   showQrCode={true}
-                  includeBoxNota={true}
+                  includeBoxNota={false}
+                  isDuplex={true}
                   scale={1}
                 />
               </div>

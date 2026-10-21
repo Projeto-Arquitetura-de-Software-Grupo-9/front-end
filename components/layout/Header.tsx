@@ -53,7 +53,7 @@ export const Header: React.FC = () => {
   ];
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 select-none print:hidden">
+    <header className="app-shell-header h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 select-none print:hidden">
       {/* Brand Logo on the left */}
       <div className="flex items-center gap-3">
         <CorregeLogo />

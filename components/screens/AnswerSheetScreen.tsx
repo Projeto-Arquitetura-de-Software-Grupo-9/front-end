@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { QrCodeGraphic } from '@/components/common/QrCodeGraphic';
+import { getVersionLetters } from '@/lib/mock-data';
 import {
   Download,
   Printer,
@@ -21,7 +22,7 @@ interface OmrQuestionItem {
 interface OmrSheetProps {
   examTitle: string;
   examCode: string;
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   questions: OmrQuestionItem[];
   student?: {
     name?: string;
@@ -309,8 +310,16 @@ export const AnswerSheetScreen: React.FC = () => {
   } = useApp();
 
   const [copyCount, setCopyCount] = useState<number>(35);
-  const [selectedVersion, setSelectedVersion] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [selectedVersion, setSelectedVersion] = useState<string>('A');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('none');
+
+  const availableVersionLetters = getVersionLetters(selectedExam?.numberOfVersions || 4);
+
+  const getStudentAssignedVersion = (stdId: string, fallbackIdx: number): string => {
+    const found = selectedExam?.studentAssignments?.find((a) => a.studentId === stdId);
+    if (found?.assignedVersion) return found.assignedVersion;
+    return availableVersionLetters[(fallbackIdx * 3 + 1) % availableVersionLetters.length];
+  };
 
   // Starts COMPLETELY BLANK by default so printing produces clean sheets for students!
   const [markedAnswers, setMarkedAnswers] = useState<Record<number, string>>({});
@@ -432,8 +441,8 @@ export const AnswerSheetScreen: React.FC = () => {
 
           {/* Version Caderno Selector */}
           {!isBatchMode && (
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-              {(['A', 'B', 'C', 'D'] as const).map((v) => (
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg flex-wrap">
+              {availableVersionLetters.map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -459,8 +468,7 @@ export const AnswerSheetScreen: React.FC = () => {
                 setSelectedStudentId(val);
                 if (val !== 'none' && val !== 'all_students') {
                   const sIdx = students.findIndex((s) => s.id === val);
-                  const numV = selectedExam?.numberOfVersions || 4;
-                  const assigned = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                  const assigned = getStudentAssignedVersion(val, Math.max(0, sIdx));
                   setSelectedVersion(assigned);
                 }
               }}
@@ -474,10 +482,9 @@ export const AnswerSheetScreen: React.FC = () => {
               <option value="all_students">
                 🖨️ Turma Completa ({students.length} Folhas em Lote)
               </option>
-              <optgroup label="Aluno Individual:">
+              <optgroup label="Aluno Individual (Sorteio Aleatório):">
                 {students.map((s, sIdx) => {
-                  const numV = selectedExam?.numberOfVersions || 4;
-                  const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                  const v = getStudentAssignedVersion(s.id, sIdx);
                   return (
                     <option key={s.id} value={s.id}>
                       {s.name} — Caderno {v}
@@ -604,8 +611,7 @@ export const AnswerSheetScreen: React.FC = () => {
             /* Batch Mode: Render an OMR sheet for each student */
             <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
               {students.map((std, sIdx) => {
-                const numV = selectedExam?.numberOfVersions || 4;
-                const v = (['A', 'B', 'C', 'D'] as const)[sIdx % numV];
+                const v = getStudentAssignedVersion(std.id, sIdx);
 
                 // Get the student's assigned version questions
                 const stdVersionObj =
