@@ -133,6 +133,7 @@ interface AppContextType {
 
   // Corrections & Pending manual assignment (Feature 8, 9)
   corrections: Correction[];
+  addCorrection: (correction: Omit<Correction, 'id' | 'confirmedAt' | 'syncStatus'>) => Correction;
   assignCorrection: (correctionId: string, studentId: string, notes?: string) => void;
 
   // Exam Wizard Draft
@@ -942,6 +943,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // Add a new correction from Scanner (Feature 8)
+  const addCorrection = (
+    data: Omit<Correction, 'id' | 'confirmedAt' | 'syncStatus'>
+  ): Correction => {
+    const newCorrection: Correction = {
+      ...data,
+      id: `corr-${Date.now()}`,
+      confirmedAt: new Date().toISOString(),
+      syncStatus: 'synced',
+    };
+    setCorrections((prev) => [newCorrection, ...prev]);
+
+    // Mark active exam as Corrigida if it wasn't already
+    if (activeExamId) {
+      const nextExams = exams.map((e) =>
+        e.id === activeExamId ? { ...e, status: 'Corrigida' as const } : e
+      );
+      persistExams(nextExams);
+    }
+
+    return newCorrection;
+  };
+
   // Manual Assignment of pending correction (Feature 9)
   const assignCorrection = (correctionId: string, studentId: string, notes?: string) => {
     const student = students.find((s) => s.id === studentId);
@@ -1147,6 +1171,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createApplication,
         publishAnswerKey,
         corrections,
+        addCorrection,
         assignCorrection,
         examDraft,
         setExamDraft,

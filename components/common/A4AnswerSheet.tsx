@@ -134,6 +134,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
                 app: 'CORREGE',
                 exam: examCode.replace(/[^a-zA-Z0-9]/g, ''),
                 ver: versionLetter,
+                nominal: Boolean(student?.registration),
                 std: student?.registration || 'ANON',
                 q: totalQuestions,
               })}

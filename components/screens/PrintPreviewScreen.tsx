@@ -12,14 +12,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  FileText,
-  Layers,
   Shuffle,
   SlidersHorizontal,
-  BookOpenCheck,
-  Users,
-  UserX,
-  CheckSquare,
+  Check,
+  QrCode,
 } from 'lucide-react';
 
 export const PrintPreviewScreen: React.FC = () => {
@@ -39,49 +35,44 @@ export const PrintPreviewScreen: React.FC = () => {
     students,
     updateExamPrintConfig,
     reshuffleExamStudents,
+    setIsScannerModalOpen,
     addToast,
   } = useApp();
 
-  // Default states requested by user:
+  // Default states:
   // - Sem Box de Nota (includeBoxNota = false)
   // - Sem Gabarito (showAnswerKeyInPreview = false)
   // - Com Frente e Verso (isDuplexMode = true)
-  // - Formato de impressão exato visível de imediato (viewMode = 'all')
+  // - Formato exato de impressão visível de imediato (viewMode = 'all')
   const [viewMode, setViewMode] = useState<'single' | 'all'>('all');
   const [includeBoxNota, setIncludeBoxNota] = useState<boolean>(false);
   const [isDuplexMode, setIsDuplexMode] = useState<boolean>(true);
   const [includeAnswerSheet, setIncludeAnswerSheet] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [showSecondaryOptions, setShowSecondaryOptions] = useState<boolean>(false);
+  const [showSecondaryPopover, setShowSecondaryPopover] = useState<boolean>(false);
 
-  // Primary printing purpose:
-  // 'application' = Prova para aplicação (Nominal ou Não Nominal)
-  // 'post_exam_concepts' = Caderno de Correção Pós-Prova com Respostas e Conceitos Explicados
+  // 'application' = Prova para aplicação | 'post_exam_concepts' = Gabarito comentado pós-prova
   const [printPurpose, setPrintPurpose] = useState<'application' | 'post_exam_concepts'>('application');
 
-  // Nominal vs Não Nominal mode
+  // Nominal vs Avulsa (Não Nominal)
   const [isNominalMode, setIsNominalMode] = useState<boolean>(
     selectedExam?.withStudentIdentification ?? true
   );
-  // Specific student filter (secondary option when in Nominal mode: 'all_students' or a specific student ID)
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('all_students');
+  // Target filter: 'batch' (todos os alunos ou todas as cópias avulsas), 'version:A', or 'student:std-1'
+  const [viewFilter, setViewFilter] = useState<string>('batch');
 
-  // When in Não Nominal mode: print 'single_version' (just the selected Caderno) or 'all_versions' (1 of each N cadernos or X copies)
-  const [nonNominalScope, setNonNominalScope] = useState<'single_version' | 'all_versions'>('all_versions');
   const [nonNominalTotalCopies, setNonNominalTotalCopies] = useState<number>(
     selectedExam?.numberOfVersions || 4
   );
 
-  // Sync nominal mode when exam changes
   useEffect(() => {
     if (selectedExam) {
-      const ident = selectedExam.withStudentIdentification ?? true;
-      setIsNominalMode(ident);
+      setIsNominalMode(selectedExam.withStudentIdentification ?? true);
       setNonNominalTotalCopies(selectedExam.numberOfVersions || 4);
-      // Ensure defaults on load: no answer key, no box nota, duplex on
       setShowAnswerKeyInPreview(false);
       setIncludeBoxNota(false);
       setIsDuplexMode(true);
+      setViewFilter('batch');
     }
   }, [selectedExam?.id]);
 
@@ -98,7 +89,7 @@ export const PrintPreviewScreen: React.FC = () => {
     date: '15 Mar, 2026',
     duration: '2 horas',
     instructions:
-      'Marque apenas uma alternativa por questão objetiva no cartão-resposta. Preencha completamente a bolha com caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
+      'Marque apenas uma alternativa por questão objetiva no cartão-resposta. Preencha completamente a bolha com caneta preta ou azul. Rasuras anularão a questão.',
     selectedQuestionIds: ['q-disc-1', 'q-1024', 'q-1024-2', 'q-1024-3'],
     shuffleQuestions: true,
     shuffleAlternatives: true,
@@ -108,16 +99,14 @@ export const PrintPreviewScreen: React.FC = () => {
 
   const numVersions = Math.max(1, Math.min(26, exam.numberOfVersions || 4));
   const versionLetters = getVersionLetters(numVersions);
-  const isRandomOrder = (exam.shuffleQuestions ?? true) || numVersions > 1;
+  const isRandomOrder = (exam.shuffleQuestions ?? true) && numVersions > 1;
 
-  // Keep previewVersion valid if numVersions decreases
   useEffect(() => {
     if (!versionLetters.includes(previewVersion)) {
       setPreviewVersion(versionLetters[0] || 'A');
     }
   }, [numVersions, previewVersion]);
 
-  // Helper to get a student's randomly assigned version (never sequential A, B, C, D)
   const getStudentAssignedVersion = (stdId: string, fallbackIndex: number): string => {
     const assignment = (exam as any).studentAssignments?.find(
       (a: any) => a.studentId === stdId
@@ -125,18 +114,13 @@ export const PrintPreviewScreen: React.FC = () => {
     if (assignment?.assignedVersion && versionLetters.includes(assignment.assignedVersion)) {
       return assignment.assignedVersion;
     }
-    // Non-sequential fallback if not yet in studentAssignments
     const nonSeqIdx = (fallbackIndex * 7 + 2) % versionLetters.length;
     return versionLetters[nonSeqIdx];
   };
 
   const handleToggleNominal = (nominal: boolean) => {
     setIsNominalMode(nominal);
-    if (nominal) {
-      setSelectedStudentId('all_students');
-    } else {
-      setSelectedStudentId('none');
-    }
+    setViewFilter('batch');
     if (selectedExam) {
       updateExamPrintConfig(selectedExam.id, { withStudentIdentification: nominal });
     }
@@ -168,7 +152,8 @@ export const PrintPreviewScreen: React.FC = () => {
     if (selectedExam) {
       updateExamPrintConfig(selectedExam.id, {
         numberOfVersions: safeN,
-        shuffleQuestions: safeN > 1 ? true : selectedExam.shuffleQuestions,
+        shuffleQuestions: safeN > 1,
+        shuffleAlternatives: safeN > 1,
       });
     }
     setNonNominalTotalCopies((prev) => Math.max(safeN, prev));
@@ -177,35 +162,30 @@ export const PrintPreviewScreen: React.FC = () => {
   const handleSwitchPurpose = (purpose: 'application' | 'post_exam_concepts') => {
     setPrintPurpose(purpose);
     if (purpose === 'post_exam_concepts') {
-      // Post-exam correction booklet shows answers + conceptual explanations on the question booklet
       setShowAnswerKeyInPreview(true);
+      setViewFilter(`version:${previewVersion}`);
     } else {
       setShowAnswerKeyInPreview(false);
+      setViewFilter('batch');
     }
   };
 
-  const handleSelectIndividualStudent = (stdId: string) => {
-    if (stdId === 'all_students') {
-      setIsNominalMode(true);
-      setSelectedStudentId('all_students');
-    } else if (stdId === 'none') {
-      setIsNominalMode(false);
-      setSelectedStudentId('none');
-    } else {
-      setIsNominalMode(true);
-      setSelectedStudentId(stdId);
+  const handleViewFilterChange = (val: string) => {
+    setViewFilter(val);
+    if (val.startsWith('version:')) {
+      setPreviewVersion(val.replace('version:', ''));
+    } else if (val.startsWith('student:')) {
+      const stdId = val.replace('student:', '');
       const sIdx = students.findIndex((s) => s.id === stdId);
-      const assigned = getStudentAssignedVersion(stdId, Math.max(0, sIdx));
-      setPreviewVersion(assigned);
+      setPreviewVersion(getStudentAssignedVersion(stdId, Math.max(0, sIdx)));
     }
   };
 
   const currentStudent =
-    isNominalMode && selectedStudentId !== 'none' && selectedStudentId !== 'all_students'
-      ? students.find((s) => s.id === selectedStudentId) || null
+    viewFilter.startsWith('student:')
+      ? students.find((s) => s.id === viewFilter.replace('student:', '')) || null
       : null;
 
-  // Helper to resolve questions for any Caderno version (A..Z) including conceptual explanation
   const getQuestionsForVersion = (vLetter: string): A4ExamQuestion[] => {
     const vData = (exam as any).versions?.find(
       (v: any) => v.versionLetter === vLetter
@@ -249,6 +229,10 @@ export const PrintPreviewScreen: React.FC = () => {
     }));
   };
 
+  const showConceptExplanations = printPurpose === 'post_exam_concepts';
+  const effectiveIncludeAnswerSheet =
+    printPurpose === 'post_exam_concepts' ? false : includeAnswerSheet;
+
   const paginateQuestions = (vQuestions: A4ExamQuestion[]) => {
     const QUESTIONS_PAGE_1 = showConceptExplanations ? 2 : 3;
     const QUESTIONS_SUBSEQUENT_PAGES = showConceptExplanations ? 2 : 3;
@@ -281,10 +265,6 @@ export const PrintPreviewScreen: React.FC = () => {
     return { totalPages: pagesData.length, pagesData };
   };
 
-  const showConceptExplanations = printPurpose === 'post_exam_concepts';
-  const effectiveIncludeAnswerSheet =
-    printPurpose === 'post_exam_concepts' ? false : includeAnswerSheet;
-
   const getAnswerSheetQuestionsForVersion = (vLetter: string): A4AnswerSheetQuestion[] => {
     const vQuestions = getQuestionsForVersion(vLetter);
     return vQuestions.map((q) => ({
@@ -312,7 +292,6 @@ export const PrintPreviewScreen: React.FC = () => {
     const sheets: SheetItem[] = [];
     let curPage = 1;
 
-    // 1. Regular Question Pages
     pagesData.forEach((p) => {
       sheets.push({
         type: 'question',
@@ -322,8 +301,6 @@ export const PrintPreviewScreen: React.FC = () => {
     });
 
     if (effectiveIncludeAnswerSheet) {
-      // If duplex and question booklet ends on an odd page, insert blank verso
-      // so the answer sheet starts cleanly on its own fresh physical sheet
       if (isDuplexMode && numQPages % 2 !== 0) {
         sheets.push({
           type: 'booklet_blank_verso',
@@ -331,7 +308,6 @@ export const PrintPreviewScreen: React.FC = () => {
         });
       }
 
-      // 2. Official OMR Answer Sheet (separate physical sheet)
       const ansQuestions = getAnswerSheetQuestionsForVersion(assignedLetter);
       sheets.push({
         type: 'answer_sheet',
@@ -339,21 +315,17 @@ export const PrintPreviewScreen: React.FC = () => {
         questions: ansQuestions,
       });
 
-      // 3. Verso of Answer Sheet (100% blank in print so answer sheet can be returned separately)
       if (isDuplexMode) {
         sheets.push({
           type: 'answer_sheet_blank_verso',
           pageNumber: curPage++,
         });
       }
-    } else {
-      // Only Question Booklet
-      if (isDuplexMode && numQPages % 2 !== 0) {
-        sheets.push({
-          type: 'booklet_blank_verso',
-          pageNumber: curPage++,
-        });
-      }
+    } else if (isDuplexMode && numQPages % 2 !== 0) {
+      sheets.push({
+        type: 'booklet_blank_verso',
+        pageNumber: curPage++,
+      });
     }
 
     return { sheets, totalPagesCount: sheets.length };
@@ -362,7 +334,6 @@ export const PrintPreviewScreen: React.FC = () => {
   const singleVersionSheets = buildBookletSheets(previewVersion);
   const effectiveTotalPages = singleVersionSheets.totalPagesCount;
 
-  // Nominal Batch: All students with their randomly assigned versions
   const nominalStudentsBatch = students.map((std, stdIdx) => {
     const assignedLetter = getStudentAssignedVersion(std.id, stdIdx);
     const { sheets, totalPagesCount } = buildBookletSheets(assignedLetter);
@@ -378,7 +349,6 @@ export const PrintPreviewScreen: React.FC = () => {
     };
   });
 
-  // Non-Nominal Batch: N copies distributed across the N cadernos without student names
   const nonNominalBatch = Array.from(
     { length: Math.max(1, Math.min(200, nonNominalTotalCopies)) },
     (_, copyIdx) => {
@@ -386,8 +356,8 @@ export const PrintPreviewScreen: React.FC = () => {
       const { sheets, totalPagesCount } = buildBookletSheets(assignedLetter);
       return {
         key: `avulsa-${copyIdx + 1}`,
-        label: `Prova Avulsa #${copyIdx + 1} (Sem Identificação Nominal)`,
-        subLabel: `Caderno ${assignedLetter}`,
+        label: `Prova Avulsa #${copyIdx + 1}`,
+        subLabel: 'Sem Nome',
         student: undefined,
         index: copyIdx,
         assignedLetter,
@@ -397,13 +367,8 @@ export const PrintPreviewScreen: React.FC = () => {
     }
   );
 
-  // Determine if we are rendering a multi-exam batch or a single exam booklet
-  const isNominalBatch =
-    printPurpose === 'application' && isNominalMode && selectedStudentId === 'all_students';
-  const isNonNominalBatch =
-    printPurpose === 'application' && !isNominalMode && nonNominalScope === 'all_versions';
-  const isBatchMode = isNominalBatch || isNonNominalBatch;
-  const activeBatchItems = isNominalBatch ? nominalStudentsBatch : nonNominalBatch;
+  const isBatchMode = printPurpose === 'application' && viewFilter === 'batch';
+  const activeBatchItems = isNominalMode ? nominalStudentsBatch : nonNominalBatch;
 
   const handlePrint = () => {
     window.print();
@@ -537,629 +502,382 @@ export const PrintPreviewScreen: React.FC = () => {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
+    <div className="rounded-2xl border border-slate-200/90 overflow-hidden shadow-2xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
       {/* =====================================================================
-          PAINEL DE PRIMEIRO PLANO: CAMINHOS DIRETOS DE IMPRESSÃO
+          BARRA ÚNICA MINIMALISTA DE CONFIGURAÇÃO E IMPRESSÃO
          ===================================================================== */}
-      <div className="bg-white border-b border-slate-200 print:hidden">
-        {/* Top Row: Finalidade da Impressão (Aplicação vs. Caderno Comentado Pós-Prova) + Ação Principal */}
-        <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/70">
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="px-4 py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 print:hidden">
+        {/* Left: Core Print Decisions (Segmented Controls) */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 1. Finalidade: Prova vs. Gabarito Comentado (Pós-Prova) */}
+          <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/70">
             <button
               type="button"
               onClick={() => handleSwitchPurpose('application')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 printPurpose === 'application'
-                  ? 'bg-[#9E0B1A] text-white shadow-xs'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>1. Imprimir Prova para Aplicação</span>
+              Prova
             </button>
-
             <button
               type="button"
               onClick={() => handleSwitchPurpose('post_exam_concepts')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 printPurpose === 'post_exam_concepts'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-900 hover:border-emerald-200'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="Gera o caderno de perguntas com as respostas corretas e a explicação dos conceitos de cada questão para correção pós-prova"
+              title="Caderno de perguntas com as respostas marcadas e explicação dos conceitos para correção pós-prova"
             >
-              <BookOpenCheck className="w-3.5 h-3.5" />
-              <span>2. Caderno com Respostas e Conceitos (Pós-Prova)</span>
+              Gabarito Comentado
             </button>
           </div>
 
-          {/* Primary Print & PDF Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowSecondaryOptions(!showSecondaryOptions)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                showSecondaryOptions
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`}
-              title="Box de nota, impressão de aluno específico, gabarito simples, QR Code e zoom"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Mais Opções</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${
-                  showSecondaryOptions ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
+          {printPurpose === 'application' && (
+            <>
+              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 
-            <button
-              type="button"
-              onClick={handleExportPdf}
-              disabled={isExporting}
-              className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
-              title="Baixar em formato PDF"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{isExporting ? 'Baixando...' : 'PDF'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrint}
-              className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-sm ${
-                printPurpose === 'post_exam_concepts'
-                  ? 'bg-emerald-700 hover:bg-emerald-800'
-                  : 'bg-[#9E0B1A] hover:bg-[#850916]'
-              }`}
-            >
-              <Printer className="w-4 h-4" />
-              <span>
-                {printPurpose === 'post_exam_concepts'
-                  ? `Imprimir Gabarito Comentado (Caderno ${previewVersion})`
-                  : isNominalBatch
-                  ? `Imprimir Turma Nominal (${students.length} Provas)`
-                  : isNonNominalBatch
-                  ? `Imprimir Lote Avulso (${nonNominalTotalCopies} Cópias)`
-                  : `Imprimir Caderno ${previewVersion}`}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Main 3 Direct Decisions Bar (when in Application Mode) */}
-        {printPurpose === 'application' ? (
-          <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-3 gap-3 bg-white">
-            {/* CAMINHO 1: Nominal vs. Não Nominal */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col justify-between gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  1. Identificação do Aluno
-                </span>
-                {isNominalMode && (
-                  <button
-                    type="button"
-                    onClick={() => selectedExam && reshuffleExamStudents(selectedExam.id)}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#9E0B1A] hover:underline cursor-pointer"
-                    title="Redistribuir aleatoriamente os cadernos entre os alunos da chamada"
-                  >
-                    <Shuffle className="w-3 h-3" /> Sortear Alunos
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
+              {/* 2. Identificação: Nominal vs. Avulsa */}
+              <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/70">
                 <button
                   type="button"
                   onClick={() => handleToggleNominal(true)}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                     isNominalMode
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Nominal ({students.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleToggleNominal(false)}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    !isNominalMode
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <UserX className="w-3.5 h-3.5" />
-                  <span>Não Nominal</span>
-                </button>
-              </div>
-
-              {/* Sub-control when Não Nominal is active */}
-              {!isNominalMode ? (
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70 text-[11px]">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setNonNominalScope('all_versions')}
-                      className={`px-2 py-0.5 rounded font-bold cursor-pointer ${
-                        nonNominalScope === 'all_versions'
-                          ? 'bg-red-100 text-[#9E0B1A]'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      Lote Avulso
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNonNominalScope('single_version')}
-                      className={`px-2 py-0.5 rounded font-bold cursor-pointer ${
-                        nonNominalScope === 'single_version'
-                          ? 'bg-red-100 text-[#9E0B1A]'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      1 Caderno
-                    </button>
-                  </div>
-
-                  {nonNominalScope === 'all_versions' && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500 font-semibold">Qtd:</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={200}
-                        value={nonNominalTotalCopies}
-                        onChange={(e) =>
-                          setNonNominalTotalCopies(Math.max(1, parseInt(e.target.value) || 1))
-                        }
-                        className="w-12 px-1.5 py-0.5 text-center font-bold bg-white border border-slate-300 rounded text-slate-900"
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-[10px] text-slate-500 font-medium pt-0.5 truncate">
-                  Sorteio aleatório ativo (o 1º da chamada não recebe sempre A).
-                </div>
-              )}
-            </div>
-
-            {/* CAMINHO 2: Questões Aleatórias & N Cadernos vs. Ordem Fixa */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col justify-between gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  2. Questões e N Cadernos
-                </span>
-                <span className="text-[10px] font-bold text-[#9E0B1A] bg-red-50 px-2 py-0.2 rounded border border-red-200">
-                  {numVersions === 1
-                    ? 'Caderno Único (A)'
-                    : `${numVersions} Cadernos (A–${versionLetters[versionLetters.length - 1]})`}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleToggleRandomQuestions(true)}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    isRandomOrder
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <Shuffle className="w-3.5 h-3.5" />
-                  <span>Aleatórias (N Cadernos)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleToggleRandomQuestions(false)}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    !isRandomOrder
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Ordem Fixa (1 Caderno)</span>
-                </button>
-              </div>
-
-              {isRandomOrder ? (
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70 text-[11px]">
-                  <span className="text-slate-600 font-semibold">Nº de Cadernos (N):</span>
-                  <div className="flex items-center gap-1">
-                    {[2, 3, 4, 5, 6].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => handleChangeNumVersions(n)}
-                        className={`w-6 h-6 rounded text-xs font-bold border transition cursor-pointer ${
-                          numVersions === n
-                            ? 'bg-[#9E0B1A] text-white border-[#9E0B1A]'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                    <input
-                      type="number"
-                      min={1}
-                      max={26}
-                      value={numVersions}
-                      onChange={(e) => handleChangeNumVersions(parseInt(e.target.value) || 1)}
-                      title="Digite qualquer quantidade de cadernos diferentes (1 a 26)"
-                      className="w-12 h-6 px-1 text-center font-bold bg-white border border-slate-300 rounded text-slate-900 text-xs"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[10px] text-slate-500 font-medium pt-0.5 truncate">
-                  Todas as provas terão a mesma ordem de questões (Caderno A).
-                </div>
-              )}
-            </div>
-
-            {/* CAMINHO 3: Folha de Resposta Junto vs. Só Caderno */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col justify-between gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  3. Folha de Resposta OMR
-                </span>
-                <span className="text-[10px] font-semibold text-emerald-700">
-                  {includeAnswerSheet ? 'Separada (Verso Limpo)' : 'Sem Cartão OMR'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIncludeAnswerSheet(true)}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    includeAnswerSheet
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <CheckSquare className="w-3.5 h-3.5" />
-                  <span>Com Folha Junto</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIncludeAnswerSheet(false)}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    !includeAnswerSheet
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Só Perguntas</span>
-                </button>
-              </div>
-
-              <div className="text-[10px] text-slate-500 font-medium pt-0.5 truncate">
-                {includeAnswerSheet
-                  ? 'Sai em folha separada com verso 100% em branco para devolver.'
-                  : 'Imprime apenas o caderno de questões da avaliação.'}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Banner when in Post-Exam Correction Booklet with Conceptual Explanations */
-          <div className="px-4 py-3 bg-emerald-50/70 border-b border-emerald-200/80 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
-                <BookOpenCheck className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-emerald-950">
-                  Caderno de Correção Pós-Prova — Gabarito Oficial e Explicação dos Conceitos
-                </div>
-                <p className="text-[11px] text-emerald-800">
-                  Exibe a alternativa correta marcada em cada questão junto com a fundamentação teórica e explicação dos conceitos avaliados.
-                </p>
-              </div>
-            </div>
-
-            {/* Version Selector for Post-Exam Booklet */}
-            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-emerald-200 flex-wrap">
-              {versionLetters.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setPreviewVersion(v)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                    previewVersion === v
-                      ? 'bg-emerald-700 text-white shadow-2xs'
+                      ? 'bg-white text-slate-900 shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Caderno {v}
+                  Nominal ({students.length})
                 </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Version / Student Bar when viewing a single booklet */}
-        {!isBatchMode && printPurpose === 'application' && (
-          <div className="px-4 py-2 bg-slate-50 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] font-bold text-slate-500 mr-1">
-                Visualizando Caderno:
-              </span>
-              {versionLetters.map((v) => (
                 <button
-                  key={v}
                   type="button"
-                  onClick={() => {
-                    setSelectedStudentId('none');
-                    setPreviewVersion(v);
-                  }}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                    previewVersion === v
-                      ? 'bg-[#9E0B1A] text-white shadow-2xs'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
+                  onClick={() => handleToggleNominal(false)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    !isNominalMode
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Caderno {v}
+                  Avulsa
                 </button>
-              ))}
-            </div>
 
-            {currentStudent && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="font-semibold text-slate-600">
-                  Aluno selecionado: <strong>{currentStudent.name}</strong> (Caderno {previewVersion})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedStudentId('all_students')}
-                  className="text-[#9E0B1A] font-bold hover:underline cursor-pointer"
-                >
-                  Voltar para Turma Completa
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* =====================================================================
-            BARRA DE SEGUNDO PLANO: OPÇÕES SECUNDÁRIAS (Box Nota, Aluno Individual, Gabarito, Duplex, QR Code, Zoom)
-           ===================================================================== */}
-        {showSecondaryOptions && (
-          <div className="px-4 py-3 bg-slate-100/90 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 animate-in fade-in duration-150">
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700 font-medium">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                Opções em Segundo Plano:
-              </span>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={isDuplexMode}
-                  onChange={(e) => setIsDuplexMode(e.target.checked)}
-                  className="rounded accent-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
-                />
-                <span>Frente e Verso (Duplex)</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeBoxNota}
-                  onChange={(e) => setIncludeBoxNota(e.target.checked)}
-                  className="rounded accent-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
-                />
-                <span>Box de NOTA</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showAnswerKeyInPreview}
-                  onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
-                  className="rounded accent-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
-                />
-                <span>Marcar Gabarito</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showQrCodeInPreview}
-                  onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
-                  className="rounded accent-[#9E0B1A] w-3.5 h-3.5 cursor-pointer"
-                />
-                <span>QR Code OMR</span>
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Individual student selector */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-slate-500">
-                  Filtrar Aluno:
-                </span>
-                <div className="relative">
-                  <select
-                    value={isNominalMode ? selectedStudentId : 'none'}
-                    onChange={(e) => handleSelectIndividualStudent(e.target.value)}
-                    className="text-xs font-semibold rounded-lg px-2.5 py-1 pr-7 bg-white border border-slate-300 text-slate-800 appearance-none cursor-pointer focus:outline-none"
-                  >
-                    <option value="all_students">Todos os Alunos ({students.length})</option>
-                    <option value="none">Sem Aluno (Avulsa)</option>
-                    <optgroup label="Imprimir Aluno Específico:">
-                      {students.map((s, sIdx) => {
-                        const v = getStudentAssignedVersion(s.id, sIdx);
-                        return (
-                          <option key={s.id} value={s.id}>
-                            {s.name} — Caderno {v}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                  </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* View Mode (All sheets vs Single sheet on screen) */}
-              {!isBatchMode && (
-                <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-300 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('all')}
-                    className={`px-2 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
-                      viewMode === 'all'
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <Layers className="w-3 h-3" /> Todas as Páginas
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('single')}
-                    className={`px-2 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1 ${
-                      viewMode === 'single'
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <FileText className="w-3 h-3" /> Página Única
-                  </button>
-                </div>
-              )}
-
-              {/* Zoom */}
-              <div className="flex items-center gap-1">
-                <span className="text-[11px] font-semibold text-slate-500">Zoom:</span>
-                <select
-                  value={previewZoom}
-                  onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
-                  className="text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
-                >
-                  <option value={50}>50%</option>
-                  <option value={75}>75%</option>
-                  <option value={100}>100%</option>
-                  <option value={125}>125%</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* =====================================================================
-          MESA DE VISUALIZAÇÃO EXATA A4 (SIMULADOR FÍSICO E IMPRESSÃO)
-         ===================================================================== */}
-      <div className="bg-slate-200/80 p-6 sm:p-10 shadow-inner overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:shadow-none print:min-h-0">
-        <div className="w-full flex flex-col items-center gap-10 print:gap-0 print:w-full">
-          {/* Batch Print Summary Banner */}
-          {isBatchMode && (
-            <div className="w-full max-w-[210mm] bg-white border border-slate-200/90 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs print:hidden">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#9E0B1A] text-white flex items-center justify-center shrink-0">
-                  <Printer className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 flex flex-wrap items-center gap-1.5">
-                    <span>
-                      {isNominalBatch
-                        ? `Formato Exato de Impressão Nominal (${students.length} Alunos)`
-                        : `Formato Exato de Impressão Não Nominal (${nonNominalTotalCopies} Cópias Avulsas)`}
-                    </span>
-                    <span className="px-2 py-0.2 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[10px] font-bold">
-                      {numVersions === 1
-                        ? '1 Caderno (A)'
-                        : `${numVersions} Cadernos (A–${versionLetters[versionLetters.length - 1]})`}
-                    </span>
-                    <span className="px-2 py-0.2 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-bold">
-                      {isDuplexMode ? 'Frente e Verso' : 'Simplex'}
-                    </span>
-                    {effectiveIncludeAnswerSheet && (
-                      <span className="px-2 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                        + Folha de Resposta Separada
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    {isNominalBatch
-                      ? 'Distribuição aleatória ativa: os cadernos foram sorteados aleatoriamente entre os alunos da chamada.'
-                      : 'Provas avulsas com linhas em branco no cabeçalho para o estudante preencher nome e matrícula.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {isNominalBatch && (
+                {isNominalMode ? (
                   <button
                     type="button"
                     onClick={() => selectedExam && reshuffleExamStudents(selectedExam.id)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
+                    title="Redistribuir cadernos aleatoriamente entre os alunos"
+                    className="px-2 py-1 text-slate-500 hover:text-[#9E0B1A] transition cursor-pointer"
                   >
-                    <Shuffle className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                    <span>Sortear Novamente</span>
+                    <Shuffle className="w-3.5 h-3.5" />
                   </button>
+                ) : (
+                  <div className="flex items-center gap-1 px-2 text-xs">
+                    <span className="text-[11px] text-slate-500">Qtd:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={nonNominalTotalCopies}
+                      onChange={(e) =>
+                        setNonNominalTotalCopies(Math.max(1, parseInt(e.target.value) || 1))
+                      }
+                      className="w-11 py-0.5 text-center font-bold bg-white border border-slate-200 rounded-md text-slate-900 text-xs focus:outline-none"
+                    />
+                  </div>
                 )}
+              </div>
+
+              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+
+              {/* 3. Questões & N Cadernos: Fixa vs. Aleatória (N) */}
+              <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/70">
                 <button
                   type="button"
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                  onClick={() => handleToggleRandomQuestions(false)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    !isRandomOrder
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  <Printer className="w-3.5 h-3.5" /> Imprimir Agora
+                  Ordem Fixa
                 </button>
-              </div>
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => handleToggleRandomQuestions(true)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    isRandomOrder
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Aleatória
+                </button>
 
+                {isRandomOrder && (
+                  <div
+                    className="flex items-center gap-1 px-2 text-xs"
+                    title="Quantidade de cadernos diferentes (A, B, C...)"
+                  >
+                    <span className="text-[11px] text-slate-500">Cadernos:</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={26}
+                      value={numVersions}
+                      onChange={(e) => handleChangeNumVersions(parseInt(e.target.value) || 2)}
+                      className="w-10 py-0.5 text-center font-bold bg-white border border-slate-200 rounded-md text-[#9E0B1A] text-xs focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+
+              {/* 4. Folha de Resposta OMR Junto */}
+              <button
+                type="button"
+                onClick={() => setIncludeAnswerSheet(!includeAnswerSheet)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                  includeAnswerSheet
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+                title="Incluir Folha de Respostas OMR em página separada (verso 100% em branco)"
+              >
+                <span
+                  className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                    includeAnswerSheet ? 'bg-white text-slate-900' : 'border border-slate-300'
+                  }`}
+                >
+                  {includeAnswerSheet && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                </span>
+                <span>Com Folha de Resposta</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Right: View Selector, Secondary Popover, Scanner & Print Actions */}
+        <div className="flex items-center gap-2">
+          {/* Unified View Selector (Lote, Caderno A..N, or Student) */}
+          <div className="relative">
+            <select
+              value={viewFilter}
+              onChange={(e) => handleViewFilterChange(e.target.value)}
+              className="text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none transition"
+            >
+              {printPurpose === 'application' && (
+                <option value="batch">
+                  {isNominalMode
+                    ? `Ver Lote da Turma (${students.length})`
+                    : `Ver Lote Avulso (${nonNominalTotalCopies})`}
+                </option>
+              )}
+              <optgroup label="Inspecionar Caderno:">
+                {versionLetters.map((v) => (
+                  <option key={v} value={`version:${v}`}>
+                    Caderno {v}
+                  </option>
+                ))}
+              </optgroup>
+              {printPurpose === 'application' && isNominalMode && (
+                <optgroup label="Aluno Específico:">
+                  {students.map((s, sIdx) => {
+                    const v = getStudentAssignedVersion(s.id, sIdx);
+                    return (
+                      <option key={s.id} value={`student:${s.id}`}>
+                        {s.name} (Cad. {v})
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Secondary Settings Popover Button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowSecondaryPopover(!showSecondaryPopover)}
+              className={`p-2 rounded-xl border transition cursor-pointer ${
+                showSecondaryPopover
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Opções secundárias (Frente e Verso, Box de Nota, QR Code, Zoom)"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+
+            {showSecondaryPopover && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-40 space-y-3 text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="font-bold text-slate-900 pb-2 border-b border-slate-100">
+                  Ajustes de Página
+                </div>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700">Frente e Verso (Duplex)</span>
+                  <input
+                    type="checkbox"
+                    checked={isDuplexMode}
+                    onChange={(e) => setIsDuplexMode(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700">Box de Nota no Cabeçalho</span>
+                  <input
+                    type="checkbox"
+                    checked={includeBoxNota}
+                    onChange={(e) => setIncludeBoxNota(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700">Destacar Gabarito</span>
+                  <input
+                    type="checkbox"
+                    checked={showAnswerKeyInPreview}
+                    onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700">QR Code de Correção</span>
+                  <input
+                    type="checkbox"
+                    checked={showQrCodeInPreview}
+                    onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                {!isBatchMode && (
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-slate-600">Paginação</span>
+                    <div className="inline-flex bg-slate-100 p-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('all')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          viewMode === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
+                        }`}
+                      >
+                         Contínua
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('single')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          viewMode === 'single' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
+                        }`}
+                      >
+                        1 Folha
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-slate-600">Zoom</span>
+                  <select
+                    value={previewZoom}
+                    onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+                    className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold"
+                  >
+                    <option value={50}>50%</option>
+                    <option value={75}>75%</option>
+                    <option value={100}>100%</option>
+                    <option value={125}>125%</option>
+                  </select>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSecondaryPopover(false);
+                      setIsScannerModalOpen(true);
+                    }}
+                    className="w-full py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-[#9E0B1A]" />
+                    <span>Simular Leitor QR / OMR</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={isExporting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+            title="Baixar PDF"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{isExporting ? '...' : 'PDF'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrint}
+            className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs ${
+              printPurpose === 'post_exam_concepts'
+                ? 'bg-emerald-600 hover:bg-emerald-700'
+                : 'bg-[#9E0B1A] hover:bg-[#850916]'
+            }`}
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Imprimir</span>
+          </button>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          MESA DE VISUALIZAÇÃO EXATA A4 (LIMPA E SEM POLUIÇÃO VISUAL)
+         ===================================================================== */}
+      <div
+        onClick={() => showSecondaryPopover && setShowSecondaryPopover(false)}
+        className="bg-slate-100/90 p-6 sm:p-10 overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:min-h-0"
+      >
+        <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
           {isBatchMode ? (
-            /* BATCH PRINT MODE: Render all exams in the batch (Nominal students or Non-Nominal copies) */
+            /* BATCH PRINT MODE */
             <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
               {activeBatchItems.map((batchItem) => (
                 <div
                   key={batchItem.key}
-                  className="w-full flex flex-col items-center gap-4 print:gap-0 print:w-full"
+                  className="w-full flex flex-col items-center gap-3 print:gap-0 print:w-full"
                 >
-                  {/* Item Header in Preview Screen (Hidden in physical print) */}
-                  <div className="w-full max-w-[210mm] flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs print:hidden">
+                  {/* Minimalist Subtle Divider Above Each Student/Copy in Batch */}
+                  <div className="w-full max-w-[210mm] flex items-center justify-between px-1 text-xs text-slate-500 print:hidden">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px]">
-                        {batchItem.index + 1}
+                      <span className="font-semibold text-slate-700">
+                        {batchItem.index + 1}. {batchItem.label}
                       </span>
-                      <span>{batchItem.label}</span>
                       {batchItem.subLabel && (
                         <span className="text-slate-400 font-mono text-[11px]">
-                          ({batchItem.subLabel})
+                          • {batchItem.subLabel}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {isDuplexMode && (
-                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                          Frente e Verso ({batchItem.totalPages} pág{batchItem.totalPages > 1 ? 's' : ''})
-                        </span>
-                      )}
-                      {effectiveIncludeAnswerSheet && (
-                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                          + Folha OMR
-                        </span>
-                      )}
-                      <span className="px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A] border border-red-200 text-[11px] font-bold">
-                        Caderno {batchItem.assignedLetter}
-                      </span>
-                    </div>
+                    <span className="text-[11px] font-bold text-[#9E0B1A]">
+                      Caderno {batchItem.assignedLetter} ({batchItem.totalPages} pág.)
+                    </span>
                   </div>
 
-                  {/* Render all sheets for this exam in exact print order */}
                   {batchItem.sheets.map((sheet) =>
                     renderSheetComponent(
                       sheet,
@@ -1173,30 +891,28 @@ export const PrintPreviewScreen: React.FC = () => {
               ))}
             </div>
           ) : viewMode === 'single' ? (
-            /* Single Sheet View on Screen — but renders all sheets in @media print so header/pages are never lost! */
+            /* Single Sheet View on Screen — renders all sheets in @media print */
             <div className="w-full flex flex-col items-center">
-              <div className="flex items-center gap-3 mb-3 print:hidden">
-                <div className="flex items-center gap-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-1 rounded-lg shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewPage(Math.max(1, previewPage - 1))}
-                    disabled={previewPage === 1}
-                    className="p-0.5 rounded hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="px-2">
-                    Folha {previewPage} de {effectiveTotalPages} • Caderno {previewVersion}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewPage(Math.min(effectiveTotalPages, previewPage + 1))}
-                    disabled={previewPage === effectiveTotalPages}
-                    className="p-0.5 rounded hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+              <div className="flex items-center gap-2 mb-3 print:hidden">
+                <button
+                  type="button"
+                  onClick={() => setPreviewPage(Math.max(1, previewPage - 1))}
+                  disabled={previewPage === 1}
+                  className="p-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30 cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-xs font-medium text-slate-600 px-2">
+                  Folha {previewPage} de {effectiveTotalPages} • Caderno {previewVersion}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPage(Math.min(effectiveTotalPages, previewPage + 1))}
+                  disabled={previewPage === effectiveTotalPages}
+                  className="p-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30 cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               {singleVersionSheets.sheets.map((sheet, idx) => {
@@ -1228,17 +944,15 @@ export const PrintPreviewScreen: React.FC = () => {
             <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
               {singleVersionSheets.sheets.map((sheet) => (
                 <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
-                  <div className="text-[11px] font-semibold text-slate-500 mb-2 print:hidden">
-                    Folha {sheet.pageNumber} de {effectiveTotalPages} • Caderno {previewVersion}
-                    {isDuplexMode && (
-                      <span className="ml-2 font-bold text-slate-700">
-                        [{sheet.pageNumber % 2 === 0 ? 'Verso' : 'Frente'}]
-                      </span>
-                    )}
-                    {sheet.type === 'answer_sheet' && ' • Cartão-Resposta Separado'}
-                    {sheet.type === 'booklet_blank_verso' && ' • Verso do Caderno em Branco'}
-                    {sheet.type === 'answer_sheet_blank_verso' && ' • Verso 100% em Branco'}
-                    {currentStudent && ` • Aluno: ${currentStudent.name}`}
+                  <div className="w-full max-w-[210mm] flex items-center justify-between px-1 mb-1.5 text-[11px] text-slate-400 print:hidden">
+                    <span>
+                      Folha {sheet.pageNumber} de {effectiveTotalPages}
+                      {isDuplexMode && ` (${sheet.pageNumber % 2 === 0 ? 'Verso' : 'Frente'})`}
+                    </span>
+                    <span>
+                      Caderno {previewVersion}
+                      {currentStudent && ` • ${currentStudent.name}`}
+                    </span>
                   </div>
                   {renderSheetComponent(
                     sheet,

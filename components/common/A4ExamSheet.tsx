@@ -156,6 +156,8 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                         app: 'CORREGE',
                         code: exam.code || '#EXAM-2024',
                         ver: versionLetter,
+                        nominal: Boolean(student?.registration),
+                        std: student?.registration || 'ANON',
                         pg: pageNumber,
                       })}
                       versionLetter={versionLetter}
