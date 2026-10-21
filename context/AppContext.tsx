@@ -1107,7 +1107,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetId = examId || activeExamId;
     if (targetId) setActiveExamId(targetId);
     setCurrentScreenState('resultados');
-    router.push(targetId ? `/resultados?examId=${targetId}` : '/resultados');
+    router.push(targetId ? `/provas/${targetId}?p=resultados` : '/resultados');
   };
 
   const navigateToFolha = (examId?: string) => {

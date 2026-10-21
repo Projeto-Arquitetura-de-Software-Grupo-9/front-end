@@ -248,7 +248,7 @@ export const ExamsListScreen: React.FC = () => {
                   </button>
 
                   <Link
-                    href={`/resultados?examId=${exam.id}`}
+                    href={`/provas/${exam.id}?p=resultados`}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg transition"
                     title="Ver Resultados e Estatísticas da Prova"
                   >
