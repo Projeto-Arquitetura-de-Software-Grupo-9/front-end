@@ -234,26 +234,13 @@ export const ExamsListScreen: React.FC = () => {
                     <span>Imprimir / Ver A4</span>
                   </Link>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveExamId(exam.id);
-                      setIsScannerModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg transition cursor-pointer"
-                    title="Ler QR Code e Corrigir Gabarito"
-                  >
-                    <QrCode className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                    <span className="hidden md:inline">Ler QR</span>
-                  </button>
-
                   <Link
-                    href={`/provas/${exam.id}?p=resultados`}
+                    href={`/provas/${exam.id}?p=folha`}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg transition"
-                    title="Ver Resultados e Estatísticas da Prova"
+                    title="Abrir Folha de Respostas OMR"
                   >
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="hidden md:inline">Resultados</span>
+                    <FileText className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden md:inline">Folha OMR</span>
                   </Link>
 
                   <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 ml-0.5">

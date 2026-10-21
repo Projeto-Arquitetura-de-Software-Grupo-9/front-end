@@ -1,28 +1,35 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
-import Link from 'next/link';
-import { useSearchParams, usePathname } from 'next/navigation';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
   Download,
+  Star,
+  CheckCircle2,
   AlertTriangle,
   FileSpreadsheet,
-  ChevronDown,
-  QrCode,
-  Printer,
-  Users,
+  TrendingUp,
   BarChart3,
+  HelpCircle,
+  Users,
+  ChevronDown,
+  RotateCcw,
+  Sparkles,
+  Layers,
+  UserCheck,
+  UserX,
+  FileText,
+  Check,
 } from 'lucide-react';
 
 interface StudentRow {
   studentId: string;
   studentName: string;
   registration: string;
-  versionLetter?: string;
   answers: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'>;
 }
 
+// Official answer key for the 15 questions
 const OFFICIAL_ANSWER_KEYS: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'> = {
   1: 'A',
   2: 'B',
@@ -80,70 +87,27 @@ const INITIAL_STUDENT_ROWS: StudentRow[] = [
   },
 ];
 
-export const ResultsScreen: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const examIdParam = searchParams.get('examId');
-  const isInsideExamHub = embedded || pathname?.startsWith('/provas/');
-
+export const ResultsScreen: React.FC = () => {
   const {
     exams,
     activeExamId,
     setActiveExamId,
     corrections,
-    setIsScannerModalOpen,
+    setCurrentScreen,
     addToast,
   } = useApp();
 
-  useEffect(() => {
-    if (examIdParam && examIdParam !== activeExamId) {
-      setActiveExamId(examIdParam);
-    }
-  }, [examIdParam, activeExamId, setActiveExamId]);
-
   const [studentsList, setStudentsList] = useState<StudentRow[]>(INITIAL_STUDENT_ROWS);
-  const [activeView, setActiveView] = useState<'matriz' | 'questoes'>('matriz');
   const [questionViewFilter, setQuestionViewFilter] = useState<'all' | '1-6' | '7-12' | '13-15'>('all');
 
   const currentExam = exams.find((e) => e.id === activeExamId) || exams[0];
 
-  // Merge scanned corrections with student assignments so scanned QR results appear live
-  const enrichedStudentRows = useMemo(() => {
-    const baseMap = new Map<string, StudentRow>();
-    studentsList.forEach((row) => {
-      const assigned = currentExam?.studentAssignments?.find(
-        (a) => a.studentId === row.studentId || a.registration === row.registration
-      );
-      baseMap.set(row.studentId, {
-        ...row,
-        versionLetter: assigned?.assignedVersion || row.versionLetter || 'A',
-      });
-    });
-
-    corrections
-      .filter((c) => c.studentId && c.objectiveResults?.length > 0)
-      .forEach((corr) => {
-        const ansRecord: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'> = {};
-        corr.objectiveResults.forEach((r, idx) => {
-          ansRecord[idx + 1] = r.chosen || 'A';
-        });
-        const existing = baseMap.get(corr.studentId!);
-        baseMap.set(corr.studentId!, {
-          studentId: corr.studentId!,
-          studentName: corr.studentName || existing?.studentName || 'Aluno',
-          registration: corr.registration || existing?.registration || '2024.1.000',
-          versionLetter: corr.versionLetter || existing?.versionLetter || 'A',
-          answers: { ...(existing?.answers || {}), ...ansRecord },
-        });
-      });
-
-    return Array.from(baseMap.values());
-  }, [studentsList, currentExam?.studentAssignments, corrections]);
-
+  // Unassigned corrections (Feature 9)
   const pendingCorrections = useMemo(() => {
     return corrections.filter((c) => !c.studentId);
   }, [corrections]);
 
+  // Dynamically compute question stats
   const questionsStats = useMemo(() => {
     const totalQuestions = 15;
     const stats = [];
@@ -154,7 +118,7 @@ export const ResultsScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       let totalAnswers = 0;
       let correctAnswers = 0;
 
-      enrichedStudentRows.forEach((std) => {
+      studentsList.forEach((std) => {
         const studentChoice = std.answers[qNum];
         if (studentChoice && studentChoice in distribution) {
           distribution[studentChoice]++;
@@ -189,69 +153,73 @@ export const ResultsScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fal
     }
 
     return stats;
-  }, [enrichedStudentRows]);
+  }, [studentsList]);
 
+  // Compute metrics (Feature 10: Média, Mediana, Desvio Padrão)
   const classMetrics = useMemo(() => {
-    if (enrichedStudentRows.length === 0) {
-      return { average: 7.2, median: 7.5, stdDev: 1.35, highest: 10, lowest: 3.0 };
+    if (studentsList.length === 0) {
+      return { average: 7.2, median: 7.5, stdDev: 1.35, highest: 10, lowest: 3.0, highestName: 'Alberto Einstein' };
     }
 
-    const scores = enrichedStudentRows
-      .map((std) => {
-        let correctCount = 0;
-        for (let q = 1; q <= 15; q++) {
-          if (std.answers[q] === OFFICIAL_ANSWER_KEYS[q]) {
-            correctCount++;
-          }
+    const scores = studentsList.map((std) => {
+      let correctCount = 0;
+      for (let q = 1; q <= 15; q++) {
+        if (std.answers[q] === OFFICIAL_ANSWER_KEYS[q]) {
+          correctCount++;
         }
-        return (correctCount / 15) * 10;
-      })
-      .sort((a, b) => a - b);
+      }
+      return (correctCount / 15) * 10;
+    }).sort((a, b) => a - b);
 
     const sum = scores.reduce((a, b) => a + b, 0);
     const avg = sum / scores.length;
-
+    
+    // Median calculation
     const mid = Math.floor(scores.length / 2);
     const median = scores.length % 2 !== 0 ? scores[mid] : (scores[mid - 1] + scores[mid]) / 2;
 
+    // Standard Deviation calculation
     const variance = scores.reduce((acc, score) => acc + Math.pow(score - avg, 2), 0) / scores.length;
     const stdDev = Math.sqrt(variance);
 
     const highest = Math.max(...scores);
     const lowest = Math.min(...scores);
+    const highestName = 'Alberto Einstein';
 
     return {
       average: Number(avg.toFixed(1)),
       median: Number(median.toFixed(1)),
       stdDev: Number(stdDev.toFixed(2)),
-      highest: Number(highest.toFixed(1)),
-      lowest: Number(lowest.toFixed(1)),
+      highest,
+      lowest,
+      highestName,
     };
-  }, [enrichedStudentRows]);
+  }, [studentsList]);
 
-  const handleCycleAnswer = (studentId: string, qNum: number) => {
+  const handleCycleAnswer = (studentIndex: number, qNum: number) => {
     const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
-    setStudentsList((prev) =>
-      prev.map((row) => {
-        if (row.studentId !== studentId) return row;
-        const currentChoice = row.answers[qNum] || 'A';
-        const nextChoice = letters[(letters.indexOf(currentChoice) + 1) % letters.length];
-        return {
-          ...row,
-          answers: {
-            ...row.answers,
-            [qNum]: nextChoice,
-          },
-        };
-      })
-    );
+    setStudentsList((prev) => {
+      const updated = [...prev];
+      const currentChoice = updated[studentIndex].answers[qNum] || 'A';
+      const currentIndex = letters.indexOf(currentChoice);
+      const nextChoice = letters[(currentIndex + 1) % letters.length];
+      
+      updated[studentIndex] = {
+        ...updated[studentIndex],
+        answers: {
+          ...updated[studentIndex].answers,
+          [qNum]: nextChoice,
+        },
+      };
+      return updated;
+    });
   };
 
   const handleExport = (type: 'csv' | 'xlsx' | 'pdf') => {
     addToast({
       type: 'success',
       title: `Relatório Exportado (${type.toUpperCase()})`,
-      message: `Arquivo consolidado com notas, cadernos sorteados e estatísticas pronto.`,
+      message: `Arquivo consolidado contendo notas, média, mediana e matriz de acertos pronto.`,
     });
   };
 
@@ -263,297 +231,318 @@ export const ResultsScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   }, [questionsStats, questionViewFilter]);
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
-      {/* Standalone Top Header (Only rendered when visiting /resultados directly) */}
-      {!isInsideExamHub && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Resultados e Desempenho
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {currentExam?.discipline} • {currentExam?.classGroup} •{' '}
-              {currentExam?.numberOfVersions || 4} Caderno(s)
-            </p>
+    <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Header & Export Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold text-[#9E0B1A] uppercase tracking-wider">
+            <TrendingUp className="w-4 h-4" />
+            <span>Feature 10 – Relatórios Estatísticos e Desempenho (Católica SC)</span>
           </div>
+          <h1 className="text-2xl font-black text-slate-900 mt-1">
+            Resultados e Análise de Desempenho
+          </h1>
+          <p className="text-xs text-slate-500">
+            Acompanhe médias, mediana, desvio padrão, distribuição por alternativa e matriz de acertos.
+          </p>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <select
-                value={activeExamId}
-                onChange={(e) => setActiveExamId(e.target.value)}
-                className="text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none shadow-2xs"
-              >
-                {exams.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.title} ({e.classGroup})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            <Link
-              href={`/provas/${currentExam?.id || activeExamId}?p=caderno`}
-              className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <select
+              value={activeExamId}
+              onChange={(e) => setActiveExamId(e.target.value)}
+              className="text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 pr-7 appearance-none cursor-pointer shadow-2xs"
             >
-              <Printer className="w-3.5 h-3.5 text-slate-500" /> Abrir Prova
-            </Link>
+              {exams.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleExport('xlsx')}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+            </button>
+            <button
+              onClick={() => handleExport('pdf')}
+              className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" /> PDF
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Feature 9 Alert: Pending manual assignments notification linking to lancamento-manual */}
+      {pendingCorrections.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200/80 rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5 text-amber-950 font-medium">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <span>
+              Você possui <strong>{pendingCorrections.length} prova(s) física(s) anônima(s)</strong> pendente(s) de atribuição nesta aplicação.
+            </span>
+          </div>
+
+          <button
+            onClick={() => setCurrentScreen('lancamento-manual')}
+            className="px-3.5 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-2xs whitespace-nowrap self-start sm:self-auto"
+          >
+            Acessar Tela de Lançamento Manual →
+          </button>
         </div>
       )}
 
-      {/* Main Container with Single Minimalist Command Bar (Consistent with PrintPreviewScreen) */}
-      <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs bg-white">
-        <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
-          {/* Left: View Switcher + Compact Statistical Pills */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setActiveView('matriz')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                  activeView === 'matriz'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                <span>Notas & Matriz de Alunos</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('questoes')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                  activeView === 'questoes'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                <span>Estatísticas por Questão</span>
-              </button>
-            </div>
-
-            <div className="h-4 w-px bg-slate-200 hidden md:block" />
-
-            {/* Compact KPI Strip */}
-            <div className="hidden sm:flex items-center gap-2 text-xs">
-              <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600">
-                Média: <strong className="text-slate-900 font-black">{classMetrics.average}</strong>
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600">
-                Mediana: <strong className="text-slate-900 font-bold">{classMetrics.median}</strong>
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600">
-                Desvio: <strong className="text-slate-900 font-bold">{classMetrics.stdDev}</strong>
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
-                Maior: <strong className="font-black">{classMetrics.highest}</strong>
-              </span>
+      {/* 4 Statistical KPI Cards (Feature 10: Média, Mediana, Desvio Padrão, Maior Nota) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Média */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Média Geral</span>
+            <div className="w-8 h-8 rounded-lg bg-red-50 text-[#9E0B1A] flex items-center justify-center font-bold">
+              <Star className="w-4 h-4 fill-[#9E0B1A]/10" />
             </div>
           </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.average}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Escala de 0 a 10.0</div>
+          </div>
+        </div>
 
-          {/* Right: Question Filter (when in questoes view) + Export & Scanner */}
-          <div className="flex items-center gap-2">
-            {activeView === 'questoes' && (
-              <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
-                {(
-                  [
-                    { id: 'all', label: 'Todas' },
-                    { id: '1-6', label: 'Q1-6' },
-                    { id: '7-12', label: 'Q7-12' },
-                    { id: '13-15', label: 'Q13-15' },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setQuestionViewFilter(tab.id)}
-                    className={`px-2 py-1 rounded-md transition cursor-pointer ${
-                      questionViewFilter === tab.id
-                        ? 'bg-white text-slate-900 shadow-2xs'
-                        : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
+        {/* Mediana (Feature 10) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Mediana</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.median}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Ponto central da turma</div>
+          </div>
+        </div>
+
+        {/* Desvio Padrão (Feature 10) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Desvio Padrão</span>
+            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.stdDev}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Dispersão das notas</div>
+          </div>
+        </div>
+
+        {/* Maior Nota */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Maior Nota</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="text-2xl font-black text-slate-900">{classMetrics.highest}</div>
+            <div className="text-[11px] text-slate-500 mt-1">{classMetrics.highestName}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Matriz de Desempenho (Questão × Aluno) */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">
+              Matriz de Desempenho (Questão × Aluno)
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Clique em qualquer resposta para simular alteração de gabarito e ver a matriz recalcular.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded bg-emerald-500 inline-block"></span>
+              <span className="text-slate-700">Acerto</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded bg-rose-400 inline-block"></span>
+              <span className="text-slate-700">Erro</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs font-bold text-slate-500">
+                <th className="py-3 px-3 w-40">Alunos</th>
+                {Array.from({ length: 15 }, (_, i) => i + 1).map((qNum) => (
+                  <th key={qNum} className="py-3 px-1.5 text-center w-10">
+                    Q{qNum}
+                  </th>
                 ))}
-              </div>
-            )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs">
+              {studentsList.map((std, stdIndex) => (
+                <tr key={std.studentId} className="hover:bg-slate-50/50 transition">
+                  <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
+                    {std.studentName}
+                  </td>
+                  {Array.from({ length: 15 }, (_, i) => i + 1).map((qNum) => {
+                    const studentLetter = std.answers[qNum] || 'A';
+                    const correctLetter = OFFICIAL_ANSWER_KEYS[qNum] || 'A';
+                    const isCorrect = studentLetter === correctLetter;
 
+                    return (
+                      <td key={qNum} className="py-2 px-1 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleCycleAnswer(stdIndex, qNum)}
+                          className={`w-8 h-8 rounded-lg mx-auto flex items-center justify-center font-bold text-xs text-white shadow-xs cursor-pointer transition transform hover:scale-110 active:scale-95 ${
+                            isCorrect ? 'bg-emerald-500' : 'bg-rose-400'
+                          }`}
+                        >
+                          {studentLetter}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Respostas por Questão (Distribuição de Frequência das Alternativas) */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">
+              Distribuição por Questão
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Porcentagem e contagem de marcação de cada alternativa (verde = gabarito correto).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
             <button
-              type="button"
-              onClick={() => handleExport('xlsx')}
-              className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+              onClick={() => setQuestionViewFilter('all')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                questionViewFilter === 'all'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Excel
+              Todas (1-15)
             </button>
-
             <button
-              type="button"
-              onClick={() => handleExport('pdf')}
-              className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+              onClick={() => setQuestionViewFilter('1-6')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                questionViewFilter === '1-6'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <Download className="w-3.5 h-3.5 text-slate-500" /> PDF
+              Q1-Q6
             </button>
-
             <button
-              type="button"
-              onClick={() => setIsScannerModalOpen(true)}
-              className="px-3 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              onClick={() => setQuestionViewFilter('7-12')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                questionViewFilter === '7-12'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <QrCode className="w-3.5 h-3.5" /> Ler QR
+              Q7-Q12
+            </button>
+            <button
+              onClick={() => setQuestionViewFilter('13-15')}
+              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                questionViewFilter === '13-15'
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Q13-Q15
             </button>
           </div>
         </div>
 
-        {/* Subtle Banner if there are pending anonymous sheets */}
-        {pendingCorrections.length > 0 && (
-          <div className="bg-amber-50/90 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 text-amber-950 font-medium">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-              <span>
-                <strong>{pendingCorrections.length} folha(s) avulsa(s)</strong> lida(s) via QR Code aguardando vínculo com aluno.
-              </span>
-            </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          {filteredQuestionsList.map((qItem) => {
+            const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
 
-            <Link
-              href={`/provas/${currentExam?.id || activeExamId}?p=lancamento`}
-              className="font-bold text-[#9E0B1A] hover:underline whitespace-nowrap"
-            >
-              Vincular agora →
-            </Link>
-          </div>
-        )}
-
-        {/* View 1: Notas & Matriz de Alunos */}
-        {activeView === 'matriz' ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[860px]">
-              <thead>
-                <tr className="bg-slate-50/70 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3 px-4 w-48">Aluno</th>
-                  <th className="py-3 px-2 text-center w-24">Caderno</th>
-                  <th className="py-3 px-2 text-center w-20">Nota</th>
-                  {Array.from({ length: 15 }, (_, i) => i + 1).map((qNum) => (
-                    <th key={qNum} className="py-3 px-1 text-center w-9">
-                      Q{qNum}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {enrichedStudentRows.map((std) => {
-                  let hits = 0;
-                  for (let q = 1; q <= 15; q++) {
-                    if ((std.answers[q] || 'A') === OFFICIAL_ANSWER_KEYS[q]) hits++;
-                  }
-                  const studentScore = ((hits / 15) * 10).toFixed(1);
-
-                  return (
-                    <tr key={std.studentId} className="hover:bg-slate-50/60 transition">
-                      <td className="py-2.5 px-4 whitespace-nowrap">
-                        <div className="font-bold text-slate-900">{std.studentName}</div>
-                        <div className="text-[10px] font-mono text-slate-400">{std.registration}</div>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700">
-                          Caderno {std.versionLetter || 'A'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="font-black text-sm text-slate-900">{studentScore}</span>
-                      </td>
-                      {Array.from({ length: 15 }, (_, i) => i + 1).map((qNum) => {
-                        const studentLetter = std.answers[qNum] || 'A';
-                        const correctLetter = OFFICIAL_ANSWER_KEYS[qNum] || 'A';
-                        const isCorrect = studentLetter === correctLetter;
-
-                        return (
-                          <td key={qNum} className="py-2 px-1 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleCycleAnswer(std.studentId, qNum)}
-                              className={`w-7 h-7 rounded-md mx-auto flex items-center justify-center font-bold text-xs text-white shadow-2xs cursor-pointer transition transform hover:scale-105 ${
-                                isCorrect ? 'bg-emerald-500' : 'bg-rose-400'
-                              }`}
-                              title={`Q${qNum}: Marcado ${studentLetter} (Gabarito: ${correctLetter})`}
-                            >
-                              {studentLetter}
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          /* View 2: Distribuição por Questão */
-          <div className="p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {filteredQuestionsList.map((qItem) => {
-              const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
-
-              return (
-                <div
-                  key={qItem.qNum}
-                  className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between hover:border-slate-300 transition"
-                >
-                  <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
-                    <span className="text-[10px] font-bold text-slate-500">
-                      Gabarito: <b className="text-emerald-700 font-extrabold">{qItem.correctLetter}</b>
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      Q{qItem.qNum}
-                    </span>
-                  </div>
-
-                  <div className="flex items-end justify-between h-16 gap-1.5 pt-3">
-                    {letters.map((letter) => {
-                      const count = qItem.distribution[letter];
-                      const isCorrect = letter === qItem.correctLetter;
-                      const heightPct = Math.max(
-                        (count / qItem.maxCountInQuestion) * 100,
-                        8
-                      );
-
-                      return (
-                        <div
-                          key={letter}
-                          className="flex-1 flex flex-col items-center justify-end h-full gap-1"
-                        >
-                          <div
-                            style={{ height: `${heightPct}%` }}
-                            className={`w-full rounded transition-all duration-200 ${
-                              isCorrect
-                                ? 'bg-emerald-500'
-                                : count > 0
-                                ? 'bg-slate-300'
-                                : 'bg-slate-200/50'
-                            }`}
-                          />
-                          <span
-                            className={`text-[10px] font-bold ${
-                              isCorrect ? 'text-emerald-700' : 'text-slate-500'
-                            }`}
-                          >
-                            {letter}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="pt-2 text-center text-[10px] text-slate-400 font-medium">
-                    {qItem.accuracyPercentage.toFixed(0)}% acertos
-                  </div>
+            return (
+              <div
+                key={qItem.qNum}
+                className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between hover:border-slate-300 transition"
+              >
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                  <span className="text-[10px] font-bold text-slate-500">
+                    Gabarito: <b className="text-emerald-700 font-extrabold">{qItem.correctLetter}</b>
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    Q{qItem.qNum}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                <div className="flex items-end justify-between h-20 gap-1.5 pt-4">
+                  {letters.map((letter) => {
+                    const count = qItem.distribution[letter];
+                    const isCorrect = letter === qItem.correctLetter;
+                    const heightPct = Math.max(
+                      (count / qItem.maxCountInQuestion) * 100,
+                      8
+                    );
+
+                    return (
+                      <div
+                        key={letter}
+                        className="flex-1 flex flex-col items-center justify-end h-full gap-1 group relative"
+                      >
+                        <div
+                          style={{ height: `${heightPct}%` }}
+                          className={`w-full rounded-md transition-all duration-200 ${
+                            isCorrect
+                              ? 'bg-emerald-500 shadow-xs'
+                              : count > 0
+                              ? 'bg-slate-300'
+                              : 'bg-slate-200/50'
+                          }`}
+                        />
+                        <span
+                          className={`text-[10px] font-bold ${
+                            isCorrect ? 'text-emerald-700' : 'text-slate-500'
+                          }`}
+                        >
+                          {letter}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 text-center text-[10px] text-slate-400 font-medium">
+                  {qItem.accuracyPercentage.toFixed(0)}% acertos
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

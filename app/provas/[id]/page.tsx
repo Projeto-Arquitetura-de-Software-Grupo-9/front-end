@@ -7,7 +7,6 @@ import { useApp } from '@/context/AppContext';
 import { PrintPreviewScreen } from '@/components/screens/PrintPreviewScreen';
 import { AnswerSheetScreen } from '@/components/screens/AnswerSheetScreen';
 import { LancamentoManualScreen } from '@/components/screens/LancamentoManualScreen';
-import { ResultsScreen } from '@/components/screens/ResultsScreen';
 import {
   ChevronLeft,
   FileText,
@@ -15,7 +14,6 @@ import {
   Edit3,
   TrendingUp,
   ClipboardCheck,
-  QrCode,
 } from 'lucide-react';
 
 function ExamHubContent() {
@@ -27,16 +25,13 @@ function ExamHubContent() {
     setActiveExamId,
     selectedExam,
     corrections,
-    setIsScannerModalOpen,
   } = useApp();
 
   const id = (params?.id as string) || activeExamId;
-  const p = searchParams.get('p'); // 'caderno' | 'folha' | 'resultados' | 'lancamento'
-  const activeTab: 'caderno' | 'folha' | 'resultados' | 'lancamento' =
+  const p = searchParams.get('p'); // 'caderno' | 'folha' | 'lancamento'
+  const activeTab: 'caderno' | 'folha' | 'lancamento' =
     p === 'folha'
       ? 'folha'
-      : p === 'resultados'
-      ? 'resultados'
       : p === 'lancamento'
       ? 'lancamento'
       : 'caderno';
@@ -81,16 +76,16 @@ function ExamHubContent() {
             </div>
           </div>
 
-          {/* Right Action buttons: Minimalist & Focused */}
+          {/* Right Action buttons */}
           <div className="flex items-center gap-2 self-start sm:self-center">
-            <button
-              type="button"
-              onClick={() => setIsScannerModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer shadow-2xs"
-              title="Ler QR Code e corrigir folha de respostas"
-            >
-              <QrCode className="w-3.5 h-3.5 text-[#9E0B1A]" /> Ler QR / Corrigir
-            </button>
+            {currentExam?.status === 'Corrigida' && (
+              <Link
+                href={`/resultados?examId=${id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs"
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> Resultados
+              </Link>
+            )}
 
             <Link
               href={`/provas/new?edit=${id}`}
@@ -101,7 +96,7 @@ function ExamHubContent() {
           </div>
         </div>
 
-        {/* Clean Underline Tabs for All Exam Views */}
+        {/* Clean Underline Tabs */}
         <div className="flex items-center gap-6 -mb-px overflow-x-auto">
           <Link
             href={`/provas/${id}?p=caderno`}
@@ -128,18 +123,6 @@ function ExamHubContent() {
           </Link>
 
           <Link
-            href={`/provas/${id}?p=resultados`}
-            className={`pb-2.5 text-xs font-semibold transition flex items-center gap-1.5 border-b-2 whitespace-nowrap ${
-              activeTab === 'resultados'
-                ? 'border-[#9E0B1A] text-[#9E0B1A] font-bold'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Resultados & Notas</span>
-          </Link>
-
-          <Link
             href={`/provas/${id}?p=lancamento`}
             className={`pb-2.5 text-xs font-semibold transition flex items-center gap-1.5 border-b-2 whitespace-nowrap ${
               activeTab === 'lancamento'
@@ -161,8 +144,6 @@ function ExamHubContent() {
       {/* Screen Content based on ?p= query param */}
       {activeTab === 'folha' ? (
         <AnswerSheetScreen />
-      ) : activeTab === 'resultados' ? (
-        <ResultsScreen embedded />
       ) : activeTab === 'lancamento' ? (
         <LancamentoManualScreen />
       ) : (
