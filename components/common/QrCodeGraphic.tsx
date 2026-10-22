@@ -7,7 +7,7 @@ export interface QrCodeGraphicProps {
   value?: string;
   size?: number;
   className?: string;
-  versionLetter?: 'A' | 'B' | 'C' | 'D';
+  versionLetter?: string;
   examCode?: string;
   studentRegistration?: string;
   showBadge?: boolean;

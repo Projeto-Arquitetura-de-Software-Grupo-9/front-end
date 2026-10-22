@@ -29,6 +29,8 @@ import {
   INITIAL_CORRECTIONS,
   CURRENT_USER,
   CURRENT_STUDENT_USER,
+  getVersionLetters,
+  generateRandomStudentAssignments,
 } from '@/lib/mock-data';
 import { api, API_BASE_URL } from '@/lib/api';
 
@@ -52,6 +54,7 @@ interface ExamDraft {
   duration: string;
   instructions: string;
   selectedQuestionIds: string[];
+  withStudentIdentification: boolean;
   shuffleQuestions: boolean;
   shuffleAlternatives: boolean;
   numberOfVersions: number;
@@ -102,6 +105,16 @@ interface AppContextType {
   selectedExam: Exam | undefined;
   createExamFromDraft: (draft: ExamDraft) => Exam;
   updateExam: (id: string, draft: ExamDraft) => Exam;
+  updateExamPrintConfig: (
+    id: string,
+    config: {
+      numberOfVersions?: number;
+      shuffleQuestions?: boolean;
+      shuffleAlternatives?: boolean;
+      withStudentIdentification?: boolean;
+    }
+  ) => Exam | undefined;
+  reshuffleExamStudents: (id: string) => void;
   deleteExam: (id: string) => void;
   duplicateExam: (id: string) => Exam;
   
@@ -131,8 +144,8 @@ interface AppContextType {
   loadExamToDraft: (id: string) => void;
 
   // Print Preview state
-  previewVersion: 'A' | 'B' | 'C' | 'D';
-  setPreviewVersion: (v: 'A' | 'B' | 'C' | 'D') => void;
+  previewVersion: string;
+  setPreviewVersion: (v: string) => void;
   showAnswerKeyInPreview: boolean;
   setShowAnswerKeyInPreview: (show: boolean) => void;
   showQrCodeInPreview: boolean;
@@ -199,6 +212,7 @@ const BLANK_EXAM_DRAFT: ExamDraft = {
   instructions:
     'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
   selectedQuestionIds: [],
+  withStudentIdentification: true,
   shuffleQuestions: true,
   shuffleAlternatives: true,
   numberOfVersions: 4,
@@ -316,8 +330,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Print Preview state
-  const [previewVersion, setPreviewVersion] = useState<'A' | 'B' | 'C' | 'D'>('A');
-  const [showAnswerKeyInPreview, setShowAnswerKeyInPreview] = useState(true);
+  const [previewVersion, setPreviewVersion] = useState<string>('A');
+  const [showAnswerKeyInPreview, setShowAnswerKeyInPreview] = useState(false);
   const [showQrCodeInPreview, setShowQrCodeInPreview] = useState(true);
   const [previewZoom, setPreviewZoom] = useState(100);
   const [previewPage, setPreviewPage] = useState(1);
@@ -366,10 +380,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .map((id) => questions.find((q) => q.id === id))
       .filter((q): q is Question => q !== undefined && !q.deletedAt);
 
-    const versionLetters: ('A' | 'B' | 'C' | 'D')[] = ['A', 'B', 'C', 'D'].slice(
-      0,
-      numVersions
-    ) as any;
+    const versionLetters = getVersionLetters(numVersions);
 
     return versionLetters.map((letter, vIdx) => {
       let versionQuestions = [...baseQuestions];
@@ -405,6 +416,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             statement: q.statement,
             alternatives: alts,
             correctAlternative: newCorrectLetter,
+            explanation: q.explanation,
+            topic: q.topic,
           };
         } else {
           return {
@@ -413,6 +426,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             statement: q.statement,
             alternatives: alts,
             correctAlternative: q.correctAlternative,
+            explanation: q.explanation,
+            topic: q.topic,
           };
         }
       });
@@ -661,16 +676,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       draft.numberOfVersions
     );
 
-    const versionLetters: ('A' | 'B' | 'C' | 'D')[] = (['A', 'B', 'C', 'D'] as const).slice(
-      0,
+    const studentAssignments = generateRandomStudentAssignments(
+      students,
       draft.numberOfVersions
     );
-    const studentAssignments = students.map((std, idx) => ({
-      studentId: std.id,
-      studentName: std.name,
-      registration: std.registration,
-      assignedVersion: versionLetters[idx % versionLetters.length],
-    }));
 
     const newExam: Exam = {
       id: `exam-${Date.now()}`,
@@ -689,6 +698,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       duration: draft.duration,
       instructions: draft.instructions,
       status: 'ready',
+      withStudentIdentification: draft.withStudentIdentification ?? true,
       shuffleQuestions: draft.shuffleQuestions,
       shuffleAlternatives: draft.shuffleAlternatives,
       numberOfVersions: draft.numberOfVersions,
@@ -726,16 +736,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       draft.numberOfVersions
     );
 
-    const versionLetters: ('A' | 'B' | 'C' | 'D')[] = (['A', 'B', 'C', 'D'] as const).slice(
-      0,
+    const studentAssignments = generateRandomStudentAssignments(
+      students,
       draft.numberOfVersions
     );
-    const studentAssignments = students.map((std, idx) => ({
-      studentId: std.id,
-      studentName: std.name,
-      registration: std.registration,
-      assignedVersion: versionLetters[idx % versionLetters.length],
-    }));
 
     const updatedExam: Exam = {
       ...existing,
@@ -750,6 +754,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       duration: draft.duration,
       instructions: draft.instructions,
       selectedQuestionIds: draft.selectedQuestionIds,
+      withStudentIdentification: draft.withStudentIdentification ?? true,
       shuffleQuestions: draft.shuffleQuestions,
       shuffleAlternatives: draft.shuffleAlternatives,
       numberOfVersions: draft.numberOfVersions,
@@ -768,6 +773,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message: `As alterações em "${updatedExam.title}" foram salvas.`,
     });
     return updatedExam;
+  };
+
+  const updateExamPrintConfig = (
+    id: string,
+    config: {
+      numberOfVersions?: number;
+      shuffleQuestions?: boolean;
+      shuffleAlternatives?: boolean;
+      withStudentIdentification?: boolean;
+    }
+  ): Exam | undefined => {
+    const existing = exams.find((e) => e.id === id);
+    if (!existing) return undefined;
+
+    const nextNumVersions = Math.max(
+      1,
+      Math.min(26, config.numberOfVersions ?? existing.numberOfVersions ?? 4)
+    );
+    const nextShuffleQ = config.shuffleQuestions ?? existing.shuffleQuestions ?? true;
+    const nextShuffleAlt = config.shuffleAlternatives ?? existing.shuffleAlternatives ?? true;
+    const nextWithIdent =
+      config.withStudentIdentification ?? existing.withStudentIdentification ?? true;
+
+    const versions = buildExamVersions(
+      existing.selectedQuestionIds,
+      nextShuffleQ,
+      nextShuffleAlt,
+      nextNumVersions
+    );
+
+    const studentAssignments = generateRandomStudentAssignments(students, nextNumVersions);
+
+    const updatedExam: Exam = {
+      ...existing,
+      numberOfVersions: nextNumVersions,
+      shuffleQuestions: nextShuffleQ,
+      shuffleAlternatives: nextShuffleAlt,
+      withStudentIdentification: nextWithIdent,
+      versions,
+      studentAssignments,
+    };
+
+    const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
+    persistExams(nextExams);
+    return updatedExam;
+  };
+
+  const reshuffleExamStudents = (id: string) => {
+    const existing = exams.find((e) => e.id === id);
+    if (!existing) return;
+
+    const numV = existing.numberOfVersions || 4;
+    const studentAssignments = generateRandomStudentAssignments(students, numV);
+
+    const updatedExam: Exam = {
+      ...existing,
+      studentAssignments,
+    };
+
+    const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
+    persistExams(nextExams);
+    addToast({
+      type: 'info',
+      title: 'Novo Sorteio de Cadernos Realizado!',
+      message: `Os ${students.length} alunos foram redistribuídos aleatoriamente entre os ${numV} cadernos.`,
+    });
   };
 
   const duplicateExam = (id: string): Exam => {
@@ -919,6 +990,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       duration: target.duration || '',
       instructions: target.instructions || '',
       selectedQuestionIds: target.selectedQuestionIds || [],
+      withStudentIdentification: target.withStudentIdentification ?? true,
       shuffleQuestions: target.shuffleQuestions ?? true,
       shuffleAlternatives: target.shuffleAlternatives ?? true,
       numberOfVersions: target.numberOfVersions || 4,
@@ -1064,6 +1136,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedExam,
         createExamFromDraft,
         updateExam,
+        updateExamPrintConfig,
+        reshuffleExamStudents,
         deleteExam,
         duplicateExam,
         applications,

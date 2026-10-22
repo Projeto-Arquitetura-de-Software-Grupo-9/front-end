@@ -54,8 +54,12 @@ body {
     print-color-adjust: exact !important;
   }
   
-  aside, header, nav, .print\:hidden, .no-print {
+  aside, nav, .app-shell-header, .print\:hidden, .no-print {
     display: none !important;
+  }
+
+  .a4-print-sheet {
+    transform: none !important;
   }
 
   main {

@@ -426,20 +426,83 @@ export const INITIAL_STUDENTS: Student[] = [
   },
 ];
 
+export const getVersionLetters = (numVersions: number = 4): string[] => {
+  const safeCount = Math.max(1, Math.min(26, Math.floor(numVersions) || 1));
+  return Array.from({ length: safeCount }, (_, idx) => String.fromCharCode(65 + idx));
+};
+
+export const generateRandomStudentAssignments = (
+  studentsList: Student[],
+  numVersions: number = 4,
+  seedShift?: number
+) => {
+  const letters = getVersionLetters(numVersions);
+  if (letters.length === 1) {
+    return studentsList.map((std) => ({
+      studentId: std.id,
+      studentName: std.name,
+      registration: std.registration,
+      assignedVersion: 'A',
+    }));
+  }
+
+  // Create a balanced deck of version letters for all students
+  const deck: string[] = studentsList.map((_, i) => letters[i % letters.length]);
+
+  // If seedShift is provided (for deterministic initial mock data), use a non-sequential permutation
+  if (typeof seedShift === 'number') {
+    for (let i = deck.length - 1; i > 0; i--) {
+      const pseudoRandom = ((i * 7 + seedShift * 13 + 3) % (i + 1));
+      [deck[i], deck[pseudoRandom]] = [deck[pseudoRandom], deck[i]];
+    }
+    // Ensure the first student doesn't predictably get 'A' on initial load
+    if (deck[0] === 'A' && deck.length > 1) {
+      const swapIdx = deck.findIndex((l) => l !== 'A');
+      if (swapIdx > 0) {
+        [deck[0], deck[swapIdx]] = [deck[swapIdx], deck[0]];
+      }
+    }
+  } else {
+    // True Fisher-Yates random shuffle
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+  }
+
+  return studentsList.map((std, idx) => ({
+    studentId: std.id,
+    studentName: std.name,
+    registration: std.registration,
+    assignedVersion: deck[idx],
+  }));
+};
+
 const buildInitialExamVersions = (questionIds: string[], numVersions: number = 4): ExamVersion[] => {
   const selected = questionIds
     .map((id) => INITIAL_QUESTIONS.find((q) => q.id === id))
     .filter((q): q is Question => q !== undefined);
 
-  const versionLetters: ('A' | 'B' | 'C' | 'D')[] = (['A', 'B', 'C', 'D'] as const).slice(0, numVersions);
+  const versionLetters = getVersionLetters(numVersions);
 
-  return versionLetters.map((versionLetter) => {
-    const questions = selected.map((q, idx) => ({
+  return versionLetters.map((versionLetter, vIdx) => {
+    // Rotate/permute questions for versions after A
+    const rotated =
+      vIdx === 0 || selected.length <= 1
+        ? selected
+        : [
+            ...selected.slice((vIdx * 2 - 1) % selected.length),
+            ...selected.slice(0, (vIdx * 2 - 1) % selected.length),
+          ];
+
+    const questions = rotated.map((q, idx) => ({
       originalQuestionId: q.id,
       orderIndex: idx + 1,
       statement: q.statement,
       alternatives: q.alternatives,
       correctAlternative: q.correctAlternative,
+      explanation: q.explanation,
+      topic: q.topic,
     }));
 
     const answerKey: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'> = {};
@@ -471,11 +534,13 @@ export const INITIAL_EXAMS: Exam[] = [
     duration: '2 horas',
     instructions: 'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
     status: 'Corrigida',
+    withStudentIdentification: true,
     shuffleQuestions: true,
     shuffleAlternatives: true,
     numberOfVersions: 4,
     selectedQuestionIds: ['q-1024', 'q-1025', 'q-1026', 'q-1027', 'q-1028', 'q-1029', 'q-1030', 'q-1031', 'q-1032', 'q-1033', 'q-1034', 'q-1035'],
     versions: buildInitialExamVersions(['q-1024', 'q-1025', 'q-1026', 'q-1027', 'q-1028', 'q-1029', 'q-1030', 'q-1031', 'q-1032', 'q-1033', 'q-1034', 'q-1035'], 4),
+    studentAssignments: generateRandomStudentAssignments(INITIAL_STUDENTS, 4, 1),
     maxScore: 10.0,
     totalStudents: 34,
     averageScore: 7.8,
@@ -495,11 +560,13 @@ export const INITIAL_EXAMS: Exam[] = [
     duration: '2 horas',
     instructions: 'Responda com atenção. Preencha a folha de respostas com caneta azul ou preta. Proibida a comunicação entre alunos.',
     status: 'Pendente',
+    withStudentIdentification: true,
     shuffleQuestions: true,
     shuffleAlternatives: true,
     numberOfVersions: 2,
     selectedQuestionIds: ['q-1024-2', 'q-1025', 'q-1030', 'q-1034'],
     versions: buildInitialExamVersions(['q-1024-2', 'q-1025', 'q-1030', 'q-1034'], 2),
+    studentAssignments: generateRandomStudentAssignments(INITIAL_STUDENTS, 2, 2),
     maxScore: 10.0,
     totalStudents: 28,
     averageScore: 0,
@@ -519,11 +586,13 @@ export const INITIAL_EXAMS: Exam[] = [
     duration: '3 horas',
     instructions: 'Simulado unificado nos padrões da prova de 1ª Fase do Exame de Ordem dos Advogados do Brasil (FGV). 80 questões de múltipla escolha.',
     status: 'Corrigida',
+    withStudentIdentification: false,
     shuffleQuestions: true,
     shuffleAlternatives: false,
     numberOfVersions: 2,
     selectedQuestionIds: ['q-1024', 'q-1024-3', 'q-1026', 'q-1027', 'q-1028', 'q-1031', 'q-1032', 'q-1035'],
     versions: buildInitialExamVersions(['q-1024', 'q-1024-3', 'q-1026', 'q-1027', 'q-1028', 'q-1031', 'q-1032', 'q-1035'], 2),
+    studentAssignments: generateRandomStudentAssignments(INITIAL_STUDENTS, 2, 3),
     maxScore: 10.0,
     totalStudents: 42,
     averageScore: 8.3,
@@ -543,11 +612,13 @@ export const INITIAL_EXAMS: Exam[] = [
     duration: '2 horas',
     instructions: 'Marque apenas uma alternativa por questão. Justifique em folha avulsa caso haja anulação pretendida.',
     status: 'Em Andamento',
+    withStudentIdentification: true,
     shuffleQuestions: true,
     shuffleAlternatives: true,
     numberOfVersions: 2,
     selectedQuestionIds: ['q-1024-3', 'q-1027', 'q-1031'],
     versions: buildInitialExamVersions(['q-1024-3', 'q-1027', 'q-1031'], 2),
+    studentAssignments: generateRandomStudentAssignments(INITIAL_STUDENTS, 2, 4),
     maxScore: 10.0,
     totalStudents: 31,
     averageScore: 7.1,
@@ -567,11 +638,13 @@ export const INITIAL_EXAMS: Exam[] = [
     duration: '2 horas',
     instructions: 'Prova teórica e prática sobre a Lei 14.133/21 e Regime Jurídico Administrativo.',
     status: 'Pendente',
+    withStudentIdentification: true,
     shuffleQuestions: true,
     shuffleAlternatives: true,
     numberOfVersions: 3,
     selectedQuestionIds: ['q-1024-4', 'q-1026'],
     versions: buildInitialExamVersions(['q-1024-4', 'q-1026'], 3),
+    studentAssignments: generateRandomStudentAssignments(INITIAL_STUDENTS, 3, 5),
     maxScore: 10.0,
     totalStudents: 36,
     averageScore: 0,

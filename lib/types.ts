@@ -83,7 +83,7 @@ export interface Question {
 export interface ExamVersion {
   id?: string;
   applicationId?: string;
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   versionNumber?: number;
   shuffleQuestions?: boolean;
   shuffleAlternatives?: boolean;
@@ -94,6 +94,8 @@ export interface ExamVersion {
     statement: string;
     alternatives: Alternative[];
     correctAlternative: 'A' | 'B' | 'C' | 'D' | 'E';
+    explanation?: string;
+    topic?: string;
   }[];
   layout?: {
     questionOrder: string[];
@@ -156,7 +158,8 @@ export interface Exam {
   questionsConfig?: ExamQuestionConfig[]; // Spec model
   shuffleQuestions: boolean;
   shuffleAlternatives: boolean;
-  numberOfVersions: number; // e.g. 4 (A, B, C, D)
+  withStudentIdentification?: boolean;
+  numberOfVersions: number; // e.g. N cadernos (A, B, C, D, E...)
   selectedQuestionIds: string[];
   versions: ExamVersion[];
   maxScore: number;
@@ -168,7 +171,7 @@ export interface Exam {
     studentId: string;
     studentName: string;
     registration: string;
-    assignedVersion: 'A' | 'B' | 'C' | 'D';
+    assignedVersion: string;
   }[];
 }
 
@@ -195,7 +198,7 @@ export interface Correction {
   id: string;
   applicationId: string;
   examVersionId: string;
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   studentId?: string; // Ausente se prova sem identificação pendente de atribuição
   studentName?: string;
   registration?: string;
@@ -223,7 +226,7 @@ export interface StudentExamResult {
   studentId: string;
   studentName: string;
   registration: string;
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   score: number;
   maxScore: number;
   submittedAt: string;
