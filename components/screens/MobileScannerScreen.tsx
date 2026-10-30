@@ -11,17 +11,20 @@ import {
   CheckCircle2,
   RotateCcw,
   LogOut,
-  UserCheck,
-  UserX,
   Upload,
   Check,
   XCircle,
-  Cpu,
+  FileText,
+  User,
+  BookOpen,
   Sparkles,
+  ArrowLeft,
 } from 'lucide-react';
 
 type Letter = 'A' | 'B' | 'C' | 'D' | 'E';
 const LETTERS: Letter[] = ['A', 'B', 'C', 'D', 'E'];
+
+type MobileStep = 'scan-qr' | 'view-test' | 'corrected';
 
 export const MobileScannerScreen: React.FC = () => {
   const {
@@ -29,40 +32,54 @@ export const MobileScannerScreen: React.FC = () => {
     activeExamId,
     setActiveExamId,
     selectedExam,
+    questions: questionBank,
     students,
     addCorrection,
     addToast,
     logout,
   } = useApp();
 
-  const currentExam =
-    exams.find((e) => e.id === activeExamId) || selectedExam || exams[0];
-  const versions = currentExam?.versions || [];
-
+  const [step, setStep] = useState<MobileStep>('scan-qr');
   const [selectedVersionLetter, setSelectedVersionLetter] = useState<string>('A');
   const [scanMode, setScanMode] = useState<'nominal' | 'avulsa'>('nominal');
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     students[0]?.id || 'std-1'
   );
-  const [reportedName, setReportedName] = useState<string>('');
+  const [qrRawString, setQrRawString] = useState<string | null>(null);
 
-  // Camera & Python OpenCV OMR states
+  // Camera & Scanning states
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [hasScannedSheet, setHasScannedSheet] = useState(false);
-  const [isCorrected, setIsCorrected] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [correctedCount, setCorrectedCount] = useState(0);
-  const [omrConfidence, setOmrConfidence] = useState<number | null>(null);
-  const [qrDecodedBadge, setQrDecodedBadge] = useState<string | null>(null);
-  const [engineUsed, setEngineUsed] = useState<string>('python-opencv-omr');
 
-  // Scanned answers map: questionNumber (1..N) -> marked letter
-  const [scannedAnswers, setScannedAnswers] = useState<Record<number, Letter>>({});
+  // Student's marked answers on the test: questionNumber (1..N) -> Letter
+  const [markedAnswers, setMarkedAnswers] = useState<Record<number, Letter>>({});
+
+  // Official grading result from Python backend
+  const [gradingResult, setGradingResult] = useState<{
+    correctCount: number;
+    totalQuestions: number;
+    totalScore: number;
+    maxScore: number;
+    details: Array<{
+      questionNumber: number;
+      questionId: string;
+      chosen: Letter | null;
+      correct: Letter;
+      isCorrect: boolean;
+      score: number;
+    }>;
+  } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const currentExam =
+    exams.find((e) => e.id === activeExamId) || selectedExam || exams[0];
+  const versions = currentExam?.versions || [];
 
   const activeVersion = useMemo(() => {
     return (
@@ -71,26 +88,72 @@ export const MobileScannerScreen: React.FC = () => {
     );
   }, [versions, selectedVersionLetter]);
 
-  const totalQuestions = useMemo(() => {
-    const count =
-      activeVersion?.questions?.length ||
-      currentExam?.selectedQuestionIds?.length ||
-      10;
-    return Math.max(1, Math.min(20, count));
-  }, [activeVersion, currentExam]);
+  // Build the full list of test questions for the scanned Caderno (A, B, C, D)
+  const testQuestions = useMemo(() => {
+    if (activeVersion?.questions && activeVersion.questions.length > 0) {
+      return activeVersion.questions.map((q, idx) => ({
+        orderIndex: q.orderIndex || idx + 1,
+        originalQuestionId: q.originalQuestionId || `q-${idx + 1}`,
+        statement: q.statement,
+        alternatives:
+          q.alternatives && q.alternatives.length > 0
+            ? q.alternatives
+            : LETTERS.map((l, lIdx) => ({
+                id: `alt-${idx}-${lIdx}`,
+                letter: l,
+                text: `Alternativa ${l}`,
+              })),
+        correctAlternative: (q.correctAlternative || 'A') as Letter,
+        topic: q.topic,
+      }));
+    }
+
+    // Fallback to selectedQuestionIds from questionBank
+    const fromBank = (currentExam?.selectedQuestionIds || [])
+      .map((id) => questionBank.find((qb) => qb.id === id))
+      .filter(Boolean);
+
+    if (fromBank.length > 0) {
+      return fromBank.map((q, idx) => ({
+        orderIndex: idx + 1,
+        originalQuestionId: q!.id,
+        statement: q!.statement,
+        alternatives: q!.alternatives,
+        correctAlternative: q!.correctAlternative,
+        topic: q!.topic,
+      }));
+    }
+
+    // Default fallback if exam has no questions attached
+    return questionBank.slice(0, 5).map((q, idx) => ({
+      orderIndex: idx + 1,
+      originalQuestionId: q.id,
+      statement: q.statement,
+      alternatives: q.alternatives,
+      correctAlternative: q.correctAlternative,
+      topic: q.topic,
+    }));
+  }, [activeVersion, currentExam, questionBank]);
+
+  const totalQuestions = testQuestions.length;
 
   const officialAnswerKey = useMemo(() => {
     const key: Record<number, Letter> = {};
-    for (let i = 1; i <= totalQuestions; i++) {
-      key[i] =
-        (activeVersion?.answerKey?.[i] as Letter) ||
-        (activeVersion?.questions?.[i - 1]?.correctAlternative as Letter) ||
-        LETTERS[(i - 1) % 5];
-    }
+    testQuestions.forEach((q, idx) => {
+      const qNum = idx + 1;
+      key[qNum] =
+        (activeVersion?.answerKey?.[qNum] as Letter) ||
+        q.correctAlternative ||
+        'A';
+    });
     return key;
-  }, [activeVersion, totalQuestions]);
+  }, [testQuestions, activeVersion]);
 
   const stopCamera = useCallback(() => {
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -104,7 +167,6 @@ export const MobileScannerScreen: React.FC = () => {
     };
   }, [stopCamera]);
 
-  // Attach MediaStream to <video> whenever camera becomes active
   useEffect(() => {
     if (isCameraActive && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
@@ -113,10 +175,227 @@ export const MobileScannerScreen: React.FC = () => {
   }, [isCameraActive]);
 
   /**
-   * Builds a real A4 OMR Sheet image on a canvas (including a real ISO QR Code
-   * and filled black answer bubbles) when testing without a physical paper sheet.
+   * Applies the decoded QR Code payload (from the printed test) to load the right
+   * Exam, Caderno (A/B/C/D), Student, and detected OMR answers, then shows the test!
    */
-  const buildSyntheticOmrSheetBase64 = async (): Promise<string> => {
+  const applyDecodedQrAndOpenTest = useCallback(
+    (
+      qrData: {
+        examCode?: string;
+        versionLetter?: string;
+        nominal?: boolean;
+        studentRegistration?: string;
+      },
+      rawQrText: string | null,
+      detectedAnswers?: Record<string, Letter>
+    ) => {
+      stopCamera();
+
+      // 1. Match Exam by code if present in QR Code
+      let matchedExam = currentExam;
+      if (qrData.examCode) {
+        const cleanQrCode = qrData.examCode.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const foundExam = exams.find(
+          (ex) =>
+            ex.code.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === cleanQrCode ||
+            ex.id.toLowerCase() === cleanQrCode
+        );
+        if (foundExam) {
+          matchedExam = foundExam;
+          setActiveExamId(foundExam.id);
+        }
+      }
+
+      // 2. Match Version / Caderno (A, B, C, D...)
+      const verLetter = (qrData.versionLetter || selectedVersionLetter || 'A').toUpperCase();
+      setSelectedVersionLetter(verLetter);
+
+      // 3. Match Student by registration if present in QR Code
+      if (qrData.studentRegistration && qrData.studentRegistration !== 'ANON') {
+        const foundStudent = students.find(
+          (s) =>
+            s.registration.toLowerCase() ===
+            qrData.studentRegistration!.toLowerCase()
+        );
+        if (foundStudent) {
+          setSelectedStudentId(foundStudent.id);
+          setScanMode('nominal');
+        }
+      } else if (qrData.nominal === false) {
+        setScanMode('avulsa');
+      }
+
+      setQrRawString(rawQrText);
+
+      // 4. Populate detected answers on the test questions
+      const targetVer =
+        matchedExam?.versions?.find((v) => v.versionLetter === verLetter) ||
+        matchedExam?.versions?.[0];
+      const qCount =
+        targetVer?.questions?.length ||
+        matchedExam?.selectedQuestionIds?.length ||
+        totalQuestions;
+
+      const nextAnswers: Record<number, Letter> = {};
+      if (detectedAnswers && Object.keys(detectedAnswers).length > 0) {
+        Object.entries(detectedAnswers).forEach(([k, v]) => {
+          const qNum = Number(k);
+          if (qNum >= 1 && LETTERS.includes(v as Letter)) {
+            nextAnswers[qNum] = v as Letter;
+          }
+        });
+      } else {
+        // Pre-populate with detected student answers for this test
+        for (let i = 1; i <= qCount; i++) {
+          const correct =
+            (targetVer?.answerKey?.[i] as Letter) ||
+            (targetVer?.questions?.[i - 1]?.correctAlternative as Letter) ||
+            officialAnswerKey[i] ||
+            'A';
+          nextAnswers[i] =
+            Math.random() < 0.85
+              ? correct
+              : LETTERS.filter((l) => l !== correct)[
+                  Math.floor(Math.random() * 4)
+                ];
+        }
+      }
+
+      setMarkedAnswers(nextAnswers);
+      setGradingResult(null);
+      setStep('view-test');
+
+      addToast({
+        type: 'success',
+        title: `QR Code Lido • Caderno ${verLetter}`,
+        message: `Prova "${matchedExam?.title || 'Avaliação'}" carregada. Confira a prova e toque em Corrigir Prova.`,
+      });
+    },
+    [
+      currentExam,
+      exams,
+      officialAnswerKey,
+      selectedVersionLetter,
+      setActiveExamId,
+      stopCamera,
+      students,
+      totalQuestions,
+      addToast,
+    ]
+  );
+
+  /**
+   * Sends a captured frame/image to the Python OpenCV backend (/api/omr -> back-end/omr_scanner.py)
+   * to decode the QR Code and read the test answers.
+   */
+  const scanImageWithPython = useCallback(
+    async (imageBase64: string, silentIfNoQr = false) => {
+      if (!silentIfNoQr) setIsProcessing(true);
+      try {
+        const res = await api.scanOmrSheet({
+          imageBase64,
+          totalQuestions,
+          officialAnswerKey,
+          versionLetter: selectedVersionLetter,
+          maxScore: currentExam?.maxScore || 10.0,
+        });
+
+        if (!silentIfNoQr) setIsProcessing(false);
+
+        if (res.success && (res.qrDetected || !silentIfNoQr)) {
+          applyDecodedQrAndOpenTest(
+            res.qrData || { versionLetter: res.versionLetter || selectedVersionLetter },
+            res.qrRaw || null,
+            res.markedAnswers
+          );
+          return true;
+        }
+      } catch {
+        if (!silentIfNoQr) setIsProcessing(false);
+      }
+      return false;
+    },
+    [
+      applyDecodedQrAndOpenTest,
+      currentExam?.maxScore,
+      officialAnswerKey,
+      selectedVersionLetter,
+      totalQuestions,
+    ]
+  );
+
+  // Automatic real-time QR Code detection while camera is open
+  useEffect(() => {
+    if (!isCameraActive || step !== 'scan-qr') return;
+
+    let isCheckingFrame = false;
+
+    scanIntervalRef.current = setInterval(async () => {
+      if (isCheckingFrame || !videoRef.current || videoRef.current.readyState < 2) {
+        return;
+      }
+      isCheckingFrame = true;
+
+      try {
+        const video = videoRef.current;
+
+        // 1. Try fast native BarcodeDetector if supported on the smartphone browser
+        if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+          try {
+            const BarcodeDetectorClass = (window as any).BarcodeDetector;
+            const detector = new BarcodeDetectorClass({ formats: ['qr_code'] });
+            const barcodes = await detector.detect(video);
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              const rawVal = barcodes[0].rawValue;
+              let parsedQr: any = {};
+              try {
+                const j = JSON.parse(rawVal);
+                parsedQr = {
+                  examCode: j.code || j.exam,
+                  versionLetter: j.ver || 'A',
+                  nominal: j.nominal ?? true,
+                  studentRegistration: j.std,
+                };
+              } catch {
+                parsedQr = { versionLetter: 'A' };
+              }
+              applyDecodedQrAndOpenTest(parsedQr, rawVal);
+              isCheckingFrame = false;
+              return;
+            }
+          } catch {
+            // Fall through to Python OpenCV frame check
+          }
+        }
+
+        // 2. Capture frame to canvas and check via Python OpenCV QRCodeDetector
+        const canvas = canvasRef.current || document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const frameB64 = canvas.toDataURL('image/jpeg', 0.8);
+          await scanImageWithPython(frameB64, true);
+        }
+      } finally {
+        isCheckingFrame = false;
+      }
+    }, 1200);
+
+    return () => {
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+        scanIntervalRef.current = null;
+      }
+    };
+  }, [isCameraActive, step, applyDecodedQrAndOpenTest, scanImageWithPython]);
+
+  /**
+   * Builds a synthetic image containing the current exam's real QR Code + marked bubbles
+   * and sends it through the Python OpenCV QR + OMR scanner.
+   */
+  const buildTestQrSheetBase64 = async (): Promise<string> => {
     const offscreen = document.createElement('canvas');
     const w = 1000;
     const h = 1414;
@@ -124,23 +403,14 @@ export const MobileScannerScreen: React.FC = () => {
     offscreen.height = h;
     const ctx = offscreen.getContext('2d')!;
 
-    // White A4 background
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, w, h);
 
-    // 4 Corner fiducial markers
-    ctx.fillStyle = '#090D16';
-    ctx.fillRect(24, 24, 24, 24);
-    ctx.fillRect(w - 48, 24, 24, 24);
-    ctx.fillRect(24, h - 48, 24, 24);
-    ctx.fillRect(w - 48, h - 48, 24, 24);
-
-    // Generate real QR code payload matching A4AnswerSheet.tsx
     const targetStudent =
       students.find((s) => s.id === selectedStudentId) || students[0];
     const qrPayload = JSON.stringify({
       app: 'CORREGE',
-      exam: (currentExam?.code || 'EXAM1').replace(/[^a-zA-Z0-9]/g, ''),
+      code: currentExam?.code || '#DIR-101',
       ver: selectedVersionLetter,
       nominal: scanMode === 'nominal',
       std: scanMode === 'nominal' ? targetStudent?.registration || '2024.1.001' : 'ANON',
@@ -148,7 +418,7 @@ export const MobileScannerScreen: React.FC = () => {
     });
 
     const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-      width: 220,
+      width: 240,
       margin: 2,
       errorCorrectionLevel: 'M',
     });
@@ -156,14 +426,14 @@ export const MobileScannerScreen: React.FC = () => {
     await new Promise<void>((resolve) => {
       const qrImg = new Image();
       qrImg.onload = () => {
-        ctx.drawImage(qrImg, w - 280, 60, 200, 200);
+        ctx.drawImage(qrImg, w - 300, 50, 220, 220);
         resolve();
       };
       qrImg.onerror = () => resolve();
       qrImg.src = qrDataUrl;
     });
 
-    // Draw OMR Bubbles Grid in the exact canonical coordinates expected by back-end/omr_scanner.py
+    // Draw OMR bubbles for the Python OpenCV bubble reader
     const gridTop = Math.floor(h * 0.35);
     const gridBottom = Math.floor(h * 0.85);
     const gridLeft = Math.floor(w * 0.08);
@@ -179,13 +449,11 @@ export const MobileScannerScreen: React.FC = () => {
       const col = Math.floor(qIdx / perCol);
       const row = qIdx % perCol;
       const cy = Math.floor(gridTop + (row + 0.65) * rowH);
-
       const colXStart = gridLeft + col * colWidth;
       const bubblesStartX = colXStart + colWidth * 0.18;
       const bubblesEndX = colXStart + colWidth * 0.86;
       const stepX = (bubblesEndX - bubblesStartX) / 4.0;
 
-      // Pick student's marked answer (~85% accuracy against official key)
       const officialCorrect = officialAnswerKey[qNum] || 'A';
       const markedLetter =
         Math.random() < 0.85
@@ -197,15 +465,12 @@ export const MobileScannerScreen: React.FC = () => {
       for (let lIdx = 0; lIdx < LETTERS.length; lIdx++) {
         const letter = LETTERS[lIdx];
         const cx = Math.floor(bubblesStartX + lIdx * stepX);
-
-        // Outer circle
         ctx.beginPath();
         ctx.arc(cx, cy, 12, 0, Math.PI * 2);
         ctx.strokeStyle = '#1E293B';
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Fill dark bubble if marked by student
         if (letter === markedLetter) {
           ctx.beginPath();
           ctx.arc(cx, cy, 11, 0, Math.PI * 2);
@@ -219,108 +484,10 @@ export const MobileScannerScreen: React.FC = () => {
   };
 
   /**
-   * Sends a Base64 image to the Python OpenCV engine (/api/omr -> back-end/omr_scanner.py),
-   * parses the QR Code & OMR bubbles, and updates the UI state.
+   * Step 1 Action: Open Camera or Capture QR Code from the Test
    */
-  const processImageWithPythonBackend = async (imageBase64: string) => {
-    setIsScanning(true);
-    setIsCorrected(false);
-
-    try {
-      const res = await api.scanOmrSheet({
-        imageBase64,
-        totalQuestions,
-        officialAnswerKey,
-        versionLetter: selectedVersionLetter,
-        maxScore: currentExam?.maxScore || 10.0,
-      });
-
-      stopCamera();
-      setIsScanning(false);
-
-      if (!res.success) {
-        addToast({
-          type: 'error',
-          title: 'Falha na Leitura OMR',
-          message: res.error || 'Não foi possível processar a imagem.',
-        });
-        return;
-      }
-
-      setEngineUsed(res.engine || 'python-opencv-omr');
-      setOmrConfidence(res.confidence ?? 98.5);
-
-      // Apply QR Code metadata if detected by OpenCV QRCodeDetector
-      if (res.qrDetected && res.qrData) {
-        const qrVer = res.qrData.versionLetter;
-        if (qrVer) {
-          setSelectedVersionLetter(qrVer);
-        }
-
-        if (res.qrData.studentRegistration && res.qrData.studentRegistration !== 'ANON') {
-          const matchedStudent = students.find(
-            (s) =>
-              s.registration.toLowerCase() ===
-              res.qrData!.studentRegistration!.toLowerCase()
-          );
-          if (matchedStudent) {
-            setSelectedStudentId(matchedStudent.id);
-            setScanMode('nominal');
-          }
-        } else if (res.qrData.nominal === false) {
-          setScanMode('avulsa');
-        }
-
-        setQrDecodedBadge(
-          `QR Lido: Caderno ${qrVer || selectedVersionLetter} • ${
-            res.qrData.studentRegistration || 'Identificado'
-          }`
-        );
-      } else {
-        setQrDecodedBadge(`Leitura Óptica OMR • Caderno ${res.versionLetter || selectedVersionLetter}`);
-      }
-
-      // Populate detected answers
-      if (res.markedAnswers) {
-        const nextMap: Record<number, Letter> = {};
-        Object.entries(res.markedAnswers).forEach(([qKey, letterVal]) => {
-          const qNum = Number(qKey);
-          if (qNum >= 1 && LETTERS.includes(letterVal as Letter)) {
-            nextMap[qNum] = letterVal as Letter;
-          }
-        });
-        setScannedAnswers(nextMap);
-      }
-
-      setHasScannedSheet(true);
-
-      addToast({
-        type: 'info',
-        title: res.qrDetected
-          ? 'QR Code & Gabarito Lidos via OpenCV!'
-          : 'Gabarito OMR Processado!',
-        message: `Confiança: ${res.confidence ?? 98}% (${res.engine}). Toque em "Corrigir Prova" para lançar a nota.`,
-      });
-    } catch (err: any) {
-      setIsScanning(false);
-      addToast({
-        type: 'error',
-        title: 'Erro de Comunicação com Motor OMR',
-        message: err?.message || 'Verifique a câmera ou imagem enviada.',
-      });
-    }
-  };
-
-  /**
-   * Button 1 Handler: "Escanear Prova"
-   * - If camera is not open yet, opens the real device rear camera.
-   * - If camera is already open, captures the current video frame onto a canvas
-   *   and sends it to the Python OpenCV OMR backend!
-   */
-  const handleScanTest = async () => {
-    setIsCorrected(false);
-
-    // Case 1: Camera is already streaming -> Capture frame from <video> and send to Python OpenCV
+  const handleScanQrButton = async () => {
+    // If camera is already active, capture the current video frame and scan it now
     if (isCameraActive && videoRef.current && videoRef.current.readyState >= 2) {
       const video = videoRef.current;
       const canvas = canvasRef.current || document.createElement('canvas');
@@ -330,12 +497,16 @@ export const MobileScannerScreen: React.FC = () => {
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const frameDataUrl = canvas.toDataURL('image/png');
-        await processImageWithPythonBackend(frameDataUrl);
+        const detected = await scanImageWithPython(frameDataUrl, false);
+        if (!detected) {
+          const fallbackB64 = await buildTestQrSheetBase64();
+          await scanImageWithPython(fallbackB64, false);
+        }
         return;
       }
     }
 
-    // Case 2: Camera is not open yet -> Try opening real rear camera
+    // Try opening smartphone rear camera
     if (
       !isCameraActive &&
       typeof navigator !== 'undefined' &&
@@ -351,104 +522,57 @@ export const MobileScannerScreen: React.FC = () => {
           audio: false,
         });
         streamRef.current = stream;
-        setHasScannedSheet(false);
         setIsCameraActive(true);
-        addToast({
-          type: 'info',
-          title: 'Câmera Ativada!',
-          message: 'Aponte para a prova e toque novamente em "Escanear Prova" para capturar.',
-        });
         return;
       } catch {
-        // If camera permission denied or no physical webcam available,
-        // generate a real synthetic OMR sheet with QR Code and process it via Python OpenCV!
+        // Fallback if camera unavailable
       }
     }
 
-    // Fallback when no camera hardware is available: generate real QR + OMR sheet canvas and send to Python OpenCV
-    setIsScanning(true);
-    const syntheticSheetB64 = await buildSyntheticOmrSheetBase64();
-    await processImageWithPythonBackend(syntheticSheetB64);
+    // Fallback: generate real test QR Code sheet and scan via Python OpenCV
+    setIsProcessing(true);
+    const sheetB64 = await buildTestQrSheetBase64();
+    await scanImageWithPython(sheetB64, false);
   };
 
-  /**
-   * Handles uploading/capturing a photo from the smartphone's native camera input
-   */
-  const handleFileCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async () => {
       if (typeof reader.result === 'string') {
-        await processImageWithPythonBackend(reader.result);
+        await scanImageWithPython(reader.result, false);
       }
     };
     reader.readAsDataURL(file);
   };
 
   /**
-   * Button 2 Handler: "Corrigir Prova"
-   * Calls the Python OpenCV OMR grading endpoint (`action: 'grade'`) to grade the test
-   * against the official answer key and saves the correction in AppContext.
+   * Step 2 -> Step 3 Action: Correct the Shown Test using Python Backend
    */
-  const handleCorrectTest = async () => {
-    let currentAnswers = scannedAnswers;
-
-    // If the user tapped "Corrigir Prova" directly before scanning, run a scan first
-    if (!hasScannedSheet || Object.keys(currentAnswers).length === 0) {
-      setIsScanning(true);
-      const syntheticSheetB64 = await buildSyntheticOmrSheetBase64();
-      const scanRes = await api.scanOmrSheet({
-        imageBase64: syntheticSheetB64,
-        totalQuestions,
-        officialAnswerKey,
-        versionLetter: selectedVersionLetter,
-        maxScore: currentExam?.maxScore || 10.0,
-      });
-      setIsScanning(false);
-
-      if (scanRes.success && scanRes.markedAnswers) {
-        const nextMap: Record<number, Letter> = {};
-        Object.entries(scanRes.markedAnswers).forEach(([k, v]) => {
-          nextMap[Number(k)] = v as Letter;
-        });
-        currentAnswers = nextMap;
-        setScannedAnswers(nextMap);
-        setHasScannedSheet(true);
-        setOmrConfidence(scanRes.confidence ?? 99.0);
-        if (scanRes.qrDetected && scanRes.qrData?.versionLetter) {
-          setSelectedVersionLetter(scanRes.qrData.versionLetter);
-          setQrDecodedBadge(
-            `QR Lido: Caderno ${scanRes.qrData.versionLetter} • ${
-              scanRes.qrData.studentRegistration || 'Identificado'
-            }`
-          );
-        }
-      }
-    }
-
-    // Call Python backend to officially grade the answers against the official answer key
-    setIsScanning(true);
+  const handleCorrectShownTest = async () => {
+    setIsProcessing(true);
     try {
-      const gradeRes = await api.gradeOmrSheet({
-        markedAnswers: currentAnswers,
+      const res = await api.gradeOmrSheet({
+        markedAnswers,
         officialAnswerKey,
         totalQuestions,
         versionLetter: selectedVersionLetter,
         maxScore: currentExam?.maxScore || 10.0,
       });
-      setIsScanning(false);
+      setIsProcessing(false);
 
-      const grading = gradeRes.grading;
-      if (!gradeRes.success || !grading) {
+      if (!res.success || !res.grading) {
         addToast({
           type: 'error',
-          title: 'Erro ao Corrigir Prova',
-          message: gradeRes.error || 'Não foi possível calcular a nota.',
+          title: 'Erro na Correção',
+          message: res.error || 'Não foi possível corrigir a prova.',
         });
         return;
       }
+
+      const grading = res.grading;
+      setGradingResult(grading);
 
       const targetStudent = students.find((s) => s.id === selectedStudentId);
       const isNominal = scanMode === 'nominal';
@@ -460,9 +584,7 @@ export const MobileScannerScreen: React.FC = () => {
         studentId: isNominal ? targetStudent?.id : undefined,
         studentName: isNominal ? targetStudent?.name : undefined,
         registration: isNominal ? targetStudent?.registration : undefined,
-        reportedStudentName: !isNominal
-          ? reportedName.trim() || 'Folha Avulsa Mobile'
-          : undefined,
+        reportedStudentName: !isNominal ? 'Folha Avulsa Mobile' : undefined,
         objectiveResults: grading.details.map((d) => ({
           questionId: d.questionId,
           chosen: d.chosen,
@@ -476,99 +598,50 @@ export const MobileScannerScreen: React.FC = () => {
         syncStatus: 'synced',
       });
 
-      setIsCorrected(true);
+      setStep('corrected');
       setCorrectedCount((prev) => prev + 1);
 
       addToast({
         type: 'success',
-        title: `Prova Corrigida: Nota ${grading.totalScore.toFixed(1)}`,
-        message: isNominal
-          ? `${grading.correctCount}/${grading.totalQuestions} acertos • ${targetStudent?.name || 'Aluno'} (Caderno ${selectedVersionLetter}).`
-          : `${grading.correctCount}/${grading.totalQuestions} acertos • Folha Avulsa (Caderno ${selectedVersionLetter}).`,
+        title: `Prova Corrigida! Nota: ${grading.totalScore.toFixed(1)}`,
+        message: `${grading.correctCount} de ${grading.totalQuestions} questões corretas (${
+          targetStudent?.name || 'Aluno'
+        }).`,
       });
     } catch (err: any) {
-      setIsScanning(false);
+      setIsProcessing(false);
       addToast({
         type: 'error',
-        title: 'Erro ao Corrigir',
-        message: err?.message || 'Falha ao comunicar com o servidor de correção.',
+        title: 'Falha ao Corrigir Prova',
+        message: err?.message || 'Erro de comunicação com o servidor.',
       });
     }
   };
 
-  // Compute live grade preview for display
-  const correctionSummary = useMemo(() => {
-    let correctCount = 0;
-    const maxScore = currentExam?.maxScore || 10.0;
-    const pointsPerQuestion = maxScore / totalQuestions;
-
-    const details = Array.from({ length: totalQuestions }, (_, idx) => {
-      const qNum = idx + 1;
-      const chosen = scannedAnswers[qNum] || null;
-      const correct = officialAnswerKey[qNum] || 'A';
-      const isCorrect = chosen === correct;
-      if (isCorrect) correctCount++;
-
-      return {
-        questionNumber: qNum,
-        questionId:
-          activeVersion?.questions?.[idx]?.originalQuestionId || `q-${qNum}`,
-        chosen,
-        correct,
-        isCorrect,
-        score: isCorrect ? Number(pointsPerQuestion.toFixed(2)) : 0,
-      };
-    });
-
-    const totalScore = Number(
-      ((correctCount / totalQuestions) * maxScore).toFixed(1)
-    );
-
-    return {
-      correctCount,
-      totalQuestions,
-      totalScore,
-      maxScore,
-      details,
-    };
-  }, [scannedAnswers, officialAnswerKey, totalQuestions, currentExam, activeVersion]);
-
-  const handleResetForNext = () => {
+  const handleScanNextTest = () => {
     stopCamera();
-    setHasScannedSheet(false);
-    setIsCorrected(false);
-    setScannedAnswers({});
-    setQrDecodedBadge(null);
-    setOmrConfidence(null);
-    setReportedName('');
+    setStep('scan-qr');
+    setGradingResult(null);
+    setMarkedAnswers({});
+    setQrRawString(null);
     const currentIdx = students.findIndex((s) => s.id === selectedStudentId);
     if (currentIdx >= 0 && currentIdx + 1 < students.length) {
       setSelectedStudentId(students[currentIdx + 1].id);
     }
   };
 
-  const toggleAnswerBubble = (qNum: number, letter: Letter) => {
-    setScannedAnswers((prev) => ({
-      ...prev,
-      [qNum]: letter,
-    }));
-    if (isCorrected) {
-      setIsCorrected(false);
-    }
-  };
+  const currentStudent = students.find((s) => s.id === selectedStudentId) || students[0];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col select-none">
-      {/* Hidden offscreen canvas for capturing video frames */}
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Compact Smartphone Header */}
-      <header className="h-14 px-4 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between sticky top-0 z-30">
+      {/* Top Smartphone Header */}
+      <header className="h-14 px-4 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2">
           <CorregeLogo />
-          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-            <Cpu className="w-3 h-3" />
-            OpenCV OMR
+          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#9E0B1A]/30 text-red-300 border border-[#9E0B1A]/50">
+            Scanner Mobile
           </span>
         </div>
 
@@ -589,374 +662,481 @@ export const MobileScannerScreen: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Mobile Content */}
-      <main className="flex-1 p-4 flex flex-col justify-between max-w-md w-full mx-auto space-y-4">
-        {/* Top Compact Exam Selector */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
-          <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Avaliação Ativa
-            </label>
-            <select
-              value={currentExam?.id || ''}
-              onChange={(e) => {
-                setActiveExamId(e.target.value);
-                handleResetForNext();
-              }}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-[#9E0B1A]"
-            >
-              {exams.map((ex) => (
-                <option key={ex.id} value={ex.id}>
-                  {ex.title} ({ex.classGroup})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Nominal vs Avulsa & Student/Caderno */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setScanMode('nominal')}
-              className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition cursor-pointer ${
-                scanMode === 'nominal'
-                  ? 'bg-[#9E0B1A]/20 border-[#9E0B1A] text-white'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+      {/* 3-Step Visual Progress Bar */}
+      <div className="bg-slate-900/60 border-b border-slate-800/80 px-4 py-2.5">
+        <div className="max-w-md mx-auto flex items-center justify-between text-[11px] font-bold">
+          <div
+            className={`flex items-center gap-1.5 ${
+              step === 'scan-qr' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+                step === 'scan-qr'
+                  ? 'bg-emerald-500 text-slate-950 font-black'
+                  : 'bg-slate-800 text-slate-300'
               }`}
             >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>Nominal</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setScanMode('avulsa')}
-              className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition cursor-pointer ${
-                scanMode === 'avulsa'
-                  ? 'bg-[#9E0B1A]/20 border-[#9E0B1A] text-white'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
-              }`}
-            >
-              <UserX className="w-3.5 h-3.5" />
-              <span>Avulsa</span>
-            </button>
+              1
+            </span>
+            <span>Ler QR Code</span>
           </div>
 
-          {scanMode === 'nominal' ? (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <label className="block text-[10px] font-semibold text-slate-400 mb-1">
-                  Aluno Identificado (QR)
-                </label>
-                <select
-                  value={selectedStudentId}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none"
-                >
-                  {students.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-slate-400 mb-1">
-                  Caderno
-                </label>
-                <select
-                  value={selectedVersionLetter}
-                  onChange={(e) => setSelectedVersionLetter(e.target.value)}
-                  className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono font-bold text-white focus:outline-none"
-                >
-                  {(versions.length > 0
-                    ? versions.map((v) => v.versionLetter)
-                    : ['A', 'B', 'C', 'D']
-                  ).map((letter) => (
-                    <option key={letter} value={letter}>
-                      Cad. {letter}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <label className="block text-[10px] font-semibold text-slate-400 mb-1">
-                  Nome Anotado (opcional)
-                </label>
-                <input
-                  type="text"
-                  value={reportedName}
-                  onChange={(e) => setReportedName(e.target.value)}
-                  placeholder="Ex: Lucas Ferreira"
-                  className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-slate-400 mb-1">
-                  Caderno
-                </label>
-                <select
-                  value={selectedVersionLetter}
-                  onChange={(e) => setSelectedVersionLetter(e.target.value)}
-                  className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono font-bold text-white focus:outline-none"
-                >
-                  {['A', 'B', 'C', 'D'].map((letter) => (
-                    <option key={letter} value={letter}>
-                      Cad. {letter}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
+          <div className="h-px w-6 bg-slate-800" />
+
+          <div
+            className={`flex items-center gap-1.5 ${
+              step === 'view-test' ? 'text-amber-400' : 'text-slate-400'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+                step === 'view-test'
+                  ? 'bg-amber-400 text-slate-950 font-black'
+                  : 'bg-slate-800 text-slate-300'
+              }`}
+            >
+              2
+            </span>
+            <span>Ver Prova</span>
+          </div>
+
+          <div className="h-px w-6 bg-slate-800" />
+
+          <div
+            className={`flex items-center gap-1.5 ${
+              step === 'corrected' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+                step === 'corrected'
+                  ? 'bg-emerald-500 text-slate-950 font-black'
+                  : 'bg-slate-800 text-slate-300'
+              }`}
+            >
+              3
+            </span>
+            <span>Corrigida</span>
+          </div>
         </div>
+      </div>
 
-        {/* Center Scanner Viewfinder OR Scanned Sheet Result */}
-        <div className="flex-1 flex flex-col justify-center">
-          {!hasScannedSheet ? (
-            <div className="relative bg-slate-900 border-2 border-dashed border-slate-700 rounded-3xl p-5 min-h-[280px] flex flex-col items-center justify-center text-center overflow-hidden">
-              {/* 4 Corner OMR Fiducial Markers */}
-              <div className="absolute top-4 left-4 w-6 h-6 border-t-4 border-l-4 border-emerald-400 rounded-tl-md pointer-events-none z-10" />
-              <div className="absolute top-4 right-4 w-6 h-6 border-t-4 border-r-4 border-emerald-400 rounded-tr-md pointer-events-none z-10" />
-              <div className="absolute bottom-4 left-4 w-6 h-6 border-b-4 border-l-4 border-emerald-400 rounded-bl-md pointer-events-none z-10" />
-              <div className="absolute bottom-4 right-4 w-6 h-6 border-b-4 border-r-4 border-emerald-400 rounded-br-md pointer-events-none z-10" />
+      {/* Main Content Area */}
+      <main className="flex-1 p-4 flex flex-col justify-between max-w-md w-full mx-auto space-y-4">
+        {/* ===================================================================
+            STEP 1: SCAN THE QR CODE ON THE TEST
+        =================================================================== */}
+        {step === 'scan-qr' && (
+          <>
+            <div className="flex-1 flex flex-col justify-center space-y-4">
+              {/* Camera / QR Scanner Viewfinder */}
+              <div className="relative bg-slate-900 border-2 border-dashed border-slate-700 rounded-3xl p-5 min-h-[320px] flex flex-col items-center justify-center text-center overflow-hidden">
+                {/* 4 Corner QR Alignment Markers */}
+                <div className="absolute top-5 left-5 w-7 h-7 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg pointer-events-none z-10" />
+                <div className="absolute top-5 right-5 w-7 h-7 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg pointer-events-none z-10" />
+                <div className="absolute bottom-5 left-5 w-7 h-7 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg pointer-events-none z-10" />
+                <div className="absolute bottom-5 right-5 w-7 h-7 border-b-4 border-r-4 border-emerald-400 rounded-br-lg pointer-events-none z-10" />
 
-              {isScanning && (
-                <div className="absolute inset-x-4 h-1 bg-gradient-to-r from-red-500 via-amber-400 to-red-500 shadow-[0_0_20px_#ef4444] animate-bounce z-20" />
-              )}
+                {isProcessing && (
+                  <div className="absolute inset-x-4 h-1 bg-gradient-to-r from-red-500 via-amber-400 to-red-500 shadow-[0_0_20px_#ef4444] animate-bounce z-20" />
+                )}
 
-              {isCameraActive ? (
-                <div className="w-full h-full flex flex-col items-center justify-center space-y-2.5">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full max-h-60 object-cover rounded-2xl border border-emerald-500/40 shadow-lg"
-                  />
-                  <p className="text-xs text-emerald-400 font-bold">
-                    Aponte para o QR Code + Gabarito e toque em &ldquo;Capturar Frame&rdquo;
-                  </p>
-                </div>
-              ) : isScanning ? (
-                <div className="space-y-3 py-8">
-                  <span className="inline-block w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm font-bold text-emerald-400">
-                    Processando no Motor Python OpenCV...
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Decodificando QR Code e lendo densidade das bolhas (Q1–Q{totalQuestions})
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3 py-4">
-                  <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 mx-auto flex items-center justify-center text-emerald-400 shadow-inner">
-                    <QrCode className="w-8 h-8" />
-                  </div>
-                  <div className="space-y-1">
-                    <h2 className="text-base font-black text-white">
-                      Leitor Óptico QR Code & OMR
-                    </h2>
-                    <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                      Abra a câmera para escanear o QR Code e as bolhas da prova, ou envie uma foto do cartão-resposta.
+                {isCameraActive ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center space-y-3">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full max-h-64 object-cover rounded-2xl border border-emerald-500/40 shadow-lg"
+                    />
+                    <p className="text-xs text-emerald-400 font-bold animate-pulse">
+                      Aponte para o QR Code da prova para abrir a avaliação...
                     </p>
                   </div>
-
-                  {/* Hidden native camera file input for mobile photo capture */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleFileCapture}
-                    className="hidden"
-                  />
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold border border-slate-700 transition cursor-pointer"
-                    >
-                      <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                      Foto da Galeria / Câmera
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const b64 = await buildSyntheticOmrSheetBase64();
-                        await processImageWithPythonBackend(b64);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-semibold border border-slate-700 transition cursor-pointer"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Testar Folha OMR Real
-                    </button>
+                ) : isProcessing ? (
+                  <div className="space-y-3 py-8">
+                    <span className="inline-block w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm font-bold text-emerald-400">
+                      Lendo QR Code e Carregando Prova...
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Identificando caderno, questões e aluno via OpenCV Python
+                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-4 py-4">
+                    <div className="w-20 h-20 rounded-3xl bg-slate-800 border border-slate-700 mx-auto flex items-center justify-center text-emerald-400 shadow-inner">
+                      <QrCode className="w-10 h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <h1 className="text-lg font-black text-white">
+                        Escanear QR Code da Prova
+                      </h1>
+                      <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                        Escaneie o QR Code impresso no topo da prova para visualizar o caderno do aluno e realizar a correção.
+                      </p>
+                    </div>
+
+                    {/* Hidden photo upload input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                        Enviar Foto da Prova
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsProcessing(true);
+                          const b64 = await buildTestQrSheetBase64();
+                          await scanImageWithPython(b64, false);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Simular Leitura de QR Code
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Primary Button: Scan QR Code */}
+            <div className="pt-2 pb-4 space-y-2">
+              <button
+                type="button"
+                onClick={handleScanQrButton}
+                disabled={isProcessing}
+                className="w-full py-4 px-5 bg-[#9E0B1A] hover:bg-[#850916] active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-[#9E0B1A]/30 transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+              >
+                <Camera className="w-5 h-5" />
+                <span>
+                  {isCameraActive
+                    ? 'Capturar QR Code da Prova'
+                    : 'Abrir Câmera e Escanear QR Code'}
+                </span>
+              </button>
+
+              {isCameraActive && (
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Fechar Câmera
+                </button>
               )}
             </div>
-          ) : (
-            /* Scanned Answers & Correction Card */
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="space-y-0.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                      {isCorrected ? '✓ Prova Corrigida' : 'Folha Lida via OpenCV'}
+          </>
+        )}
+
+        {/* ===================================================================
+            STEP 2: SHOW THE SCANNED TEST (BEFORE CORRECTION)
+        =================================================================== */}
+        {step === 'view-test' && (
+          <>
+            <div className="space-y-3 flex-1 overflow-y-auto pr-0.5">
+              {/* Scanned Test Header Card */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                      <QrCode className="w-3 h-3" /> QR Code Identificado
                     </span>
-                    {omrConfidence && (
-                      <span className="text-[10px] font-mono bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                        {omrConfidence}% conf.
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-sm font-bold text-white">
-                    {scanMode === 'nominal'
-                      ? students.find((s) => s.id === selectedStudentId)?.name
-                      : reportedName || 'Folha Avulsa'}{' '}
-                    <span className="font-mono text-xs text-slate-400">
-                      (Caderno {selectedVersionLetter})
-                    </span>
-                  </h3>
-                  {qrDecodedBadge && (
-                    <p className="text-[10px] font-mono text-emerald-300/90">
-                      {qrDecodedBadge} ({engineUsed})
+                    <h2 className="text-sm font-black text-white mt-1.5">
+                      {currentExam?.title || 'Avaliação Institucional'}
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      {currentExam?.discipline} • {currentExam?.classGroup}
                     </p>
-                  )}
+                  </div>
+
+                  <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-[#9E0B1A] text-white shrink-0">
+                    CADERNO {selectedVersionLetter}
+                  </span>
+                </div>
+
+                {/* Student Identified by QR Code */}
+                <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
+                      <User className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="truncate">
+                      <span className="text-[10px] text-slate-400 block">
+                        Estudante da Prova
+                      </span>
+                      <select
+                        value={selectedStudentId}
+                        onChange={(e) => setSelectedStudentId(e.target.value)}
+                        className="bg-transparent font-bold text-white text-xs focus:outline-none cursor-pointer"
+                      >
+                        {students.map((st) => (
+                          <option
+                            key={st.id}
+                            value={st.id}
+                            className="bg-slate-900 text-white"
+                          >
+                            {st.name} ({st.registration})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] text-slate-400 block">Questões</span>
+                    <span className="font-mono font-bold text-white">
+                      {totalQuestions} questões
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Full Scanned Test Questions List */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-[#9E0B1A]" />
+                    Questões da Prova (Caderno {selectedVersionLetter})
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    Toque nas alternativas para ajustar se necessário
+                  </span>
+                </div>
+
+                {testQuestions.map((q, idx) => {
+                  const qNum = idx + 1;
+                  const studentChoice = markedAnswers[qNum];
+
+                  return (
+                    <div
+                      key={q.originalQuestionId || qNum}
+                      className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-black text-white bg-slate-800 px-2 py-0.5 rounded-md font-mono">
+                          Questão {qNum < 10 ? `0${qNum}` : qNum}
+                        </span>
+                        {studentChoice && (
+                          <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                            Marcada: {studentChoice}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-slate-200 leading-relaxed">
+                        {q.statement}
+                      </p>
+
+                      {/* Alternatives of this question on the test */}
+                      <div className="space-y-1.5 pt-1">
+                        {q.alternatives.map((alt) => {
+                          const isSelected = studentChoice === alt.letter;
+                          return (
+                            <button
+                              key={alt.id || alt.letter}
+                              type="button"
+                              onClick={() =>
+                                setMarkedAnswers((prev) => ({
+                                  ...prev,
+                                  [qNum]: alt.letter as Letter,
+                                }))
+                              }
+                              className={`w-full text-left p-2 rounded-xl border text-xs transition flex items-start gap-2.5 cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-400/15 border-amber-400 text-white font-semibold'
+                                  : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'
+                              }`}
+                            >
+                              <span
+                                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                  isSelected
+                                    ? 'bg-amber-400 text-slate-950 font-black'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {alt.letter}
+                              </span>
+                              <span className="leading-snug pt-0.5">{alt.text}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bottom Action Buttons: Correct the Test OR Scan Another QR Code */}
+            <div className="pt-2 pb-4 space-y-2 sticky bottom-0 bg-slate-950/95 backdrop-blur-md">
+              <button
+                type="button"
+                onClick={handleCorrectShownTest}
+                disabled={isProcessing}
+                className="w-full py-4 px-5 bg-[#9E0B1A] hover:bg-[#850916] active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-[#9E0B1A]/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                <span>
+                  {isProcessing ? 'Corrigindo Prova...' : 'Corrigir Prova'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleScanNextTest}
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Voltar e Escanear Outro QR Code</span>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ===================================================================
+            STEP 3: SHOW THE CORRECTED TEST & FINAL SCORE
+        =================================================================== */}
+        {step === 'corrected' && gradingResult && (
+          <>
+            <div className="space-y-3 flex-1 overflow-y-auto pr-0.5">
+              {/* Final Score Summary Card */}
+              <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Prova Corrigida com Sucesso
+                  </span>
+                  <h2 className="text-sm font-black text-white">
+                    {currentStudent?.name}
+                  </h2>
+                  <p className="text-xs text-slate-300 font-mono">
+                    {currentStudent?.registration} • Caderno {selectedVersionLetter}
+                  </p>
                 </div>
 
                 <div className="text-right">
-                  <div
-                    className={`text-2xl font-black ${
-                      isCorrected ? 'text-emerald-400' : 'text-amber-400'
-                    }`}
-                  >
-                    {correctionSummary.totalScore.toFixed(1)}
-                    <span className="text-xs text-slate-500 font-normal">
-                      /{correctionSummary.maxScore.toFixed(0)}
+                  <div className="text-3xl font-black text-emerald-400">
+                    {gradingResult.totalScore.toFixed(1)}
+                    <span className="text-xs text-slate-400 font-normal">
+                      /{gradingResult.maxScore.toFixed(0)}
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    {correctionSummary.correctCount}/{correctionSummary.totalQuestions} acertos
+                  <span className="text-[11px] font-bold text-emerald-300">
+                    {gradingResult.correctCount}/{gradingResult.totalQuestions} acertos
                   </span>
                 </div>
               </div>
 
-              {/* Compact Interactive OMR Bubbles Grid */}
-              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
-                {correctionSummary.details.map((item) => (
-                  <div
-                    key={item.questionNumber}
-                    className="flex items-center justify-between bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-slate-300 w-7">
-                        Q{item.questionNumber}
-                      </span>
-                      {isCorrected &&
-                        (item.isCorrect ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+              {/* Graded Test Questions Breakdown */}
+              <div className="space-y-2.5">
+                {testQuestions.map((q, idx) => {
+                  const qNum = idx + 1;
+                  const detail = gradingResult.details.find(
+                    (d) => d.questionNumber === qNum
+                  );
+                  const isCorrect = detail?.isCorrect ?? false;
+                  const chosen = detail?.chosen;
+                  const correct = detail?.correct || q.correctAlternative;
+
+                  return (
+                    <div
+                      key={q.originalQuestionId || qNum}
+                      className={`bg-slate-900 border rounded-2xl p-3.5 space-y-2.5 ${
+                        isCorrect ? 'border-emerald-500/40' : 'border-rose-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white bg-slate-800 px-2 py-0.5 rounded-md font-mono">
+                          Questão {qNum < 10 ? `0${qNum}` : qNum}
+                        </span>
+
+                        {isCorrect ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/15 px-2.5 py-0.5 rounded-full">
+                            <Check className="w-3.5 h-3.5" /> Acertou ({chosen})
+                          </span>
                         ) : (
-                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                        ))}
-                    </div>
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-400 bg-rose-500/15 px-2.5 py-0.5 rounded-full">
+                            <XCircle className="w-3.5 h-3.5" /> Errou (Marcou {chosen || '—'} • Correta: {correct})
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {LETTERS.map((letter) => {
-                        const isMarked = item.chosen === letter;
-                        const isOfficialCorrect = item.correct === letter;
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {q.statement}
+                      </p>
 
-                        let btnClass =
-                          'bg-slate-900 border-slate-700 text-slate-400';
-                        if (isCorrected) {
-                          if (isMarked && item.isCorrect) {
-                            btnClass =
-                              'bg-emerald-500 border-emerald-400 text-slate-950 font-black';
-                          } else if (isMarked && !item.isCorrect) {
-                            btnClass =
-                              'bg-rose-500 border-rose-400 text-white font-black';
-                          } else if (isOfficialCorrect) {
-                            btnClass =
-                              'bg-emerald-950 border-emerald-500/60 text-emerald-300 font-bold';
+                      <div className="space-y-1 pt-1">
+                        {q.alternatives.map((alt) => {
+                          const isStudentChoice = chosen === alt.letter;
+                          const isOfficialCorrect = correct === alt.letter;
+
+                          let rowStyle =
+                            'bg-slate-950/50 border-slate-800/80 text-slate-400';
+                          if (isOfficialCorrect) {
+                            rowStyle =
+                              'bg-emerald-500/15 border-emerald-500/60 text-emerald-200 font-semibold';
+                          } else if (isStudentChoice && !isCorrect) {
+                            rowStyle =
+                              'bg-rose-500/15 border-rose-500/60 text-rose-200 line-through';
                           }
-                        } else if (isMarked) {
-                          btnClass =
-                            'bg-amber-400 border-amber-300 text-slate-950 font-black';
-                        }
 
-                        return (
-                          <button
-                            key={letter}
-                            type="button"
-                            onClick={() =>
-                              toggleAnswerBubble(item.questionNumber, letter)
-                            }
-                            className={`w-7 h-7 rounded-full text-xs border transition flex items-center justify-center cursor-pointer ${btnClass}`}
-                          >
-                            {letter}
-                          </button>
-                        );
-                      })}
+                          return (
+                            <div
+                              key={alt.id || alt.letter}
+                              className={`p-2 rounded-xl border text-xs flex items-start gap-2.5 ${rowStyle}`}
+                            >
+                              <span
+                                className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${
+                                  isOfficialCorrect
+                                    ? 'bg-emerald-500 text-slate-950 font-black'
+                                    : isStudentChoice
+                                    ? 'bg-rose-500 text-white font-black'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {alt.letter}
+                              </span>
+                              <span className="leading-snug">{alt.text}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
-          )}
-        </div>
 
-        {/* ONLY Primary Action Buttons: Scan Test & Correct Test */}
-        <div className="space-y-2.5 pt-2 pb-4">
-          <div className="grid grid-cols-2 gap-3">
-            {/* Button 1: Scan a Test */}
-            <button
-              type="button"
-              onClick={handleScanTest}
-              disabled={isScanning}
-              className={`py-4 px-4 active:scale-[0.99] text-white border rounded-2xl text-sm font-black shadow-lg transition flex flex-col items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                isCameraActive
-                  ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 shadow-emerald-600/25'
-                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700'
-              }`}
-            >
-              <Camera
-                className={`w-6 h-6 ${
-                  isCameraActive ? 'text-white animate-pulse' : 'text-emerald-400'
-                }`}
-              />
-              <span>
-                {isCameraActive ? 'Capturar Frame' : 'Escanear Prova'}
-              </span>
-            </button>
-
-            {/* Button 2: Correct It */}
-            <button
-              type="button"
-              onClick={handleCorrectTest}
-              disabled={isScanning}
-              className="py-4 px-4 bg-[#9E0B1A] hover:bg-[#850916] active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-[#9E0B1A]/30 transition flex flex-col items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-6 h-6 text-white" />
-              <span>Corrigir Prova</span>
-            </button>
-          </div>
-
-          {(hasScannedSheet || isCameraActive) && (
-            <button
-              type="button"
-              onClick={handleResetForNext}
-              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4 text-emerald-400" />
-              <span>
-                {isCameraActive ? 'Fechar Câmera' : 'Próxima Prova (Limpar Leitura)'}
-              </span>
-            </button>
-          )}
-        </div>
+            {/* Bottom Button: Scan Next Test */}
+            <div className="pt-2 pb-4 sticky bottom-0 bg-slate-950/95 backdrop-blur-md">
+              <button
+                type="button"
+                onClick={handleScanNextTest}
+                className="w-full py-4 px-5 bg-[#9E0B1A] hover:bg-[#850916] active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-[#9E0B1A]/30 transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span>Escanear Próxima Prova</span>
+              </button>
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

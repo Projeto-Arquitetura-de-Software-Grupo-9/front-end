@@ -54,8 +54,12 @@ body {
     print-color-adjust: exact !important;
   }
   
-  aside, nav, .app-shell-header, .print\:hidden, .no-print {
+  aside, nav, .app-shell-header, .print\:hidden, .no-print, .mobile-scanner-container {
     display: none !important;
+  }
+
+  .desktop-print-container {
+    display: block !important;
   }
 
   .a4-print-sheet {
