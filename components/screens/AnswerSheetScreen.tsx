@@ -4,8 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { A4AnswerSheet, A4AnswerSheetQuestion } from '@/components/common/A4AnswerSheet';
 import { getVersionLetters } from '@/lib/mock-data';
+import { downloadFile } from '@/lib/results';
 import {
   Printer,
+  Download,
   ChevronDown,
   Camera,
   RotateCcw,
@@ -44,6 +46,7 @@ export const AnswerSheetScreen: React.FC = () => {
   const [isDuplexMode, setIsDuplexMode] = useState<boolean>(true);
   const [showAdvancedPopover, setShowAdvancedPopover] = useState<boolean>(false);
   const [markedAnswers, setMarkedAnswers] = useState<Record<number, string>>({});
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     setMarkedAnswers({});
@@ -182,6 +185,29 @@ export const AnswerSheetScreen: React.FC = () => {
   };
 
   const scaleFactor = previewZoom / 100;
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    try {
+      const targets = isBatchMode ? students : [currentStudent];
+      if (!targets.length) throw new Error('Nenhum aluno disponível para o lote.');
+      const sheets = targets.map((student, index) => {
+        const letter = student ? getStudentAssignedVersion(student.id, index) : resolvedVersionLetter;
+        const version = selectedExam.versions.find(v => v.versionLetter === letter);
+        if (!version?.questions.length) throw new Error(`Caderno ${letter} sem questões. Gere a versão antes de exportar.`);
+        return {
+          title: selectedExam.title, code: selectedExam.code, versionLetter: letter,
+          qrCodePayload: JSON.stringify({ app: 'CORREGE', exam: selectedExam.code.replace(/[^a-zA-Z0-9]/g, ''), ver: letter,
+            nominal: Boolean(student?.registration), std: student?.registration || 'ANON', q: version.questions.length }),
+          questions: version.questions.map((q, i) => ({ orderIndex: q.orderIndex || i + 1, letters: q.alternatives.map(a => a.letter) })),
+          student: student ? { name: student.name, registration: student.registration } : null,
+        };
+      });
+      await downloadFile('/answer-sheets/pdf', 'folhas-de-respostas.pdf', { ...sheets[0], sheets, isDuplex: isDuplexMode });
+      addToast({ type: 'success', title: 'PDF da folha de respostas baixado.' });
+    } catch (error) {
+      addToast({ type: 'error', title: 'Falha ao exportar PDF', message: error instanceof Error ? error.message : 'Tente novamente.' });
+    } finally { setIsExporting(false); }
+  };
 
   return (
     <div className="rounded-2xl border border-slate-200 overflow-visible shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
@@ -426,6 +452,9 @@ export const AnswerSheetScreen: React.FC = () => {
           </div>
 
           {/* Primary Print Action Button */}
+          <button type="button" disabled={isExporting} onClick={handleExportPdf} className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold disabled:opacity-50">
+            <Download className="w-3.5 h-3.5" />{isExporting ? 'Exportando…' : 'Baixar PDF'}
+          </button>
           <button
             type="button"
             onClick={() => window.print()}

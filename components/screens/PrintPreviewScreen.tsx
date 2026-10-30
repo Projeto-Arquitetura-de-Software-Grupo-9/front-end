@@ -5,7 +5,7 @@ import { useApp } from '@/context/AppContext';
 import { A4ExamSheet, A4BlankVersoSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
 import { A4AnswerSheet, A4AnswerSheetQuestion } from '@/components/common/A4AnswerSheet';
 import { getVersionLetters } from '@/lib/mock-data';
-import { api } from '@/lib/api';
+import { downloadFile } from '@/lib/results';
 import {
   Download,
   Printer,
@@ -377,41 +377,29 @@ export const PrintPreviewScreen: React.FC = () => {
   const handleExportPdf = async () => {
     setIsExporting(true);
     try {
-      const examId = exam.id || 'exam-catolica-01';
-      const backendUrl = api.getExamPdfUrl(examId, {
-        versionLetter: previewVersion,
+      const versionQuestions = getQuestionsForVersion(previewVersion);
+      if (!versionQuestions.length) throw new Error('Selecione questões antes de exportar.');
+      const { pagesData } = paginateQuestions(versionQuestions);
+      await downloadFile('/exam-exports/pdf', `Prova-Caderno-${previewVersion}.pdf`, {
+        examId: exam.id, versionLetter: previewVersion,
+        header: {
+          institution: exam.institution, department: exam.department, course: exam.course,
+          discipline: exam.discipline, classGroup: exam.classGroup, semester: exam.semester,
+          title: exam.title, code: exam.code, date: exam.date, duration: exam.duration,
+          instructions: exam.instructions.split('\n').filter(Boolean), includeBoxNota,
+        },
+        pages: pagesData.map(page => ({ questions: page.questions.map(q => ({
+          ...q, originalQuestionId: q.id, discipline: exam.discipline,
+          pointValue: questions.find(original => original.id === q.id)?.points,
+        })) })),
         showAnswerKey: showAnswerKeyInPreview || showConceptExplanations,
-        showQrCode: showQrCodeInPreview,
-        includeBoxNota,
-        isDuplex: isDuplexMode,
+        showQrCode: showQrCodeInPreview, includeBoxNota, isDuplex: isDuplexMode,
         includeAnswerSheet: effectiveIncludeAnswerSheet,
       });
-
-      const response = await fetch(backendUrl);
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Prova-${exam.title.replace(/[^a-zA-Z0-9]/g, '_')}-Caderno-${previewVersion}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-
-        addToast({
-          type: 'success',
-          title: 'PDF Baixado com Sucesso!',
-          message: `Caderno ${previewVersion} gerado em formato A4 institucional.`,
-        });
-      } else {
-        window.print();
-      }
-    } catch {
-      window.print();
-    } finally {
-      setIsExporting(false);
-    }
+      addToast({ type: 'success', title: 'PDF baixado', message: `Caderno ${previewVersion} exportado com as questões da prévia. O download contém um caderno; use Imprimir para o lote da turma.` });
+    } catch (error) {
+      addToast({ type: 'error', title: 'Falha ao baixar PDF', message: error instanceof Error ? error.message : 'Tente novamente.' });
+    } finally { setIsExporting(false); }
   };
 
   const renderSheetComponent = (
@@ -824,7 +812,7 @@ export const PrintPreviewScreen: React.FC = () => {
             onClick={handleExportPdf}
             disabled={isExporting}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
-            title="Baixar PDF"
+            title={`Baixar PDF do caderno ${previewVersion}`}
           >
             <Download className="w-3.5 h-3.5" />
             <span>{isExporting ? '...' : 'PDF'}</span>
