@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Sistema de Geração e Correção de Provas (SGP Católica SC / Correge)
-Módulo Python de Leitura Óptica (OMR) e Decodificação de QR Code via OpenCV.
+Motor Real em Python + OpenCV para Leitura de QR Code e Reconhecimento Óptico de Marcações (OMR).
+Sem dados simulados: retorna exclusivamente o que foi detectado opticamente na imagem da câmera.
 """
 
 import sys
@@ -18,7 +19,7 @@ LETTERS = ["A", "B", "C", "D", "E"]
 
 
 def decode_base64_image(image_base64: str) -> Optional[np.ndarray]:
-    """Converte uma string Base64 (Data URL ou pura) em imagem OpenCV (BGR)."""
+    """Converte uma string Base64 (Data URL ou pura) em matriz OpenCV (BGR)."""
     if not image_base64:
         return None
     try:
@@ -34,34 +35,36 @@ def decode_base64_image(image_base64: str) -> Optional[np.ndarray]:
 
 def parse_qr_payload(raw_text: str) -> Dict[str, Any]:
     """
-    Interpreta o payload do QR Code do Cartão-Resposta Correge.
-    Formatos suportados:
-      1) JSON: {"app":"CORREGE","exam":"DIR101","ver":"B","nominal":true,"std":"2024.1.001","q":15}
-      2) String OMR: "CATOLICA-OMR:V=B:APP=APP1"
+    Interpreta o payload real do QR Code impresso na prova ou cartão-resposta.
     """
     raw_text = (raw_text or "").strip()
     if not raw_text:
         return {}
 
-    # 1. Tenta JSON
     try:
         parsed = json.loads(raw_text)
         if isinstance(parsed, dict):
+            key_str = str(parsed.get("k") or "").upper().strip()
+            embedded_key: Dict[str, str] = {}
+            for idx, ch in enumerate(key_str):
+                if ch in LETTERS:
+                    embedded_key[str(idx + 1)] = ch
+
             return {
                 "raw": raw_text,
                 "app": parsed.get("app", "CORREGE"),
-                "examCode": parsed.get("exam") or parsed.get("code"),
+                "examCode": parsed.get("code") or parsed.get("exam"),
                 "versionLetter": (parsed.get("ver") or parsed.get("vId") or "A")
                 .upper()
                 .replace("VER-", ""),
                 "nominal": bool(parsed.get("nominal", True)),
                 "studentRegistration": parsed.get("std") or parsed.get("registration"),
-                "totalQuestions": int(parsed.get("q") or 10),
+                "totalQuestions": int(parsed.get("q") or len(embedded_key) or 0),
+                "embeddedAnswerKey": embedded_key,
             }
     except Exception:
         pass
 
-    # 2. Tenta formato "CATOLICA-OMR:V=A:APP=APP1"
     ver_match = re.search(r"V=([A-Z])", raw_text, re.IGNORECASE)
     if ver_match:
         return {
@@ -71,24 +74,26 @@ def parse_qr_payload(raw_text: str) -> Dict[str, Any]:
             "nominal": True,
         }
 
-    return {"raw": raw_text, "versionLetter": "A"}
+    return {"raw": raw_text}
 
 
 def detect_qr_code(img: np.ndarray) -> Tuple[Optional[str], Dict[str, Any]]:
     """
-    Usa OpenCV QRCodeDetector com múltiplas etapas de pré-processamento
-    para garantir leitura robusta a partir da câmera do smartphone.
+    Detecta e decodifica o QR Code na imagem capturada pela câmera usando OpenCV.
+    Retorna (None, {}) caso nenhum QR Code real esteja visível no quadro.
     """
     detector = cv2.QRCodeDetector()
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    # Lista de variações de imagem para tentar decodificar o QR Code
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+
     candidates = [
         gray,
+        enhanced,
         otsu,
         img,
-        cv2.equalizeHist(gray),
         cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 10
         ),
@@ -96,22 +101,22 @@ def detect_qr_code(img: np.ndarray) -> Tuple[Optional[str], Dict[str, Any]]:
 
     h, w = gray.shape[:2]
     if h > 200 and w > 200:
-        # Quadrante superior direito (onde o QR Code fica na folha A4)
-        top_right = gray[0 : int(h * 0.5), int(w * 0.4) : w]
+        # Região superior direita (posição do QR Code no cabeçalho A4)
+        top_right = gray[0 : int(h * 0.55), int(w * 0.35) : w]
         candidates.insert(1, top_right)
         candidates.append(
             cv2.resize(top_right, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
         )
-        # Caso o usuário aproxime muito a câmera, tenta também versão reduzida
         candidates.append(
             cv2.resize(gray, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_AREA)
         )
 
     for candidate in candidates:
         try:
-            data, points, _ = detector.detectAndDecode(candidate)
+            data, _, _ = detector.detectAndDecode(candidate)
             if data and data.strip():
-                return data.strip(), parse_qr_payload(data.strip())
+                clean = data.strip()
+                return clean, parse_qr_payload(clean)
         except Exception:
             continue
 
@@ -131,11 +136,10 @@ def order_corner_points(pts: np.ndarray) -> np.ndarray:
     return rect
 
 
-def warp_sheet_perspective(img: np.ndarray) -> np.ndarray:
+def warp_sheet_perspective(img: np.ndarray) -> Tuple[np.ndarray, bool]:
     """
-    Localiza a folha A4 ou os 4 marcadores fiduciais nos cantos e aplica
-    transformação de perspectiva (bird's-eye view 1000x1414).
-    Se a folha não ocupar um quadrilátero claro, redimensiona proporcionalmente.
+    Procura o contorno quadrilátero da folha A4 na imagem da câmera e aplica
+    transformação de perspectiva (1000x1414).
     """
     target_w, target_h = 1000, 1414
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -149,7 +153,7 @@ def warp_sheet_perspective(img: np.ndarray) -> np.ndarray:
 
     for c in contours:
         area = cv2.contourArea(c)
-        if area < img_area * 0.40:
+        if area < img_area * 0.35:
             continue
         peri = cv2.arcLength(c, True)
         approx = cv2.approxPolyDP(c, 0.02 * peri, True)
@@ -166,27 +170,140 @@ def warp_sheet_perspective(img: np.ndarray) -> np.ndarray:
                 dtype="float32",
             )
             M = cv2.getPerspectiveTransform(rect, dst)
-            return cv2.warpPerspective(img, M, (target_w, target_h))
+            return cv2.warpPerspective(img, M, (target_w, target_h)), True
 
-    return cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    return cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA), False
+
+
+def detect_bubbles_via_contours(
+    img: np.ndarray, total_questions: int
+) -> Tuple[Dict[int, str], List[float]]:
+    """
+    Procura contornos circulares de alternativas (A, B, C, D, E) na imagem via OpenCV.
+    Agrupa as bolhas por linha/coluna e mede a densidade real de tinta dentro de cada círculo.
+    Retorna apenas as questões onde uma bolha realmente foi preenchida acima do limiar óptico.
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 9
+    )
+
+    contours, _ = cv2.findContours(
+        thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    bubble_candidates = []
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        if w < 14 or w > 65 or h < 14 or h > 65:
+            continue
+        aspect = w / float(h)
+        if aspect < 0.72 or aspect > 1.38:
+            continue
+        area = cv2.contourArea(c)
+        peri = cv2.arcLength(c, True)
+        if peri == 0:
+            continue
+        circularity = 4 * np.pi * (area / (peri * peri))
+        if circularity < 0.45:
+            continue
+        bubble_candidates.append((x, y, w, h, c))
+
+    if len(bubble_candidates) < 5:
+        return {}, []
+
+    # Ordena de cima para baixo
+    bubble_candidates.sort(key=lambda b: b[1])
+
+    # Agrupa candidatos que estão na mesma faixa horizontal (mesmo Y aproximado)
+    rows: List[List[Tuple[int, int, int, int, Any]]] = []
+    for b in bubble_candidates:
+        placed = False
+        for row in rows:
+            avg_y = sum(item[1] for item in row) / len(row)
+            avg_h = sum(item[3] for item in row) / len(row)
+            if abs(b[1] - avg_y) <= max(12, avg_h * 0.65):
+                row.append(b)
+                placed = True
+                break
+        if not placed:
+            rows.append([b])
+
+    # Extrai grupos horizontais de 5 bolhas (A, B, C, D, E)
+    question_groups: List[Tuple[int, float, List[Tuple[int, int, int, int, Any]]]] = []
+    img_w = img.shape[1]
+
+    for row in rows:
+        row.sort(key=lambda b: b[0])
+        if len(row) == 5:
+            col_idx = 0 if row[0][0] < img_w * 0.5 else 1
+            avg_y = sum(item[1] for item in row) / 5.0
+            question_groups.append((col_idx, avg_y, row))
+        elif len(row) == 10:
+            left_group = row[:5]
+            right_group = row[5:10]
+            avg_y_l = sum(item[1] for item in left_group) / 5.0
+            avg_y_r = sum(item[1] for item in right_group) / 5.0
+            question_groups.append((0, avg_y_l, left_group))
+            question_groups.append((1, avg_y_r, right_group))
+
+    # Ordena primeiro pela coluna (esquerda=0, direita=1) e depois de cima para baixo (Y)
+    question_groups.sort(key=lambda g: (g[0], g[1]))
+
+    detected: Dict[int, str] = {}
+    confidences: List[float] = []
+
+    for q_idx, (_, _, group) in enumerate(question_groups[:total_questions]):
+        q_num = q_idx + 1
+        scores: List[Tuple[str, float]] = []
+
+        for l_idx, (x, y, w, h, _) in enumerate(group):
+            if l_idx >= len(LETTERS):
+                break
+            letter = LETTERS[l_idx]
+            roi = thresh[y : y + h, x : x + w]
+            if roi.size == 0:
+                scores.append((letter, 0.0))
+                continue
+            mask = np.zeros(roi.shape, dtype="uint8")
+            cv2.circle(mask, (w // 2, h // 2), max(4, min(w, h) // 2 - 2), 255, -1)
+            masked = cv2.bitwise_and(roi, roi, mask=mask)
+            fill_ratio = cv2.countNonZero(masked) / float(max(1, cv2.countNonZero(mask)))
+            scores.append((letter, fill_ratio))
+
+        scores.sort(key=lambda s: s[1], reverse=True)
+        if len(scores) >= 2:
+            best_letter, best_score = scores[0]
+            second_score = scores[1][1]
+            contrast = best_score - second_score
+            # Exige preenchimento real de tinta (mínimo 30% de área escura e contraste claro)
+            if best_score >= 0.30 and contrast >= 0.08:
+                detected[q_num] = best_letter
+                confidences.append(min(0.99, 0.70 + contrast))
+
+    return detected, confidences
 
 
 def detect_omr_bubbles(
     warped_img: np.ndarray, total_questions: int = 10
 ) -> Tuple[Dict[int, str], float]:
     """
-    Realiza a leitura óptica das bolhas (A, B, C, D, E) para cada questão (1..total_questions).
-    Combina detecção de contornos circulares preenchidos + amostragem na grade A4 do Cartão-Resposta.
+    Executa busca óptica real pelas respostas marcadas na folha:
+    1) Primeiro via detecção de contornos circulares (funciona em fotos diretas de provas/gabaritos).
+    2) Complementa com leitura na grade A4 alinhada, exigindo limiar estrito de tinta (> 30% preenchido)
+       para jamais inventar respostas em questões em branco.
     """
+    contour_answers, contour_confs = detect_bubbles_via_contours(
+        warped_img, total_questions
+    )
+
     gray = cv2.cvtColor(warped_img, cv2.COLOR_BGR2GRAY)
-    # Binarização invertida: áreas escuras (bolhas marcadas à caneta) ficam brancas (255)
     thresh = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 11
     )
 
     h, w = thresh.shape[:2]
-
-    # Região onde a grade de respostas fica no layout A4AnswerSheet (entre 34% e 86% da altura)
     grid_top = int(h * 0.35)
     grid_bottom = int(h * 0.85)
     grid_left = int(w * 0.08)
@@ -194,22 +311,22 @@ def detect_omr_bubbles(
 
     num_cols = 2 if total_questions <= 40 else (3 if total_questions <= 75 else 4)
     per_col = int(np.ceil(total_questions / num_cols))
-
     col_width = (grid_right - grid_left) / num_cols
-    answers: Dict[int, str] = {}
-    confidences: List[float] = []
+
+    answers: Dict[int, str] = dict(contour_answers)
+    confidences: List[float] = list(contour_confs)
 
     for q_idx in range(total_questions):
         q_num = q_idx + 1
+        if q_num in answers:
+            continue
+
         col = q_idx // per_col
         row = q_idx % per_col
-
-        # Coordenadas verticais da linha da questão
         usable_h = max(120, min(grid_bottom - grid_top, per_col * 42))
         row_h = usable_h / max(1, per_col)
         cy = int(grid_top + (row + 0.65) * row_h)
 
-        # Coordenadas horizontais das 5 alternativas (A, B, C, D, E) dentro da coluna
         col_x_start = grid_left + col * col_width
         bubbles_start_x = col_x_start + col_width * 0.18
         bubbles_end_x = col_x_start + col_width * 0.86
@@ -228,7 +345,6 @@ def detect_omr_bubbles(
                 fill_scores.append((letter, 0.0))
                 continue
 
-            # Máscara circular para medir densidade de preenchimento da bolha
             mask = np.zeros(roi.shape, dtype="uint8")
             cv2.circle(
                 mask,
@@ -243,24 +359,18 @@ def detect_omr_bubbles(
             ratio = filled_pixels / float(total_pixels)
             fill_scores.append((letter, ratio))
 
-        # Ordena pela alternativa mais escura/preenchida
         fill_scores.sort(key=lambda x: x[1], reverse=True)
         best_letter, best_score = fill_scores[0]
         second_score = fill_scores[1][1] if len(fill_scores) > 1 else 0.0
-
-        # Calcula contraste relativo entre a bolha mais marcada e a segunda
         contrast = best_score - second_score
-        if best_score > 0.18 and contrast > 0.04:
+
+        # Somente registra resposta se realmente houver bolha preenchida acima do limiar óptico
+        if best_score >= 0.30 and contrast >= 0.08:
             answers[q_num] = best_letter
             confidences.append(min(0.99, 0.70 + contrast))
-        else:
-            # Se a imagem capturada não tiver bolha claramente contrastada nessa linha,
-            # usa o pico local de intensidade da linha
-            answers[q_num] = best_letter
-            confidences.append(0.75)
 
-    avg_confidence = float(np.mean(confidences)) if confidences else 0.85
-    return answers, round(avg_confidence * 100, 1)
+    avg_confidence = float(np.mean(confidences)) * 100.0 if confidences else 0.0
+    return answers, round(avg_confidence, 1)
 
 
 def grade_exam(
@@ -270,11 +380,13 @@ def grade_exam(
     max_score: float = 10.0,
 ) -> Dict[str, Any]:
     """
-    Corrige a prova confrontando as respostas lidas com o gabarito oficial.
-    Retorna nota final, total de acertos e detalhamento questão por questão.
+    Corrige a prova confrontando estritamente as respostas detectadas com o gabarito oficial.
+    Questões não marcadas permanecem como None (0 pontos).
     """
     norm_marked: Dict[int, str] = {}
     for k, v in (marked_answers or {}).items():
+        if v is None or str(v).strip() == "":
+            continue
         try:
             norm_marked[int(k)] = str(v).upper().strip()
         except Exception:
@@ -282,6 +394,8 @@ def grade_exam(
 
     norm_key: Dict[int, str] = {}
     for k, v in (official_answer_key or {}).items():
+        if v is None or str(v).strip() == "":
+            continue
         try:
             norm_key[int(k)] = str(v).upper().strip()
         except Exception:
@@ -293,9 +407,9 @@ def grade_exam(
     details = []
 
     for q_num in range(1, total_q + 1):
-        chosen = norm_marked.get(q_num)
-        correct = norm_key.get(q_num, LETTERS[(q_num - 1) % 5])
-        is_correct = bool(chosen and chosen == correct)
+        chosen = norm_marked.get(q_num, None)
+        correct = norm_key.get(q_num, "A")
+        is_correct = bool(chosen is not None and chosen == correct)
         if is_correct:
             correct_count += 1
 
@@ -323,9 +437,9 @@ def grade_exam(
 
 def process_omr_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Processa requisições vindas da API:
-      - action == "scan": Decodifica QR Code + lê bolhas OMR via OpenCV + calcula prévia da correção.
-      - action == "grade": Calcula/confirma a correção definitiva a partir das respostas e gabarito.
+    Processa requisições reais vindas da API:
+      - action == "scan": Decodifica QR Code via OpenCV + procura marcações reais nas bolhas.
+      - action == "grade": Corrige as respostas contra o gabarito oficial.
     """
     action = payload.get("action", "scan")
     total_questions = int(payload.get("totalQuestions") or 10)
@@ -340,31 +454,39 @@ def process_omr_request(payload: Dict[str, Any]) -> Dict[str, Any]:
             "success": True,
             "engine": "python-opencv-omr",
             "versionLetter": version_letter,
-            "markedAnswers": {str(d["questionNumber"]): d["chosen"] for d in grading["details"]},
+            "markedAnswers": {
+                str(d["questionNumber"]): d["chosen"]
+                for d in grading["details"]
+                if d["chosen"] is not None
+            },
             "grading": grading,
         }
 
-    # Action: "scan" (com imagem Base64 da câmera)
+    # Action: "scan"
     image_b64 = payload.get("imageBase64", "")
     img = decode_base64_image(image_b64)
 
     if img is None:
         return {
             "success": False,
-            "error": "Imagem inválida ou não fornecida para o leitor OMR.",
+            "error": "Imagem inválida ou não fornecida para leitura.",
         }
 
-    # 1. Tenta ler o QR Code na imagem capturada pela câmera
+    # 1. Decodifica o QR Code na imagem da câmera
     qr_raw, qr_info = detect_qr_code(img)
     detected_version = qr_info.get("versionLetter") or version_letter
     if qr_info.get("totalQuestions"):
         total_questions = int(qr_info["totalQuestions"])
 
-    # 2. Alinha a perspectiva da folha e lê as marcações OMR nas bolhas
-    warped = warp_sheet_perspective(img)
+    # Se o QR Code trouxe o gabarito embutido ("k"), usa como referência caso não tenha sido enviado
+    if qr_info.get("embeddedAnswerKey") and not official_key:
+        official_key = qr_info["embeddedAnswerKey"]
+
+    # 2. Alinha a folha e procura as bolhas realmente marcadas à caneta
+    warped, page_aligned = warp_sheet_perspective(img)
     detected_answers, confidence = detect_omr_bubbles(warped, total_questions)
 
-    # 3. Corrige confrontando com o gabarito oficial
+    # 3. Calcula o resultado com base apenas nas respostas realmente encontradas
     grading = grade_exam(detected_answers, official_key, total_questions, max_score)
 
     return {
@@ -373,6 +495,7 @@ def process_omr_request(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qrDetected": bool(qr_raw),
         "qrRaw": qr_raw,
         "qrData": qr_info,
+        "pageAligned": page_aligned,
         "versionLetter": detected_version,
         "confidence": confidence,
         "markedAnswers": {str(k): v for k, v in detected_answers.items()},
