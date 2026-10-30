@@ -1,10 +1,12 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { downloadFile, getResults, ResultsReport } from '@/lib/results';
+import { downloadFile, getResults, getReportExams, ResultsReport } from '@/lib/results';
 const format = (n: number | null) => n === null ? '—' : n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 export const ResultsScreen: React.FC = () => {
-  const { exams, activeExamId, setActiveExamId, addToast, setCurrentScreen } = useApp();
+  const { activeExamId, setActiveExamId, addToast, setCurrentScreen } = useApp();
+  const [catalog, setCatalog] = useState<{ exams: { id: string; title: string }[]; source: string; error: string } | null>(null);
+  const exams = catalog?.exams || [];
   const examId = exams.find(e => e.id === activeExamId)?.id || exams[0]?.id || '';
   const [request, setRequest] = useState<{ key: string; data: ResultsReport | null; error: string } | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -13,6 +15,13 @@ export const ResultsScreen: React.FC = () => {
   const requestKey = `${examId}:${revision}`;
   const loading = Boolean(examId) && request?.key !== requestKey;
   const error = request?.key === requestKey ? request.error : '';
+  useEffect(() => {
+    const controller = new AbortController();
+    getReportExams(controller.signal)
+      .then(result => { if (!controller.signal.aborted) setCatalog({ exams: result.data, source: result.dataSource, error: '' }); })
+      .catch(err => { if (!controller.signal.aborted) setCatalog({ exams: [], source: '', error: err instanceof Error ? err.message : 'Falha ao listar provas.' }); });
+    return () => controller.abort();
+  }, [revision]);
   useEffect(() => {
     if (!examId) return;
     const controller = new AbortController();
@@ -42,7 +51,10 @@ export const ResultsScreen: React.FC = () => {
         <button className={button} disabled={!report || loading || exporting} onClick={exportExcel}>{exporting ? 'Exportando…' : 'Exportar Excel'}</button>
       </div>
     </header>
-    {!examId && <p>Nenhuma prova disponível.</p>}
+    {!catalog && <p role="status">Carregando provas do backend…</p>}
+    {catalog?.error && <p role="alert">{catalog.error}</p>}
+    {catalog && !catalog.error && !examId && <p>Nenhuma prova disponível no backend.</p>}
+    {catalog?.source === 'mock' && <p className="p-4 bg-amber-50 rounded-xl">Modo demonstrativo — dados fictícios em memória. Nenhum resultado do banco está sendo exibido.</p>}
     {loading && <p role="status">Carregando resultados…</p>}
     {error && <p role="alert" className="p-4 bg-amber-50 rounded-xl">{error} Use Atualizar para tentar novamente.</p>}
     {report && <>

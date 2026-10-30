@@ -193,10 +193,11 @@ export const AnswerSheetScreen: React.FC = () => {
       const sheets = targets.map((student, index) => {
         const letter = student ? getStudentAssignedVersion(student.id, index) : resolvedVersionLetter;
         const version = selectedExam.versions.find(v => v.versionLetter === letter);
-        if (!version?.questions.length || !version.qrCodePayload) throw new Error(`Caderno ${letter} sem questões ou QR code. Gere a versão antes de exportar.`);
+        if (!version?.questions.length) throw new Error(`Caderno ${letter} sem questões. Gere a versão antes de exportar.`);
         return {
           title: selectedExam.title, code: selectedExam.code, versionLetter: letter,
-          qrCodePayload: version.qrCodePayload,
+          qrCodePayload: JSON.stringify({ app: 'CORREGE', exam: selectedExam.code.replace(/[^a-zA-Z0-9]/g, ''), ver: letter,
+            nominal: Boolean(student?.registration), std: student?.registration || 'ANON', q: version.questions.length }),
           questions: version.questions.map((q, i) => ({ orderIndex: q.orderIndex || i + 1, letters: q.alternatives.map(a => a.letter) })),
           student: student ? { name: student.name, registration: student.registration } : null,
         };
