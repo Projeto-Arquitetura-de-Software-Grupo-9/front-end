@@ -159,6 +159,8 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                         nominal: Boolean(student?.registration),
                         std: student?.registration || 'ANON',
                         pg: pageNumber,
+                        q: questions.length,
+                        k: questions.map((q) => q.correctAlternative).join(''),
                       })}
                       versionLetter={versionLetter}
                       examCode={exam.code}

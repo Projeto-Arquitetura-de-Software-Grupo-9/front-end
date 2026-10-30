@@ -31,7 +31,7 @@ function runPythonOmrScanner(payload: Record<string, unknown>): Promise<Record<s
         try {
           const parsed = JSON.parse(stdoutData.trim());
           resolve(parsed);
-        } catch (err) {
+        } catch {
           reject(new Error(`Invalid JSON from Python OMR: ${stdoutData}`));
         }
       } else {
@@ -47,62 +47,15 @@ function runPythonOmrScanner(payload: Record<string, unknown>): Promise<Record<s
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
-    try {
-      const result = await runPythonOmrScanner(body);
-      return NextResponse.json(result, { status: result.success === false ? 400 : 200 });
-    } catch (pyError: any) {
-      // Fallback if running in a cloud environment without Python binary
-      const totalQuestions = Number(body.totalQuestions || 10);
-      const maxScore = Number(body.maxScore || 10);
-      const officialKey: Record<string, string> = body.officialAnswerKey || {};
-      const marked: Record<string, string> = body.markedAnswers || {};
-      const letters = ['A', 'B', 'C', 'D', 'E'];
-
-      let correctCount = 0;
-      const pointsPerQ = maxScore / Math.max(1, totalQuestions);
-      const details = [];
-
-      for (let q = 1; q <= totalQuestions; q++) {
-        const correct = officialKey[q] || officialKey[String(q)] || letters[(q - 1) % 5];
-        const chosen = marked[q] || marked[String(q)] || correct;
-        const isCorrect = chosen === correct;
-        if (isCorrect) correctCount++;
-
-        details.push({
-          questionNumber: q,
-          questionId: `q-${q}`,
-          chosen,
-          correct,
-          isCorrect,
-          score: isCorrect ? Number(pointsPerQ.toFixed(2)) : 0,
-        });
-      }
-
-      const totalScore = Number(((correctCount / Math.max(1, totalQuestions)) * maxScore).toFixed(1));
-
-      return NextResponse.json({
-        success: true,
-        engine: 'fallback-ts-omr',
-        pythonWarning: pyError?.message,
-        qrDetected: Boolean(body.qrRaw),
-        versionLetter: body.versionLetter || 'A',
-        confidence: 92.5,
-        markedAnswers: Object.fromEntries(details.map((d) => [String(d.questionNumber), d.chosen])),
-        grading: {
-          correctCount,
-          totalQuestions,
-          totalScore,
-          maxScore,
-          details,
-        },
-      });
-    }
+    const result = await runPythonOmrScanner(body);
+    return NextResponse.json(result, {
+      status: result.success === false ? 400 : 200,
+    });
   } catch (err: any) {
     return NextResponse.json(
       {
         success: false,
-        error: err?.message || 'Erro ao processar leitura OMR.',
+        error: err?.message || 'Erro ao executar o motor OMR Python.',
       },
       { status: 500 }
     );

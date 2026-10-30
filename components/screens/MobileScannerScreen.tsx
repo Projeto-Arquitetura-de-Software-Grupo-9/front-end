@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useApp } from '@/context/AppContext';
 import { api } from '@/lib/api';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
-import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 import {
   Camera,
   QrCode,
@@ -14,11 +14,11 @@ import {
   Upload,
   Check,
   XCircle,
-  FileText,
   User,
   BookOpen,
-  Sparkles,
   ArrowLeft,
+  AlertCircle,
+  ScanLine,
 } from 'lucide-react';
 
 type Letter = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -43,16 +43,19 @@ export const MobileScannerScreen: React.FC = () => {
   const [selectedVersionLetter, setSelectedVersionLetter] = useState<string>('A');
   const [scanMode, setScanMode] = useState<'nominal' | 'avulsa'>('nominal');
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
-    students[0]?.id || 'std-1'
+    students[0]?.id || ''
   );
   const [qrRawString, setQrRawString] = useState<string | null>(null);
+  const [embeddedKeyFromQr, setEmbeddedKeyFromQr] = useState<Record<number, Letter>>({});
 
   // Camera & Scanning states
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isScanningAnswersCamera, setIsScanningAnswersCamera] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [correctedCount, setCorrectedCount] = useState(0);
 
-  // Student's marked answers on the test: questionNumber (1..N) -> Letter
+  // Only real answers detected by OpenCV (or explicitly selected by the user)
   const [markedAnswers, setMarkedAnswers] = useState<Record<number, Letter>>({});
 
   // Official grading result from Python backend
@@ -75,7 +78,8 @@ export const MobileScannerScreen: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const answersFileInputRef = useRef<HTMLInputElement | null>(null);
+  const scanTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentExam =
     exams.find((e) => e.id === activeExamId) || selectedExam || exams[0];
@@ -88,77 +92,61 @@ export const MobileScannerScreen: React.FC = () => {
     );
   }, [versions, selectedVersionLetter]);
 
-  // Build the full list of test questions for the scanned Caderno (A, B, C, D)
+  // Build the real list of test questions for the scanned Caderno
   const testQuestions = useMemo(() => {
     if (activeVersion?.questions && activeVersion.questions.length > 0) {
       return activeVersion.questions.map((q, idx) => ({
         orderIndex: q.orderIndex || idx + 1,
         originalQuestionId: q.originalQuestionId || `q-${idx + 1}`,
         statement: q.statement,
-        alternatives:
-          q.alternatives && q.alternatives.length > 0
-            ? q.alternatives
-            : LETTERS.map((l, lIdx) => ({
-                id: `alt-${idx}-${lIdx}`,
-                letter: l,
-                text: `Alternativa ${l}`,
-              })),
+        alternatives: q.alternatives || [],
         correctAlternative: (q.correctAlternative || 'A') as Letter,
         topic: q.topic,
       }));
     }
 
-    // Fallback to selectedQuestionIds from questionBank
     const fromBank = (currentExam?.selectedQuestionIds || [])
       .map((id) => questionBank.find((qb) => qb.id === id))
       .filter(Boolean);
 
-    if (fromBank.length > 0) {
-      return fromBank.map((q, idx) => ({
-        orderIndex: idx + 1,
-        originalQuestionId: q!.id,
-        statement: q!.statement,
-        alternatives: q!.alternatives,
-        correctAlternative: q!.correctAlternative,
-        topic: q!.topic,
-      }));
-    }
-
-    // Default fallback if exam has no questions attached
-    return questionBank.slice(0, 5).map((q, idx) => ({
+    return fromBank.map((q, idx) => ({
       orderIndex: idx + 1,
-      originalQuestionId: q.id,
-      statement: q.statement,
-      alternatives: q.alternatives,
-      correctAlternative: q.correctAlternative,
-      topic: q.topic,
+      originalQuestionId: q!.id,
+      statement: q!.statement,
+      alternatives: q!.alternatives,
+      correctAlternative: q!.correctAlternative,
+      topic: q!.topic,
     }));
   }, [activeVersion, currentExam, questionBank]);
 
-  const totalQuestions = testQuestions.length;
+  const totalQuestions = Math.max(
+    1,
+    testQuestions.length || Object.keys(embeddedKeyFromQr).length || 1
+  );
 
   const officialAnswerKey = useMemo(() => {
     const key: Record<number, Letter> = {};
-    testQuestions.forEach((q, idx) => {
-      const qNum = idx + 1;
-      key[qNum] =
-        (activeVersion?.answerKey?.[qNum] as Letter) ||
-        q.correctAlternative ||
+    for (let i = 1; i <= totalQuestions; i++) {
+      key[i] =
+        embeddedKeyFromQr[i] ||
+        (activeVersion?.answerKey?.[i] as Letter) ||
+        testQuestions[i - 1]?.correctAlternative ||
         'A';
-    });
+    }
     return key;
-  }, [testQuestions, activeVersion]);
+  }, [totalQuestions, embeddedKeyFromQr, activeVersion, testQuestions]);
 
   const stopCamera = useCallback(() => {
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
+    if (scanTimerRef.current) {
+      clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
     setIsCameraActive(false);
+    setIsScanningAnswersCamera(false);
   }, []);
 
   useEffect(() => {
@@ -168,114 +156,161 @@ export const MobileScannerScreen: React.FC = () => {
   }, [stopCamera]);
 
   useEffect(() => {
-    if (isCameraActive && videoRef.current && streamRef.current) {
+    if ((isCameraActive || isScanningAnswersCamera) && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
     }
-  }, [isCameraActive]);
+  }, [isCameraActive, isScanningAnswersCamera]);
 
   /**
-   * Applies the decoded QR Code payload (from the printed test) to load the right
-   * Exam, Caderno (A/B/C/D), Student, and detected OMR answers, then shows the test!
+   * Parses a real QR Code string (JSON or OMR format) read from the camera
    */
-  const applyDecodedQrAndOpenTest = useCallback(
-    (
-      qrData: {
-        examCode?: string;
-        versionLetter?: string;
-        nominal?: boolean;
-        studentRegistration?: string;
-      },
-      rawQrText: string | null,
-      detectedAnswers?: Record<string, Letter>
-    ) => {
-      stopCamera();
+  const parseRealQrString = (rawText: string) => {
+    const clean = rawText.trim();
+    try {
+      const parsed = JSON.parse(clean);
+      if (parsed && typeof parsed === 'object') {
+        const embeddedKey: Record<number, Letter> = {};
+        if (typeof parsed.k === 'string') {
+          parsed.k
+            .toUpperCase()
+            .split('')
+            .forEach((ch: string, idx: number) => {
+              if (LETTERS.includes(ch as Letter)) {
+                embeddedKey[idx + 1] = ch as Letter;
+              }
+            });
+        }
+        return {
+          examCode: parsed.code || parsed.exam,
+          versionLetter: String(parsed.ver || parsed.vId || 'A')
+            .toUpperCase()
+            .replace('VER-', ''),
+          nominal: parsed.nominal !== false,
+          studentRegistration: parsed.std || parsed.registration,
+          totalQuestions: Number(parsed.q || 0),
+          embeddedKey,
+        };
+      }
+    } catch {
+      // Check CATOLICA-OMR:V=A format
+      const match = clean.match(/V=([A-Z])/i);
+      if (match) {
+        return {
+          versionLetter: match[1].toUpperCase(),
+          nominal: true,
+          embeddedKey: {},
+        };
+      }
+    }
+    return null;
+  };
 
-      // 1. Match Exam by code if present in QR Code
+  /**
+   * Applies the real decoded QR Code data and opens the corresponding Test,
+   * while also running OpenCV on the captured frame to find any visible marked answers.
+   */
+  const handleQrDecoded = useCallback(
+    async (rawQrText: string, frameDataUrl?: string) => {
+      stopCamera();
+      setCameraError(null);
+
+      const parsedQr = parseRealQrString(rawQrText);
+      const verLetter = parsedQr?.versionLetter || 'A';
+      setSelectedVersionLetter(verLetter);
+      setQrRawString(rawQrText);
+
+      if (parsedQr?.embeddedKey && Object.keys(parsedQr.embeddedKey).length > 0) {
+        setEmbeddedKeyFromQr(parsedQr.embeddedKey);
+      }
+
+      // Match Exam in AppContext by code
       let matchedExam = currentExam;
-      if (qrData.examCode) {
-        const cleanQrCode = qrData.examCode.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-        const foundExam = exams.find(
+      if (parsedQr?.examCode) {
+        const targetCode = String(parsedQr.examCode)
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .toLowerCase();
+        const found = exams.find(
           (ex) =>
-            ex.code.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === cleanQrCode ||
-            ex.id.toLowerCase() === cleanQrCode
+            ex.code.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === targetCode ||
+            ex.id.toLowerCase() === targetCode
         );
-        if (foundExam) {
-          matchedExam = foundExam;
-          setActiveExamId(foundExam.id);
+        if (found) {
+          matchedExam = found;
+          setActiveExamId(found.id);
         }
       }
 
-      // 2. Match Version / Caderno (A, B, C, D...)
-      const verLetter = (qrData.versionLetter || selectedVersionLetter || 'A').toUpperCase();
-      setSelectedVersionLetter(verLetter);
-
-      // 3. Match Student by registration if present in QR Code
-      if (qrData.studentRegistration && qrData.studentRegistration !== 'ANON') {
+      // Match Student by registration from QR Code
+      if (
+        parsedQr?.studentRegistration &&
+        parsedQr.studentRegistration !== 'ANON'
+      ) {
         const foundStudent = students.find(
           (s) =>
             s.registration.toLowerCase() ===
-            qrData.studentRegistration!.toLowerCase()
+            String(parsedQr.studentRegistration).toLowerCase()
         );
         if (foundStudent) {
           setSelectedStudentId(foundStudent.id);
           setScanMode('nominal');
         }
-      } else if (qrData.nominal === false) {
+      } else if (parsedQr?.nominal === false) {
         setScanMode('avulsa');
       }
 
-      setQrRawString(rawQrText);
-
-      // 4. Populate detected answers on the test questions
-      const targetVer =
-        matchedExam?.versions?.find((v) => v.versionLetter === verLetter) ||
-        matchedExam?.versions?.[0];
-      const qCount =
-        targetVer?.questions?.length ||
-        matchedExam?.selectedQuestionIds?.length ||
-        totalQuestions;
-
-      const nextAnswers: Record<number, Letter> = {};
-      if (detectedAnswers && Object.keys(detectedAnswers).length > 0) {
-        Object.entries(detectedAnswers).forEach(([k, v]) => {
-          const qNum = Number(k);
-          if (qNum >= 1 && LETTERS.includes(v as Letter)) {
-            nextAnswers[qNum] = v as Letter;
-          }
-        });
-      } else {
-        // Pre-populate with detected student answers for this test
-        for (let i = 1; i <= qCount; i++) {
-          const correct =
-            (targetVer?.answerKey?.[i] as Letter) ||
-            (targetVer?.questions?.[i - 1]?.correctAlternative as Letter) ||
-            officialAnswerKey[i] ||
-            'A';
-          nextAnswers[i] =
-            Math.random() < 0.85
-              ? correct
-              : LETTERS.filter((l) => l !== correct)[
-                  Math.floor(Math.random() * 4)
-                ];
-        }
-      }
-
-      setMarkedAnswers(nextAnswers);
+      // Start with empty answers (no mocked data!) and ask Python OpenCV to search the image for marked bubbles
+      setMarkedAnswers({});
       setGradingResult(null);
       setStep('view-test');
 
+      if (frameDataUrl) {
+        setIsProcessing(true);
+        try {
+          const targetVer =
+            matchedExam?.versions?.find((v) => v.versionLetter === verLetter) ||
+            matchedExam?.versions?.[0];
+          const qCount =
+            parsedQr?.totalQuestions ||
+            targetVer?.questions?.length ||
+            matchedExam?.selectedQuestionIds?.length ||
+            totalQuestions;
+
+          const omrRes = await api.scanOmrSheet({
+            imageBase64: frameDataUrl,
+            totalQuestions: qCount,
+            officialAnswerKey,
+            versionLetter: verLetter,
+            maxScore: matchedExam?.maxScore || 10.0,
+          });
+
+          if (omrRes.success && omrRes.markedAnswers) {
+            const realDetected: Record<number, Letter> = {};
+            Object.entries(omrRes.markedAnswers).forEach(([k, v]) => {
+              const qNum = Number(k);
+              if (qNum >= 1 && LETTERS.includes(v as Letter)) {
+                realDetected[qNum] = v as Letter;
+              }
+            });
+            setMarkedAnswers(realDetected);
+          }
+        } catch {
+          // Keep markedAnswers empty if no bubbles were in the QR close-up frame
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+
       addToast({
         type: 'success',
-        title: `QR Code Lido • Caderno ${verLetter}`,
-        message: `Prova "${matchedExam?.title || 'Avaliação'}" carregada. Confira a prova e toque em Corrigir Prova.`,
+        title: `QR Code Lido: Caderno ${verLetter}`,
+        message: `Prova "${matchedExam?.title || 'Avaliação'}" aberta.`,
       });
     },
     [
       currentExam,
       exams,
       officialAnswerKey,
-      selectedVersionLetter,
       setActiveExamId,
       stopCamera,
       students,
@@ -285,270 +320,287 @@ export const MobileScannerScreen: React.FC = () => {
   );
 
   /**
-   * Sends a captured frame/image to the Python OpenCV backend (/api/omr -> back-end/omr_scanner.py)
-   * to decode the QR Code and read the test answers.
+   * Real-time 250ms loop using jsQR on the live <video> feed to detect QR Codes immediately
    */
-  const scanImageWithPython = useCallback(
-    async (imageBase64: string, silentIfNoQr = false) => {
-      if (!silentIfNoQr) setIsProcessing(true);
+  useEffect(() => {
+    if (!isCameraActive || step !== 'scan-qr') return;
+
+    scanTimerRef.current = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || !video.videoWidth) return;
+
+      const canvas = canvasRef.current || document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert',
+      });
+
+      if (qrCode && qrCode.data && qrCode.data.trim()) {
+        const frameDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        handleQrDecoded(qrCode.data.trim(), frameDataUrl);
+      }
+    }, 250);
+
+    return () => {
+      if (scanTimerRef.current) {
+        clearInterval(scanTimerRef.current);
+        scanTimerRef.current = null;
+      }
+    };
+  }, [isCameraActive, step, handleQrDecoded]);
+
+  /**
+   * Opens the real smartphone camera
+   */
+  const openCamera = async (forAnswers = false) => {
+    setCameraError(null);
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setCameraError(
+        'O navegador não permitiu acesso direto à câmera. Use o botão "Tirar Foto da Prova" abaixo.'
+      );
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (forAnswers) {
+        setIsScanningAnswersCamera(true);
+      } else {
+        setIsCameraActive(true);
+      }
+    } catch {
+      setCameraError(
+        'Permissão da câmera negada ou indisponível. Use "Tirar Foto da Prova" para abrir a câmera nativa.'
+      );
+    }
+  };
+
+  /**
+   * Captures the current <video> frame and sends it to Python OpenCV (/api/omr)
+   * to search for the QR Code (Step 1) or Answer Bubbles (Step 2).
+   */
+  const captureFrameAndProcess = async (mode: 'qr' | 'answers') => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return;
+
+    const canvas = canvasRef.current || document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const frameDataUrl = canvas.toDataURL('image/png');
+
+    if (mode === 'qr') {
+      // First check jsQR on the full-resolution frame
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const qr = jsQR(imgData.data, imgData.width, imgData.height);
+      if (qr && qr.data && qr.data.trim()) {
+        await handleQrDecoded(qr.data.trim(), frameDataUrl);
+        return;
+      }
+
+      // Otherwise send to Python OpenCV QRCodeDetector
+      setIsProcessing(true);
       try {
         const res = await api.scanOmrSheet({
-          imageBase64,
+          imageBase64: frameDataUrl,
           totalQuestions,
           officialAnswerKey,
           versionLetter: selectedVersionLetter,
           maxScore: currentExam?.maxScore || 10.0,
         });
+        setIsProcessing(false);
 
-        if (!silentIfNoQr) setIsProcessing(false);
-
-        if (res.success && (res.qrDetected || !silentIfNoQr)) {
-          applyDecodedQrAndOpenTest(
-            res.qrData || { versionLetter: res.versionLetter || selectedVersionLetter },
-            res.qrRaw || null,
-            res.markedAnswers
+        if (res.success && res.qrDetected && res.qrRaw) {
+          await handleQrDecoded(res.qrRaw, frameDataUrl);
+        } else {
+          setCameraError(
+            'Nenhum QR Code foi detectado no enquadramento atual. Aproxime a câmera do QR Code no topo da prova.'
           );
-          return true;
         }
-      } catch {
-        if (!silentIfNoQr) setIsProcessing(false);
+      } catch (err: any) {
+        setIsProcessing(false);
+        setCameraError(err?.message || 'Erro ao analisar imagem na câmera.');
       }
-      return false;
-    },
-    [
-      applyDecodedQrAndOpenTest,
-      currentExam?.maxScore,
-      officialAnswerKey,
-      selectedVersionLetter,
-      totalQuestions,
-    ]
-  );
-
-  // Automatic real-time QR Code detection while camera is open
-  useEffect(() => {
-    if (!isCameraActive || step !== 'scan-qr') return;
-
-    let isCheckingFrame = false;
-
-    scanIntervalRef.current = setInterval(async () => {
-      if (isCheckingFrame || !videoRef.current || videoRef.current.readyState < 2) {
-        return;
-      }
-      isCheckingFrame = true;
-
+    } else {
+      // Mode === 'answers': Search for marked answer bubbles via Python OpenCV
+      setIsProcessing(true);
       try {
-        const video = videoRef.current;
-
-        // 1. Try fast native BarcodeDetector if supported on the smartphone browser
-        if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
-          try {
-            const BarcodeDetectorClass = (window as any).BarcodeDetector;
-            const detector = new BarcodeDetectorClass({ formats: ['qr_code'] });
-            const barcodes = await detector.detect(video);
-            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-              const rawVal = barcodes[0].rawValue;
-              let parsedQr: any = {};
-              try {
-                const j = JSON.parse(rawVal);
-                parsedQr = {
-                  examCode: j.code || j.exam,
-                  versionLetter: j.ver || 'A',
-                  nominal: j.nominal ?? true,
-                  studentRegistration: j.std,
-                };
-              } catch {
-                parsedQr = { versionLetter: 'A' };
-              }
-              applyDecodedQrAndOpenTest(parsedQr, rawVal);
-              isCheckingFrame = false;
-              return;
-            }
-          } catch {
-            // Fall through to Python OpenCV frame check
-          }
-        }
-
-        // 2. Capture frame to canvas and check via Python OpenCV QRCodeDetector
-        const canvas = canvasRef.current || document.createElement('canvas');
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const frameB64 = canvas.toDataURL('image/jpeg', 0.8);
-          await scanImageWithPython(frameB64, true);
-        }
-      } finally {
-        isCheckingFrame = false;
-      }
-    }, 1200);
-
-    return () => {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-        scanIntervalRef.current = null;
-      }
-    };
-  }, [isCameraActive, step, applyDecodedQrAndOpenTest, scanImageWithPython]);
-
-  /**
-   * Builds a synthetic image containing the current exam's real QR Code + marked bubbles
-   * and sends it through the Python OpenCV QR + OMR scanner.
-   */
-  const buildTestQrSheetBase64 = async (): Promise<string> => {
-    const offscreen = document.createElement('canvas');
-    const w = 1000;
-    const h = 1414;
-    offscreen.width = w;
-    offscreen.height = h;
-    const ctx = offscreen.getContext('2d')!;
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, w, h);
-
-    const targetStudent =
-      students.find((s) => s.id === selectedStudentId) || students[0];
-    const qrPayload = JSON.stringify({
-      app: 'CORREGE',
-      code: currentExam?.code || '#DIR-101',
-      ver: selectedVersionLetter,
-      nominal: scanMode === 'nominal',
-      std: scanMode === 'nominal' ? targetStudent?.registration || '2024.1.001' : 'ANON',
-      q: totalQuestions,
-    });
-
-    const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-      width: 240,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-    });
-
-    await new Promise<void>((resolve) => {
-      const qrImg = new Image();
-      qrImg.onload = () => {
-        ctx.drawImage(qrImg, w - 300, 50, 220, 220);
-        resolve();
-      };
-      qrImg.onerror = () => resolve();
-      qrImg.src = qrDataUrl;
-    });
-
-    // Draw OMR bubbles for the Python OpenCV bubble reader
-    const gridTop = Math.floor(h * 0.35);
-    const gridBottom = Math.floor(h * 0.85);
-    const gridLeft = Math.floor(w * 0.08);
-    const gridRight = Math.floor(w * 0.92);
-    const numCols = totalQuestions <= 40 ? 2 : 3;
-    const perCol = Math.ceil(totalQuestions / numCols);
-    const colWidth = (gridRight - gridLeft) / numCols;
-    const usableH = Math.max(120, Math.min(gridBottom - gridTop, perCol * 42));
-    const rowH = usableH / Math.max(1, perCol);
-
-    for (let qIdx = 0; qIdx < totalQuestions; qIdx++) {
-      const qNum = qIdx + 1;
-      const col = Math.floor(qIdx / perCol);
-      const row = qIdx % perCol;
-      const cy = Math.floor(gridTop + (row + 0.65) * rowH);
-      const colXStart = gridLeft + col * colWidth;
-      const bubblesStartX = colXStart + colWidth * 0.18;
-      const bubblesEndX = colXStart + colWidth * 0.86;
-      const stepX = (bubblesEndX - bubblesStartX) / 4.0;
-
-      const officialCorrect = officialAnswerKey[qNum] || 'A';
-      const markedLetter =
-        Math.random() < 0.85
-          ? officialCorrect
-          : LETTERS.filter((l) => l !== officialCorrect)[
-              Math.floor(Math.random() * 4)
-            ];
-
-      for (let lIdx = 0; lIdx < LETTERS.length; lIdx++) {
-        const letter = LETTERS[lIdx];
-        const cx = Math.floor(bubblesStartX + lIdx * stepX);
-        ctx.beginPath();
-        ctx.arc(cx, cy, 12, 0, Math.PI * 2);
-        ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        if (letter === markedLetter) {
-          ctx.beginPath();
-          ctx.arc(cx, cy, 11, 0, Math.PI * 2);
-          ctx.fillStyle = '#090D16';
-          ctx.fill();
-        }
-      }
-    }
-
-    return offscreen.toDataURL('image/png');
-  };
-
-  /**
-   * Step 1 Action: Open Camera or Capture QR Code from the Test
-   */
-  const handleScanQrButton = async () => {
-    // If camera is already active, capture the current video frame and scan it now
-    if (isCameraActive && videoRef.current && videoRef.current.readyState >= 2) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current || document.createElement('canvas');
-      canvas.width = video.videoWidth || 1000;
-      canvas.height = video.videoHeight || 1414;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const frameDataUrl = canvas.toDataURL('image/png');
-        const detected = await scanImageWithPython(frameDataUrl, false);
-        if (!detected) {
-          const fallbackB64 = await buildTestQrSheetBase64();
-          await scanImageWithPython(fallbackB64, false);
-        }
-        return;
-      }
-    }
-
-    // Try opening smartphone rear camera
-    if (
-      !isCameraActive &&
-      typeof navigator !== 'undefined' &&
-      navigator.mediaDevices?.getUserMedia
-    ) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
+        const res = await api.scanOmrSheet({
+          imageBase64: frameDataUrl,
+          totalQuestions,
+          officialAnswerKey,
+          versionLetter: selectedVersionLetter,
+          maxScore: currentExam?.maxScore || 10.0,
         });
-        streamRef.current = stream;
-        setIsCameraActive(true);
-        return;
-      } catch {
-        // Fallback if camera unavailable
+        stopCamera();
+        setIsProcessing(false);
+
+        const foundAnswers = res.markedAnswers || {};
+        const countFound = Object.keys(foundAnswers).length;
+
+        if (countFound > 0) {
+          setMarkedAnswers((prev) => {
+            const next = { ...prev };
+            Object.entries(foundAnswers).forEach(([k, v]) => {
+              const qNum = Number(k);
+              if (qNum >= 1 && LETTERS.includes(v as Letter)) {
+                next[qNum] = v as Letter;
+              }
+            });
+            return next;
+          });
+          addToast({
+            type: 'success',
+            title: `${countFound} Resposta(s) Detectada(s)!`,
+            message: 'Marcações lidas via OpenCV Python e preenchidas na prova.',
+          });
+        } else {
+          addToast({
+            type: 'warning',
+            title: 'Nenhuma Bolha Escura Detectada',
+            message:
+              'Enquadre a grade de respostas com boa iluminação ou toque nas alternativas marcadas.',
+          });
+        }
+      } catch (err: any) {
+        setIsProcessing(false);
+        addToast({
+          type: 'error',
+          title: 'Erro na Leitura Óptica',
+          message: err?.message || 'Não foi possível processar a imagem.',
+        });
       }
     }
-
-    // Fallback: generate real test QR Code sheet and scan via Python OpenCV
-    setIsProcessing(true);
-    const sheetB64 = await buildTestQrSheetBase64();
-    await scanImageWithPython(sheetB64, false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Handles native smartphone camera photo input (<input capture="environment">)
+   */
+  const handlePhotoInput = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    mode: 'qr' | 'answers'
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setCameraError(null);
+
     const reader = new FileReader();
     reader.onload = async () => {
-      if (typeof reader.result === 'string') {
-        await scanImageWithPython(reader.result, false);
+      const dataUrl = reader.result;
+      if (typeof dataUrl !== 'string') return;
+
+      if (mode === 'qr') {
+        // Also try decoding QR on client via Image + Canvas + jsQR
+        const img = new Image();
+        img.onload = async () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const qr = jsQR(imgData.data, imgData.width, imgData.height);
+            if (qr && qr.data && qr.data.trim()) {
+              await handleQrDecoded(qr.data.trim(), dataUrl);
+              return;
+            }
+          }
+
+          // Try Python OpenCV QR + OMR
+          setIsProcessing(true);
+          try {
+            const res = await api.scanOmrSheet({
+              imageBase64: dataUrl,
+              totalQuestions,
+              officialAnswerKey,
+              versionLetter: selectedVersionLetter,
+              maxScore: currentExam?.maxScore || 10.0,
+            });
+            setIsProcessing(false);
+            if (res.success && res.qrDetected && res.qrRaw) {
+              await handleQrDecoded(res.qrRaw, dataUrl);
+            } else {
+              setCameraError(
+                'Nenhum QR Code foi encontrado na foto enviada. Certifique-se de que o QR Code da prova esteja visível e nítido.'
+              );
+            }
+          } catch {
+            setIsProcessing(false);
+            setCameraError('Falha ao processar a foto no servidor Python OpenCV.');
+          }
+        };
+        img.src = dataUrl;
+      } else {
+        // Search for marked answers in the photo via Python OpenCV
+        setIsProcessing(true);
+        try {
+          const res = await api.scanOmrSheet({
+            imageBase64: dataUrl,
+            totalQuestions,
+            officialAnswerKey,
+            versionLetter: selectedVersionLetter,
+            maxScore: currentExam?.maxScore || 10.0,
+          });
+          setIsProcessing(false);
+
+          const foundAnswers = res.markedAnswers || {};
+          const countFound = Object.keys(foundAnswers).length;
+          if (countFound > 0) {
+            setMarkedAnswers((prev) => {
+              const next = { ...prev };
+              Object.entries(foundAnswers).forEach(([k, v]) => {
+                const qNum = Number(k);
+                if (qNum >= 1 && LETTERS.includes(v as Letter)) {
+                  next[qNum] = v as Letter;
+                }
+              });
+              return next;
+            });
+            addToast({
+              type: 'success',
+              title: `${countFound} Marcações Encontradas!`,
+              message: 'As respostas detectadas na foto foram aplicadas à prova.',
+            });
+          } else {
+            addToast({
+              type: 'warning',
+              title: 'Nenhuma Marcação Detectada na Foto',
+              message: 'Verifique o foco/iluminação das bolhas ou selecione as respostas manualmente.',
+            });
+          }
+        } catch {
+          setIsProcessing(false);
+        }
       }
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   /**
-   * Step 2 -> Step 3 Action: Correct the Shown Test using Python Backend
+   * Step 2 -> Step 3: Correct the Test strictly using Python OpenCV grading engine
    */
   const handleCorrectShownTest = async () => {
     setIsProcessing(true);
@@ -604,9 +656,7 @@ export const MobileScannerScreen: React.FC = () => {
       addToast({
         type: 'success',
         title: `Prova Corrigida! Nota: ${grading.totalScore.toFixed(1)}`,
-        message: `${grading.correctCount} de ${grading.totalQuestions} questões corretas (${
-          targetStudent?.name || 'Aluno'
-        }).`,
+        message: `${grading.correctCount} de ${grading.totalQuestions} questões corretas.`,
       });
     } catch (err: any) {
       setIsProcessing(false);
@@ -623,14 +673,14 @@ export const MobileScannerScreen: React.FC = () => {
     setStep('scan-qr');
     setGradingResult(null);
     setMarkedAnswers({});
+    setEmbeddedKeyFromQr({});
     setQrRawString(null);
-    const currentIdx = students.findIndex((s) => s.id === selectedStudentId);
-    if (currentIdx >= 0 && currentIdx + 1 < students.length) {
-      setSelectedStudentId(students[currentIdx + 1].id);
-    }
+    setCameraError(null);
   };
 
-  const currentStudent = students.find((s) => s.id === selectedStudentId) || students[0];
+  const currentStudent =
+    students.find((s) => s.id === selectedStudentId) || students[0];
+  const answeredCount = Object.keys(markedAnswers).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col select-none">
@@ -641,7 +691,7 @@ export const MobileScannerScreen: React.FC = () => {
         <div className="flex items-center gap-2">
           <CorregeLogo />
           <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#9E0B1A]/30 text-red-300 border border-[#9E0B1A]/50">
-            Scanner Mobile
+            Leitor OMR
           </span>
         </div>
 
@@ -725,22 +775,25 @@ export const MobileScannerScreen: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 p-4 flex flex-col justify-between max-w-md w-full mx-auto space-y-4">
         {/* ===================================================================
-            STEP 1: SCAN THE QR CODE ON THE TEST
+            STEP 1: SCAN THE REAL QR CODE ON THE TEST
         =================================================================== */}
         {step === 'scan-qr' && (
           <>
             <div className="flex-1 flex flex-col justify-center space-y-4">
-              {/* Camera / QR Scanner Viewfinder */}
-              <div className="relative bg-slate-900 border-2 border-dashed border-slate-700 rounded-3xl p-5 min-h-[320px] flex flex-col items-center justify-center text-center overflow-hidden">
-                {/* 4 Corner QR Alignment Markers */}
-                <div className="absolute top-5 left-5 w-7 h-7 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg pointer-events-none z-10" />
-                <div className="absolute top-5 right-5 w-7 h-7 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg pointer-events-none z-10" />
-                <div className="absolute bottom-5 left-5 w-7 h-7 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg pointer-events-none z-10" />
-                <div className="absolute bottom-5 right-5 w-7 h-7 border-b-4 border-r-4 border-emerald-400 rounded-br-lg pointer-events-none z-10" />
+              {cameraError && (
+                <div className="p-3 bg-rose-950/70 border border-rose-500/50 rounded-2xl flex items-start gap-2.5 text-xs text-rose-200">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span>{cameraError}</span>
+                </div>
+              )}
 
-                {isProcessing && (
-                  <div className="absolute inset-x-4 h-1 bg-gradient-to-r from-red-500 via-amber-400 to-red-500 shadow-[0_0_20px_#ef4444] animate-bounce z-20" />
-                )}
+              {/* Camera / QR Scanner Viewfinder */}
+              <div className="relative bg-slate-900 border-2 border-dashed border-slate-700 rounded-3xl p-4 min-h-[340px] flex flex-col items-center justify-center text-center overflow-hidden">
+                {/* 4 Corner QR Alignment Markers */}
+                <div className="absolute top-4 left-4 w-7 h-7 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg pointer-events-none z-10" />
+                <div className="absolute top-4 right-4 w-7 h-7 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg pointer-events-none z-10" />
+                <div className="absolute bottom-4 left-4 w-7 h-7 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg pointer-events-none z-10" />
+                <div className="absolute bottom-4 right-4 w-7 h-7 border-b-4 border-r-4 border-emerald-400 rounded-br-lg pointer-events-none z-10" />
 
                 {isCameraActive ? (
                   <div className="w-full h-full flex flex-col items-center justify-center space-y-3">
@@ -749,24 +802,24 @@ export const MobileScannerScreen: React.FC = () => {
                       autoPlay
                       playsInline
                       muted
-                      className="w-full max-h-64 object-cover rounded-2xl border border-emerald-500/40 shadow-lg"
+                      className="w-full max-h-72 object-cover rounded-2xl border border-emerald-500/40 shadow-lg"
                     />
                     <p className="text-xs text-emerald-400 font-bold animate-pulse">
-                      Aponte para o QR Code da prova para abrir a avaliação...
+                      Procurando QR Code automaticamente pela câmera...
                     </p>
                   </div>
                 ) : isProcessing ? (
                   <div className="space-y-3 py-8">
                     <span className="inline-block w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
                     <p className="text-sm font-bold text-emerald-400">
-                      Lendo QR Code e Carregando Prova...
+                      Processando Imagem no OpenCV Python...
                     </p>
                     <p className="text-xs text-slate-400">
-                      Identificando caderno, questões e aluno via OpenCV Python
+                      Decodificando QR Code e procurando respostas marcadas
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-4 py-4">
+                  <div className="space-y-4 py-4 px-2">
                     <div className="w-20 h-20 rounded-3xl bg-slate-800 border border-slate-700 mx-auto flex items-center justify-center text-emerald-400 shadow-inner">
                       <QrCode className="w-10 h-10" />
                     </div>
@@ -775,41 +828,28 @@ export const MobileScannerScreen: React.FC = () => {
                         Escanear QR Code da Prova
                       </h1>
                       <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                        Escaneie o QR Code impresso no topo da prova para visualizar o caderno do aluno e realizar a correção.
+                        Abra a câmera e aponte para o QR Code impresso no topo da prova ou do cartão-resposta.
                       </p>
                     </div>
 
-                    {/* Hidden photo upload input */}
+                    {/* Native camera photo capture input */}
                     <input
                       ref={fileInputRef}
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onChange={handleFileUpload}
+                      onChange={(e) => handlePhotoInput(e, 'qr')}
                       className="hidden"
                     />
 
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                    <div className="pt-2">
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition cursor-pointer"
                       >
-                        <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                        Enviar Foto da Prova
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setIsProcessing(true);
-                          const b64 = await buildTestQrSheetBase64();
-                          await scanImageWithPython(b64, false);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Simular Leitura de QR Code
+                        <Upload className="w-4 h-4 text-emerald-400" />
+                        Tirar Foto / Enviar Imagem da Prova
                       </button>
                     </div>
                   </div>
@@ -817,37 +857,44 @@ export const MobileScannerScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Primary Button: Scan QR Code */}
+            {/* Primary Button: Open Camera or Capture Frame */}
             <div className="pt-2 pb-4 space-y-2">
-              <button
-                type="button"
-                onClick={handleScanQrButton}
-                disabled={isProcessing}
-                className="w-full py-4 px-5 bg-[#9E0B1A] hover:bg-[#850916] active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-[#9E0B1A]/30 transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
-              >
-                <Camera className="w-5 h-5" />
-                <span>
-                  {isCameraActive
-                    ? 'Capturar QR Code da Prova'
-                    : 'Abrir Câmera e Escanear QR Code'}
-                </span>
-              </button>
-
-              {isCameraActive && (
+              {!isCameraActive ? (
                 <button
                   type="button"
-                  onClick={stopCamera}
-                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+                  onClick={() => openCamera(false)}
+                  disabled={isProcessing}
+                  className="w-full py-4 px-5 bg-[#9E0B1A] hover:bg-[#850916] active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-[#9E0B1A]/30 transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
                 >
-                  Fechar Câmera
+                  <Camera className="w-5 h-5" />
+                  <span>Abrir Câmera e Ler QR Code</span>
                 </button>
+              ) : (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => captureFrameAndProcess('qr')}
+                    disabled={isProcessing}
+                    className="w-full py-4 px-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <ScanLine className="w-5 h-5" />
+                    <span>Capturar e Ler QR Code Agora</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopCamera}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    Fechar Câmera
+                  </button>
+                </div>
               )}
             </div>
           </>
         )}
 
         {/* ===================================================================
-            STEP 2: SHOW THE SCANNED TEST (BEFORE CORRECTION)
+            STEP 2: SHOW THE SCANNED TEST & SEARCH FOR ANSWERS
         =================================================================== */}
         {step === 'view-test' && (
           <>
@@ -857,7 +904,7 @@ export const MobileScannerScreen: React.FC = () => {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      <QrCode className="w-3 h-3" /> QR Code Identificado
+                      <QrCode className="w-3 h-3" /> QR Code Lido da Câmera
                     </span>
                     <h2 className="text-sm font-black text-white mt-1.5">
                       {currentExam?.title || 'Avaliação Institucional'}
@@ -865,6 +912,11 @@ export const MobileScannerScreen: React.FC = () => {
                     <p className="text-xs text-slate-400">
                       {currentExam?.discipline} • {currentExam?.classGroup}
                     </p>
+                    {qrRawString && (
+                      <p className="text-[10px] font-mono text-slate-500 mt-1 truncate max-w-[230px]">
+                        Payload: {qrRawString}
+                      </p>
+                    )}
                   </div>
 
                   <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-[#9E0B1A] text-white shrink-0">
@@ -880,7 +932,7 @@ export const MobileScannerScreen: React.FC = () => {
                     </div>
                     <div className="truncate">
                       <span className="text-[10px] text-slate-400 block">
-                        Estudante da Prova
+                        Estudante
                       </span>
                       <select
                         value={selectedStudentId}
@@ -901,11 +953,76 @@ export const MobileScannerScreen: React.FC = () => {
                   </div>
 
                   <div className="text-right shrink-0">
-                    <span className="text-[10px] text-slate-400 block">Questões</span>
-                    <span className="font-mono font-bold text-white">
-                      {totalQuestions} questões
+                    <span className="text-[10px] text-slate-400 block">
+                      Respostas Lidas
+                    </span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      {answeredCount}/{totalQuestions}
                     </span>
                   </div>
+                </div>
+
+                {/* Camera Answer Bubble Scanner inside Step 2 */}
+                <div className="pt-2 border-t border-slate-800">
+                  {isScanningAnswersCamera ? (
+                    <div className="space-y-2">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full max-h-56 object-cover rounded-xl border border-emerald-500/40"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => captureFrameAndProcess('answers')}
+                          disabled={isProcessing}
+                          className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <ScanLine className="w-4 h-4" />
+                          <span>Ler Marcações Agora</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          className="py-2.5 px-3 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                        >
+                          Fechar Câmera
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openCamera(true)}
+                        disabled={isProcessing}
+                        className="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>Escanear Respostas pela Câmera (OpenCV)</span>
+                      </button>
+
+                      <input
+                        ref={answersFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => handlePhotoInput(e, 'answers')}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => answersFileInputRef.current?.click()}
+                        disabled={isProcessing}
+                        className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        title="Tirar foto das respostas"
+                      >
+                        <Upload className="w-4 h-4 text-emerald-400" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -915,9 +1032,6 @@ export const MobileScannerScreen: React.FC = () => {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                     <BookOpen className="w-3.5 h-3.5 text-[#9E0B1A]" />
                     Questões da Prova (Caderno {selectedVersionLetter})
-                  </span>
-                  <span className="text-[10px] text-slate-500">
-                    Toque nas alternativas para ajustar se necessário
                   </span>
                 </div>
 
@@ -934,9 +1048,13 @@ export const MobileScannerScreen: React.FC = () => {
                         <span className="text-xs font-black text-white bg-slate-800 px-2 py-0.5 rounded-md font-mono">
                           Questão {qNum < 10 ? `0${qNum}` : qNum}
                         </span>
-                        {studentChoice && (
+                        {studentChoice ? (
                           <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
-                            Marcada: {studentChoice}
+                            Resposta Detectada: {studentChoice}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-800/70 px-2 py-0.5 rounded-md">
+                            Sem marcação detectada
                           </span>
                         )}
                       </div>
@@ -1021,7 +1139,7 @@ export const MobileScannerScreen: React.FC = () => {
               <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 flex items-center justify-between">
                 <div className="space-y-0.5">
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Prova Corrigida com Sucesso
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Prova Corrigida
                   </span>
                   <h2 className="text-sm font-black text-white">
                     {currentStudent?.name}
@@ -1073,7 +1191,10 @@ export const MobileScannerScreen: React.FC = () => {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-400 bg-rose-500/15 px-2.5 py-0.5 rounded-full">
-                            <XCircle className="w-3.5 h-3.5" /> Errou (Marcou {chosen || '—'} • Correta: {correct})
+                            <XCircle className="w-3.5 h-3.5" />{' '}
+                            {chosen
+                              ? `Errou (Marcou ${chosen} • Correta: ${correct})`
+                              : `Em Branco (Correta: ${correct})`}
                           </span>
                         )}
                       </div>
