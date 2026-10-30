@@ -69,7 +69,21 @@ interface AppContextType {
   // LGPD & Auth (Features 1 & 1.1)
   isAuthenticated: boolean;
   currentUser: User;
-  login: (role: UserRole, email?: string) => void;
+  authView: 'login' | 'register' | 'recovery';
+  setAuthView: (view: 'login' | 'register' | 'recovery') => void;
+  authPrefillEmail: string;
+  setAuthPrefillEmail: (email: string) => void;
+  login: (role: UserRole, email?: string, password?: string) => { success: boolean; error?: string };
+  registerAccount: (data: {
+    fullName: string;
+    email: string;
+    password: string;
+    department?: string;
+    role?: UserRole;
+    autoLogin?: boolean;
+  }) => { success: boolean; error?: string };
+  requestPasswordReset: (email: string) => { success: boolean; code?: string; error?: string };
+  resetPassword: (email: string, code: string, newPassword: string) => { success: boolean; error?: string };
   logout: () => void;
   anonymizeUser: () => void;
 
@@ -133,6 +147,7 @@ interface AppContextType {
 
   // Corrections & Pending manual assignment (Feature 8, 9)
   corrections: Correction[];
+  addCorrection: (correction: Omit<Correction, 'id' | 'confirmedAt'>) => Correction;
   assignCorrection: (correctionId: string, studentId: string, notes?: string) => void;
 
   // Exam Wizard Draft
@@ -230,6 +245,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Auth & LGPD
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
+  const [authView, setAuthView] = useState<'login' | 'register' | 'recovery'>('login');
+  const [authPrefillEmail, setAuthPrefillEmail] = useState<string>('');
+  const [registeredUsers, setRegisteredUsers] = useState<
+    Array<{
+      id: string;
+      fullName: string;
+      email: string;
+      password: string;
+      department?: string;
+      role: UserRole;
+      createdAt: string;
+    }>
+  >([]);
+  const [recoveryCodes, setRecoveryCodes] = useState<Record<string, string>>({});
 
   // Core Data
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
@@ -310,6 +339,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const parsedDisc = JSON.parse(storedDisc);
           if (Array.isArray(parsedDisc) && parsedDisc.length > 0) {
             setDisciplines(parsedDisc);
+          }
+        }
+        const storedUsers = localStorage.getItem('correge_users_v1');
+        if (storedUsers) {
+          const parsedUsers = JSON.parse(storedUsers);
+          if (Array.isArray(parsedUsers)) {
+            setRegisteredUsers(parsedUsers);
           }
         }
       } catch (e) {
@@ -469,38 +505,264 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const login = (role: UserRole, email?: string) => {
+  const persistRegisteredUsers = (
+    nextUsers: Array<{
+      id: string;
+      fullName: string;
+      email: string;
+      password: string;
+      department?: string;
+      role: UserRole;
+      createdAt: string;
+    }>
+  ) => {
+    setRegisteredUsers(nextUsers);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('correge_users_v1', JSON.stringify(nextUsers));
+      } catch (e) {
+        console.error('Failed to save registered users:', e);
+      }
+    }
+  };
+
+  const login = (role: UserRole, email?: string, password?: string): { success: boolean; error?: string } => {
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const registered = registeredUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+    if (registered && password && password !== '••••••••' && registered.password !== password) {
+      return {
+        success: false,
+        error: 'Senha incorreta para esta conta institucional. Verifique ou recupere sua senha.',
+      };
+    }
+
     if (role === 'estudante') {
+      const displayName = registered?.fullName || CURRENT_STUDENT_USER.fullName;
       setCurrentUser({
         ...CURRENT_STUDENT_USER,
+        id: registered?.id || CURRENT_STUDENT_USER.id,
+        fullName: displayName,
         email: email || CURRENT_STUDENT_USER.email,
       });
       setIsAuthenticated(true);
+      setAuthView('login');
       setCurrentScreenState('portal-aluno');
       router.push('/portal-aluno');
       addToast({
         type: 'success',
-        title: 'Bem-vinda, Amanda!',
+        title: `Bem-vindo(a), ${displayName.split(' ')[0]}!`,
         message: 'Acesso autenticado ao Portal do Aluno (Católica SC).',
       });
+      return { success: true };
     } else {
+      const displayName = registered?.fullName || CURRENT_USER.fullName;
       setCurrentUser({
         ...CURRENT_USER,
+        id: registered?.id || CURRENT_USER.id,
+        fullName: displayName,
         email: email || CURRENT_USER.email,
       });
       setIsAuthenticated(true);
+      setAuthView('login');
       setCurrentScreenState('banco-questoes');
       router.push('/provas');
       addToast({
         type: 'success',
-        title: 'Bem-vindo, Professor!',
+        title: `Bem-vindo(a), ${displayName}!`,
         message: 'Acesso autenticado ao Painel Docente.',
       });
+      return { success: true };
     }
+  };
+
+  const registerAccount = (data: {
+    fullName: string;
+    email: string;
+    password: string;
+    department?: string;
+    role?: UserRole;
+    autoLogin?: boolean;
+  }): { success: boolean; error?: string } => {
+    const cleanName = data.fullName.trim();
+    const cleanEmail = data.email.trim().toLowerCase();
+    const role = data.role || 'professor';
+
+    if (cleanName.length < 3) {
+      return { success: false, error: 'Informe seu nome completo (mínimo de 3 caracteres).' };
+    }
+
+    if (role === 'professor' && !cleanEmail.endsWith('@catolicasc.org.br')) {
+      return {
+        success: false,
+        error: 'O e-mail docente deve pertencer ao domínio institucional @catolicasc.org.br.',
+      };
+    }
+
+    if (role === 'estudante' && !cleanEmail.endsWith('@catolicasc.edu.br')) {
+      return {
+        success: false,
+        error: 'O e-mail de estudante deve pertencer ao domínio @catolicasc.edu.br.',
+      };
+    }
+
+    if (data.password.length < 8) {
+      return { success: false, error: 'A senha de acesso deve conter pelo menos 8 caracteres.' };
+    }
+
+    const exists = registeredUsers.some((u) => u.email.toLowerCase() === cleanEmail);
+    if (exists) {
+      return {
+        success: false,
+        error: 'Já existe uma conta cadastrada com este e-mail institucional.',
+      };
+    }
+
+    const newUser = {
+      id: `prof-${Date.now()}`,
+      fullName: cleanName,
+      email: cleanEmail,
+      password: data.password,
+      department: data.department?.trim() || 'Curso de Direito | Departamento de Ciências Jurídicas',
+      role,
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextUsers = [...registeredUsers, newUser];
+    persistRegisteredUsers(nextUsers);
+    setAuthPrefillEmail(cleanEmail);
+
+    if (data.autoLogin !== false) {
+      setCurrentUser({
+        id: newUser.id,
+        role: newUser.role,
+        fullName: newUser.fullName,
+        email: newUser.email,
+        createdAt: newUser.createdAt,
+      });
+      setIsAuthenticated(true);
+      setAuthView('login');
+      setCurrentScreenState(role === 'estudante' ? 'portal-aluno' : 'banco-questoes');
+      router.push(role === 'estudante' ? '/portal-aluno' : '/provas');
+      addToast({
+        type: 'success',
+        title: 'Conta Criada com Sucesso!',
+        message: `Bem-vindo(a), ${newUser.fullName}. Seu acesso institucional foi ativado.`,
+      });
+    } else {
+      setAuthView('login');
+      addToast({
+        type: 'success',
+        title: 'Cadastro Concluído!',
+        message: 'Sua conta institucional foi criada. Faça login para continuar.',
+      });
+    }
+
+    return { success: true };
+  };
+
+  const requestPasswordReset = (email: string): { success: boolean; code?: string; error?: string } => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      return { success: false, error: 'Informe seu e-mail institucional.' };
+    }
+    if (!cleanEmail.endsWith('@catolicasc.org.br') && !cleanEmail.endsWith('@catolicasc.edu.br')) {
+      return {
+        success: false,
+        error: 'Informe um e-mail institucional válido (@catolicasc.org.br ou @catolicasc.edu.br).',
+      };
+    }
+
+    const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+    setRecoveryCodes((prev) => ({ ...prev, [cleanEmail]: generatedCode }));
+    setAuthPrefillEmail(cleanEmail);
+
+    addToast({
+      type: 'info',
+      title: 'Código de Verificação Enviado!',
+      message: `Código ${generatedCode} enviado para ${cleanEmail}.`,
+    });
+
+    return { success: true, code: generatedCode };
+  };
+
+  const resetPassword = (
+    email: string,
+    code: string,
+    newPassword: string
+  ): { success: boolean; error?: string } => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = code.trim();
+    const expectedCode = recoveryCodes[cleanEmail];
+
+    if (!cleanCode || cleanCode.length < 6) {
+      return { success: false, error: 'Informe o código de verificação de 6 dígitos.' };
+    }
+
+    if (expectedCode && cleanCode !== expectedCode) {
+      return {
+        success: false,
+        error: 'Código de verificação inválido. Confira os 6 dígitos enviados ao seu e-mail.',
+      };
+    }
+
+    if (newPassword.length < 8) {
+      return {
+        success: false,
+        error: 'A nova senha deve possuir no mínimo 8 caracteres.',
+      };
+    }
+
+    const existingIdx = registeredUsers.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+    if (existingIdx >= 0) {
+      const updated = [...registeredUsers];
+      updated[existingIdx] = { ...updated[existingIdx], password: newPassword };
+      persistRegisteredUsers(updated);
+    } else {
+      // Also persist password update if user recovered the default institutional account
+      const isStudent = cleanEmail.endsWith('@catolicasc.edu.br');
+      const derivedName =
+        cleanEmail === CURRENT_USER.email.toLowerCase()
+          ? CURRENT_USER.fullName
+          : cleanEmail === CURRENT_STUDENT_USER.email.toLowerCase()
+          ? CURRENT_STUDENT_USER.fullName
+          : cleanEmail
+              .split('@')[0]
+              .split('.')
+              .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+              .join(' ');
+
+      const newUserEntry = {
+        id: `prof-${Date.now()}`,
+        fullName: derivedName,
+        email: cleanEmail,
+        password: newPassword,
+        role: (isStudent ? 'estudante' : 'professor') as UserRole,
+        createdAt: new Date().toISOString(),
+      };
+      persistRegisteredUsers([...registeredUsers, newUserEntry]);
+    }
+
+    // Clear used recovery code
+    setRecoveryCodes((prev) => {
+      const copy = { ...prev };
+      delete copy[cleanEmail];
+      return copy;
+    });
+    setAuthPrefillEmail(cleanEmail);
+
+    addToast({
+      type: 'success',
+      title: 'Senha Redefinida com Sucesso!',
+      message: 'Sua senha de acesso institucional foi atualizada.',
+    });
+
+    return { success: true };
   };
 
   const logout = () => {
     setIsAuthenticated(false);
+    setAuthView('login');
     addToast({
       type: 'info',
       title: 'Sessão Encerrada',
@@ -942,6 +1204,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // Add a new OMR / mobile correction (Feature 8)
+  const addCorrection = (correctionData: Omit<Correction, 'id' | 'confirmedAt'>): Correction => {
+    const newCorrection: Correction = {
+      ...correctionData,
+      id: `corr-${Date.now()}`,
+      confirmedAt: new Date().toISOString(),
+    };
+    setCorrections((prev) => [newCorrection, ...prev]);
+
+    if (!newCorrection.studentId) {
+      setCurrentReport((prev) => ({
+        ...prev,
+        pendingCorrectionsCount: (prev.pendingCorrectionsCount || 0) + 1,
+      }));
+    }
+
+    return newCorrection;
+  };
+
   // Manual Assignment of pending correction (Feature 9)
   const assignCorrection = (correctionId: string, studentId: string, notes?: string) => {
     const student = students.find((s) => s.id === studentId);
@@ -1110,7 +1391,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentScreen: handleSetCurrentScreen,
         isAuthenticated,
         currentUser,
+        authView,
+        setAuthView,
+        authPrefillEmail,
+        setAuthPrefillEmail,
         login,
+        registerAccount,
+        requestPasswordReset,
+        resetPassword,
         logout,
         anonymizeUser,
         searchQuery,
@@ -1147,6 +1435,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createApplication,
         publishAnswerKey,
         corrections,
+        addCorrection,
         assignCorrection,
         examDraft,
         setExamDraft,
