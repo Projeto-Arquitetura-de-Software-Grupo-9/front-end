@@ -81,23 +81,31 @@ def detect_qr_code(img: np.ndarray) -> Tuple[Optional[str], Dict[str, Any]]:
     """
     detector = cv2.QRCodeDetector()
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
     # Lista de variações de imagem para tentar decodificar o QR Code
     candidates = [
-        img,
         gray,
+        otsu,
+        img,
         cv2.equalizeHist(gray),
         cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 10
         ),
     ]
 
-    # Também tenta focar no quadrante superior direito (onde o QR Code fica na folha A4)
     h, w = gray.shape[:2]
     if h > 200 and w > 200:
-        top_right = gray[0 : int(h * 0.45), int(w * 0.45) : w]
+        # Quadrante superior direito (onde o QR Code fica na folha A4)
+        top_right = gray[0 : int(h * 0.5), int(w * 0.4) : w]
         candidates.insert(1, top_right)
-        candidates.append(cv2.resize(top_right, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC))
+        candidates.append(
+            cv2.resize(top_right, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
+        )
+        # Caso o usuário aproxime muito a câmera, tenta também versão reduzida
+        candidates.append(
+            cv2.resize(gray, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_AREA)
+        )
 
     for candidate in candidates:
         try:

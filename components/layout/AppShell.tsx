@@ -27,18 +27,40 @@ function AppShellContent({ children }: AppShellProps) {
   const [isSmartphone, setIsSmartphone] = useState(false);
 
   useEffect(() => {
+    let isPrinting = false;
+
+    const handleBeforePrint = () => {
+      isPrinting = true;
+      setIsSmartphone(false);
+    };
+
+    const handleAfterPrint = () => {
+      isPrinting = false;
+    };
+
     const checkSmartphone = () => {
-      const mobileViewport = window.innerWidth < 768;
+      if (isPrinting || window.matchMedia('print').matches) {
+        return;
+      }
       const mobileUA =
         /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
           navigator.userAgent
         );
-      setIsSmartphone(mobileViewport || mobileUA);
+      // Use screen.width alongside innerWidth so print-preview viewport resizing on desktop never triggers mobile mode
+      const isNarrowScreen =
+        window.innerWidth < 768 && window.screen.width < 1024;
+      setIsSmartphone(mobileUA || isNarrowScreen);
     };
 
     checkSmartphone();
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
     window.addEventListener('resize', checkSmartphone);
-    return () => window.removeEventListener('resize', checkSmartphone);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      window.removeEventListener('resize', checkSmartphone);
+    };
   }, []);
 
   const isPublicAuthRoute =
@@ -60,24 +82,23 @@ function AppShellContent({ children }: AppShellProps) {
     );
   }
 
-  if (isSmartphone) {
-    return (
-      <div className="min-h-screen">
-        <MobileScannerScreen />
-        <ToastContainer />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Smartphone fallback via CSS media query before JS hydration */}
-      <div className="md:hidden min-h-screen">
+      {/* Smartphone View: strictly hidden when printing (@media print) */}
+      <div
+        className={`mobile-scanner-container ${
+          isSmartphone ? 'block' : 'md:hidden'
+        } print:hidden no-print min-h-screen`}
+      >
         <MobileScannerScreen />
       </div>
 
-      {/* Desktop Full Layout */}
-      <div className="hidden md:flex md:flex-col min-h-screen">
+      {/* Desktop & Print Full Layout: always visible on desktop AND always visible when printing */}
+      <div
+        className={`desktop-print-container ${
+          isSmartphone ? 'hidden' : 'hidden md:flex md:flex-col'
+        } print:flex print:flex-col min-h-screen`}
+      >
         {/* Global Top Header */}
         <Header />
 
