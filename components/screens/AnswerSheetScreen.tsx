@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { QrCodeGraphic } from '@/components/common/QrCodeGraphic';
+import { downloadFile } from '@/lib/results';
 import {
   Download,
   Printer,
@@ -309,6 +310,7 @@ export const AnswerSheetScreen: React.FC = () => {
   } = useApp();
 
   const [copyCount, setCopyCount] = useState<number>(35);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('none');
 
@@ -394,14 +396,28 @@ export const AnswerSheetScreen: React.FC = () => {
     window.print();
   };
 
-  const handleExportPdf = () => {
-    addToast({
-      type: 'success',
-      title: 'PDF de Folha de Respostas Gerado!',
-      message: isBatchMode
-        ? `Lote completo com ${students.length} folhas nominais de ${totalQuestions} questões pronto para download.`
-        : `Arquivo OMR com ${copyCount} cópias da ${selectedExam?.title || 'prova'} (${totalQuestions} questões) pronto para download.`,
-    });
+  const handleExportPdf = async () => {
+    if (!selectedExam || !currentVersionObj?.questions.length || !currentVersionObj.qrCodePayload) {
+      addToast({ type: 'error', title: 'Caderno incompleto', message: 'A exportação exige questões e QR code da versão gerada. Verifique a geração de provas com a equipe.' });
+      return;
+    }
+    if (isBatchMode && !students.length) {
+      addToast({ type: 'error', title: 'Nenhum aluno disponível para o lote.' }); return;
+    }
+    setIsExporting(true);
+    try {
+      await downloadFile('/answer-sheets/pdf', 'folhas-de-respostas.pdf', {
+        title: selectedExam.title, code: selectedExam.code,
+        versionLetter: currentVersionObj.versionLetter,
+        qrCodePayload: currentVersionObj.qrCodePayload,
+        questions: questionsList,
+        copies: currentStudent || isBatchMode ? 1 : copyCount,
+        students: (isBatchMode ? students : currentStudent ? [currentStudent] : []).map(s => ({ name: s.name, registration: s.registration })),
+      });
+      addToast({ type: 'success', title: 'PDF da folha de respostas baixado.' });
+    } catch (err) {
+      addToast({ type: 'error', title: 'Falha ao exportar PDF', message: err instanceof Error ? err.message : 'Tente novamente.' });
+    } finally { setIsExporting(false); }
   };
 
   const examTitle = selectedExam ? (selectedExam.title || selectedExam.discipline) : 'Direito Constitucional';
@@ -550,6 +566,7 @@ export const AnswerSheetScreen: React.FC = () => {
             <button
               type="button"
               onClick={handleExportPdf}
+              disabled={isExporting}
               className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />

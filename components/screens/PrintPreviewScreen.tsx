@@ -268,10 +268,10 @@ export const PrintPreviewScreen: React.FC = () => {
           message: `Caderno ${previewVersion} gerado em formato A4 institucional.`,
         });
       } else {
-        window.print();
+        addToast({ type: 'error', title: 'PDF não disponível', message: 'Verifique se esta prova e este caderno estão persistidos no backend. A impressão continua disponível no botão Imprimir.' });
       }
     } catch {
-      window.print();
+      addToast({ type: 'error', title: 'Falha ao baixar PDF', message: 'Não foi possível acessar o backend. Tente novamente.' });
     } finally {
       setIsExporting(false);
     }
