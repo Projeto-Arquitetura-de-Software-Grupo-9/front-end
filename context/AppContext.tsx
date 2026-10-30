@@ -206,6 +206,46 @@ const BLANK_EXAM_DRAFT: ExamDraft = {
   permutationStrategy: 'FISHER_YATES',
 };
 
+function mapBackendExam(record: any): Exam {
+  const config = record.variationsJson && typeof record.variationsJson === 'object'
+    ? record.variationsJson
+    : {};
+  const versions: ExamVersion[] = (record.versions || []).map((version: any, index: number) => ({
+    id: version.id,
+    versionLetter: version.versionLetter,
+    versionNumber: index + 1,
+    questions: Array.isArray(version.questionsLayout) ? version.questionsLayout : [],
+    answerKey: version.answerKey || {},
+    qrCodePayload: version.qrCodePayload,
+  }));
+
+  return {
+    id: record.id,
+    code: record.code,
+    title: record.title,
+    description: record.instructions,
+    subtitle: record.subtitle,
+    institution: record.institution,
+    department: record.department,
+    course: record.course,
+    discipline: record.discipline,
+    classGroup: record.classGroup,
+    semester: record.semester,
+    date: record.date,
+    duration: record.duration,
+    instructions: Array.isArray(record.instructions) ? record.instructions.join('\n') : record.instructions,
+    status: 'ready',
+    shuffleQuestions: config.shuffleQuestions ?? true,
+    shuffleAlternatives: config.shuffleAlternatives ?? true,
+    numberOfVersions: config.numberOfVersions || versions.length || 1,
+    permutationStrategy: config.permutationStrategy || 'FISHER_YATES',
+    selectedQuestionIds: Array.isArray(config.selectedQuestionIds) ? config.selectedQuestionIds : [],
+    versions,
+    maxScore: config.maxScore || 10,
+    createdAt: record.createdAt,
+  };
+}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -259,10 +299,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 api.getDisciplinas().catch(() => []),
                 api.getTurmas().catch(() => []),
               ]);
+              const remoteExams = await api.getExams().catch(() => []);
               if (isMounted) {
                 if (remoteStudents.length > 0) setStudents(remoteStudents);
                 if (remoteDisciplines.length > 0) setDisciplines(remoteDisciplines);
                 if (remoteClasses.length > 0) setClasses(remoteClasses);
+                if (remoteExams.length > 0) {
+                  const mappedExams = remoteExams.map(mapBackendExam);
+                  setExams(mappedExams);
+                  localStorage.setItem('correge_exams_v1', JSON.stringify(mappedExams));
+                  setActiveExamId(mappedExams[0].id);
+                }
               }
             } catch (syncErr) {
               console.warn('Sincronização parcial com QAS:', syncErr);
@@ -673,7 +720,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     const newExam: Exam = {
-      id: `exam-${Date.now()}`,
+      id: draft.id || `exam-${Date.now()}`,
       teacherId: currentUser.id,
       code: `#${draft.discipline.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
       title: draft.title,

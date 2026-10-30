@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { Question, Exam } from '@/lib/types';
+import { api, ExamDraftPayload } from '@/lib/api';
 import { A4ExamSheet } from '@/components/common/A4ExamSheet';
 import {
   GripVertical,
@@ -49,10 +50,12 @@ export const CreateExamScreen: React.FC = () => {
     disciplines,
     addDiscipline,
     classes,
+    isBackendOnline,
   } = useApp();
 
   const [isCreatingDiscipline, setIsCreatingDiscipline] = useState(false);
   const [newDisciplineName, setNewDisciplineName] = useState('');
+  const [isSavingExam, setIsSavingExam] = useState(false);
 
   // Reset or load draft depending on whether editing or creating new
   useEffect(() => {
@@ -217,7 +220,7 @@ export const CreateExamScreen: React.FC = () => {
     setExamWizardStep(targetStep);
   };
 
-  const handleFinishAndGenerate = () => {
+  const handleFinishAndGenerate = async () => {
     if (!examDraft.title.trim()) {
       addToast({
         type: 'error',
@@ -238,15 +241,85 @@ export const CreateExamScreen: React.FC = () => {
       return;
     }
 
-    let savedExam: Exam;
-    if (editId) {
-      savedExam = updateExam(editId, examDraft);
-    } else {
-      savedExam = createExamFromDraft(examDraft);
-    }
+    setIsSavingExam(true);
+    try {
+      let savedExam: Exam;
+      if (!isBackendOnline) {
+        savedExam = editId ? updateExam(editId, examDraft) : createExamFromDraft(examDraft);
+        addToast({
+          type: 'warning',
+          title: 'Prova salva neste navegador',
+          message: 'O backend está offline. Conecte-se para gravar a prova no servidor.',
+        });
+      } else {
+        const isRemoteExam = Boolean(editId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(editId));
+        const payload: ExamDraftPayload = {
+          ...(isRemoteExam && editId ? { id: editId } : {}),
+          title: examDraft.title,
+          discipline: examDraft.discipline,
+          course: examDraft.course,
+          classGroup: examDraft.classGroup,
+          semester: examDraft.semester,
+          institution: examDraft.institution,
+          department: examDraft.department,
+          date: examDraft.date,
+          duration: examDraft.duration,
+          instructions: examDraft.instructions,
+          selectedQuestionIds: examDraft.selectedQuestionIds,
+          selectedQuestions: selectedQuestions.map((question) => ({ ...question })),
+          shuffleQuestions: examDraft.shuffleQuestions,
+          shuffleAlternatives: examDraft.shuffleAlternatives,
+          numberOfVersions: examDraft.numberOfVersions,
+          maxScore: examDraft.maxScore,
+          permutationStrategy: examDraft.permutationStrategy || 'FISHER_YATES',
+        };
+        const remoteExam = isRemoteExam
+          ? await api.updateExam(editId!, payload)
+          : await api.createExam(payload);
 
-    resetExamDraft();
-    navigateToPreview(savedExam.id);
+        let variationsGenerated = true;
+        try {
+          await api.generateVariations(remoteExam.id, {
+            numberOfVersions: examDraft.numberOfVersions,
+            shuffleQuestions: examDraft.shuffleQuestions,
+            shuffleAlternatives: examDraft.shuffleAlternatives,
+            strategy: examDraft.permutationStrategy || 'FISHER_YATES',
+            students: students.map(({ id, name, registration }) => ({ id, name, registration })),
+          });
+        } catch (error) {
+          variationsGenerated = false;
+          addToast({
+            type: 'warning',
+            title: 'Prova salva; cadernos pendentes',
+            message: error instanceof Error ? error.message : 'Não foi possível gerar as versões agora.',
+          });
+        }
+
+        if (isRemoteExam) {
+          savedExam = updateExam(editId!, { ...examDraft, id: remoteExam.id });
+        } else {
+          savedExam = createExamFromDraft({ ...examDraft, id: remoteExam.id });
+        }
+        if (variationsGenerated) {
+          addToast({
+            type: 'success',
+            title: 'Prova gravada no backend',
+            message: 'Os cadernos foram gerados e já estão disponíveis para pré-visualização.',
+          });
+        }
+      }
+
+      resetExamDraft();
+      navigateToPreview(savedExam.id);
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: 'Não foi possível salvar a prova',
+        message: error instanceof Error ? error.message : 'Confira sua conexão e tente novamente.',
+      });
+    } finally {
+      setIsSavingExam(false);
+    }
   };
 
   return (
@@ -1352,10 +1425,13 @@ export const CreateExamScreen: React.FC = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={handleFinishAndGenerate}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-md shadow-red-950/20 transition cursor-pointer"
+                disabled={isSavingExam}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] disabled:opacity-60 disabled:cursor-wait text-white rounded-xl text-xs font-bold shadow-md shadow-red-950/20 transition cursor-pointer"
               >
                 <FileCheck className="w-4 h-4" />{' '}
-                {editId
+                {isSavingExam
+                  ? 'Salvando prova...'
+                  : editId
                   ? 'Salvar Alterações & Abrir Simulador'
                   : 'Gerar Prova & Abrir Simulador Completo'}
               </button>

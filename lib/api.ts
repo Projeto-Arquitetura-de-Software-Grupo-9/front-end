@@ -11,6 +11,36 @@ export interface HealthCheckResponse {
   modules?: Record<string, string>;
 }
 
+export interface ExamDraftPayload {
+  id?: string;
+  title: string;
+  discipline: string;
+  course: string;
+  classGroup: string;
+  semester: string;
+  institution: string;
+  department: string;
+  date: string;
+  duration: string;
+  instructions: string;
+  selectedQuestionIds: string[];
+  selectedQuestions: Question[];
+  shuffleQuestions: boolean;
+  shuffleAlternatives: boolean;
+  numberOfVersions: number;
+  maxScore: number;
+  permutationStrategy: 'FISHER_YATES' | 'CYCLIC_ROTATION';
+}
+
+async function readApiError(res: Response, fallback: string): Promise<Error> {
+  try {
+    const body = await res.json();
+    return new Error(body.error || body.message || fallback);
+  } catch {
+    return new Error(fallback);
+  }
+}
+
 /**
  * Utilitário fetch resiliente com timeout
  */
@@ -169,6 +199,35 @@ export const api = {
   },
 
   // 6. Provas & Download PDF
+  async getExams(): Promise<any[]> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams`);
+    if (!res.ok) throw await readApiError(res, 'Falha ao carregar provas');
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async createExam(data: ExamDraftPayload): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw await readApiError(res, 'Falha ao salvar prova');
+    const json = await res.json();
+    return json.data;
+  },
+
+  async updateExam(id: string, data: ExamDraftPayload): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw await readApiError(res, 'Falha ao atualizar prova');
+    const json = await res.json();
+    return json.data;
+  },
+
   getExamPdfUrl(examId: string, options: { versionLetter: string; showAnswerKey?: boolean; showQrCode?: boolean; includeBoxNota?: boolean; isDuplex?: boolean; includeAnswerSheet?: boolean }) {
     const params = new URLSearchParams({
       versionLetter: options.versionLetter,
@@ -181,14 +240,21 @@ export const api = {
     return `${API_BASE_URL}/exams/${examId}/download-pdf?${params.toString()}`;
   },
 
-  async generateVariations(examId: string, payload: { studentRegistrations: string[]; count: number }) {
+  async generateVariations(examId: string, payload: {
+    numberOfVersions: number;
+    shuffleQuestions: boolean;
+    shuffleAlternatives: boolean;
+    strategy: 'FISHER_YATES' | 'CYCLIC_ROTATION';
+    students: { id: string; name: string; registration: string }[];
+  }) {
     const res = await fetchWithTimeout(`${API_BASE_URL}/exams/${examId}/variations/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Falha ao gerar variações no backend');
-    return res.json();
+    if (!res.ok) throw await readApiError(res, 'Falha ao gerar variações no backend');
+    const json = await res.json();
+    return json.data;
   },
 
   // 7. Correções OMR & Lançamento Manual
