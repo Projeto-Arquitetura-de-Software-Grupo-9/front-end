@@ -1,31 +1,44 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { UserRole } from '@/lib/types';
 import {
-  GraduationCap,
   BookOpen,
   Lock,
   Mail,
   ArrowRight,
-  ShieldCheck,
-  Sparkles,
   KeyRound,
-  CheckCircle2,
   AlertCircle,
+  Eye,
+  EyeOff,
+  UserPlus,
+  ShieldCheck,
 } from 'lucide-react';
-import { CorregeLogo } from '@/components/common/CorregeLogo';
 
 export const LoginScreen: React.FC = () => {
-  const { login, addToast } = useApp();
+  const {
+    login,
+    addToast,
+    authPrefillEmail,
+    setAuthPrefillEmail,
+    setAuthView,
+  } = useApp();
 
   const [activeTab, setActiveTab] = useState<UserRole | 'invite_code'>('professor');
-  const [email, setEmail] = useState('ricardo.silveira@catolicasc.org.br');
+  const [email, setEmail] = useState(
+    authPrefillEmail || 'ricardo.silveira@catolicasc.org.br'
+  );
   const [password, setPassword] = useState('••••••••');
+  const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
-  const [studentName, setStudentName] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authPrefillEmail) {
+      setEmail(authPrefillEmail);
+    }
+  }, [authPrefillEmail]);
 
   const handleTabChange = (tab: UserRole | 'invite_code') => {
     setActiveTab(tab);
@@ -33,8 +46,19 @@ export const LoginScreen: React.FC = () => {
     if (tab === 'estudante') {
       setEmail('amanda.dolores@catolicasc.edu.br');
     } else if (tab === 'professor') {
-      setEmail('ricardo.silveira@catolicasc.org.br');
+      setEmail(authPrefillEmail || 'ricardo.silveira@catolicasc.org.br');
     }
+  };
+
+  const handleOpenRecovery = () => {
+    if (email.trim()) {
+      setAuthPrefillEmail(email.trim());
+    }
+    setAuthView('recovery');
+  };
+
+  const handleOpenRegister = () => {
+    setAuthView('register');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -47,13 +71,23 @@ export const LoginScreen: React.FC = () => {
         setErrorMsg('E-mail de estudante deve pertencer ao domínio @catolicasc.edu.br');
         return;
       }
-      login('estudante', email);
+      const res = login('estudante', email, password);
+      if (!res.success && res.error) {
+        setErrorMsg(res.error);
+      }
     } else if (activeTab === 'professor') {
       if (!email.toLowerCase().endsWith('@catolicasc.org.br')) {
         setErrorMsg('E-mail de docente deve pertencer ao domínio @catolicasc.org.br');
         return;
       }
-      login('professor', email);
+      if (password.length < 8) {
+        setErrorMsg('A senha de acesso deve conter no mínimo 8 caracteres.');
+        return;
+      }
+      const res = login('professor', email, password);
+      if (!res.success && res.error) {
+        setErrorMsg(res.error);
+      }
     } else if (activeTab === 'invite_code') {
       if (!inviteCode.trim()) {
         setErrorMsg('Por favor, informe o código de convite da turma.');
@@ -173,18 +207,36 @@ export const LoginScreen: React.FC = () => {
                   <label className="block font-bold text-slate-700">
                     Senha de Acesso *
                   </label>
-                  <span className="text-[10px] text-slate-400">mín. 8 caracteres</span>
+                  <button
+                    type="button"
+                    onClick={handleOpenRecovery}
+                    className="text-[11px] font-bold text-[#9E0B1A] hover:underline cursor-pointer"
+                  >
+                    Esqueceu a senha?
+                  </button>
                 </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
+                    className="w-full pl-9 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
               </div>
             )}
@@ -222,11 +274,27 @@ export const LoginScreen: React.FC = () => {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
+
+          {/* Divider + Create Account CTA */}
+          <div className="pt-4 border-t border-slate-100 space-y-3">
+            <div className="text-center text-xs text-slate-500">
+              Novo docente na instituição?
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenRegister}
+              className="w-full py-2.5 bg-slate-50 hover:bg-red-50/70 text-slate-800 hover:text-[#9E0B1A] border border-slate-200 hover:border-red-200 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-2"
+            >
+              <UserPlus className="w-4 h-4 text-[#9E0B1A]" />
+              <span>Criar Conta Docente</span>
+            </button>
+          </div>
         </div>
 
         {/* Footer info */}
-        <div className="text-center text-[11px] text-slate-400">
-          Centro Universitário Católica de Santa Catarina
+        <div className="text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Centro Universitário Católica de Santa Catarina • Conformidade LGPD</span>
         </div>
       </div>
     </div>

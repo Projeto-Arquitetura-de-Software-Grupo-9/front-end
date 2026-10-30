@@ -226,4 +226,99 @@ export const api = {
     if (!res.ok) throw new Error('Falha ao salvar configurações');
     return res.json();
   },
+
+  // 9. Python OpenCV OMR & QR Code Engine (/api/omr -> back-end/omr_scanner.py)
+  async scanOmrSheet(payload: {
+    imageBase64: string;
+    totalQuestions: number;
+    officialAnswerKey: Record<number | string, string>;
+    versionLetter?: string;
+    maxScore?: number;
+  }): Promise<{
+    success: boolean;
+    engine?: string;
+    qrDetected?: boolean;
+    qrRaw?: string | null;
+    qrData?: {
+      examCode?: string;
+      versionLetter?: string;
+      nominal?: boolean;
+      studentRegistration?: string;
+      totalQuestions?: number;
+    };
+    versionLetter?: string;
+    confidence?: number;
+    markedAnswers?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
+    grading?: {
+      correctCount: number;
+      totalQuestions: number;
+      totalScore: number;
+      maxScore: number;
+      details: Array<{
+        questionNumber: number;
+        questionId: string;
+        chosen: 'A' | 'B' | 'C' | 'D' | 'E' | null;
+        correct: 'A' | 'B' | 'C' | 'D' | 'E';
+        isCorrect: boolean;
+        score: number;
+      }>;
+    };
+    error?: string;
+  }> {
+    const res = await fetchWithTimeout(
+      '/api/omr',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'scan',
+          ...payload,
+        }),
+      },
+      12000
+    );
+    return res.json();
+  },
+
+  async gradeOmrSheet(payload: {
+    markedAnswers: Record<number | string, string>;
+    officialAnswerKey: Record<number | string, string>;
+    totalQuestions: number;
+    versionLetter?: string;
+    maxScore?: number;
+  }): Promise<{
+    success: boolean;
+    engine?: string;
+    versionLetter?: string;
+    markedAnswers?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
+    grading?: {
+      correctCount: number;
+      totalQuestions: number;
+      totalScore: number;
+      maxScore: number;
+      details: Array<{
+        questionNumber: number;
+        questionId: string;
+        chosen: 'A' | 'B' | 'C' | 'D' | 'E' | null;
+        correct: 'A' | 'B' | 'C' | 'D' | 'E';
+        isCorrect: boolean;
+        score: number;
+      }>;
+    };
+    error?: string;
+  }> {
+    const res = await fetchWithTimeout(
+      '/api/omr',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'grade',
+          ...payload,
+        }),
+      },
+      10000
+    );
+    return res.json();
+  },
 };
