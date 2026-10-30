@@ -10,7 +10,7 @@ import { LancamentoManualScreen } from '@/components/screens/LancamentoManualScr
 import {
   ChevronLeft,
   FileText,
-  Eye,
+  Printer,
   Edit3,
   TrendingUp,
   ClipboardCheck,
@@ -19,12 +19,22 @@ import {
 function ExamHubContent() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const { exams, activeExamId, setActiveExamId, selectedExam } = useApp();
+  const {
+    exams,
+    activeExamId,
+    setActiveExamId,
+    selectedExam,
+    corrections,
+  } = useApp();
 
   const id = (params?.id as string) || activeExamId;
-  const p = searchParams.get('p'); // 'folha' | 'caderno' | 'lancamento'
+  const p = searchParams.get('p'); // 'caderno' | 'folha' | 'lancamento'
   const activeTab: 'caderno' | 'folha' | 'lancamento' =
-    p === 'folha' ? 'folha' : p === 'lancamento' ? 'lancamento' : 'caderno';
+    p === 'folha'
+      ? 'folha'
+      : p === 'lancamento'
+      ? 'lancamento'
+      : 'caderno';
 
   useEffect(() => {
     if (id && id !== activeExamId) {
@@ -33,31 +43,37 @@ function ExamHubContent() {
   }, [id, activeExamId, setActiveExamId]);
 
   const currentExam = exams.find((e) => e.id === id) || selectedExam;
+  const pendingCount = corrections.filter((c) => !c.studentId).length;
+  const questionCount =
+    currentExam?.selectedQuestionIds?.length ||
+    currentExam?.versions?.[0]?.questions?.length ||
+    0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Seamless Integrated Page Header with Underline Tabs */}
       <div className="print:hidden border-b border-slate-200 pb-0">
         {/* Top Info & Actions Row */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <Link
               href="/provas"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 transition"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-800 transition"
             >
-              <ChevronLeft className="w-3.5 h-3.5" /> Todas as Provas
+              <ChevronLeft className="w-3.5 h-3.5" /> Provas
             </Link>
-            <div className="flex items-center gap-2.5 pt-0.5">
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                 {currentExam?.title || 'Avaliação'}
               </h1>
-              <span className="font-mono text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+              <span className="font-mono text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                 {currentExam?.code || '#EXAM'}
               </span>
+              <span className="text-xs text-slate-400 hidden sm:inline">•</span>
+              <span className="text-xs text-slate-500">
+                {currentExam?.discipline} • {currentExam?.classGroup} • {questionCount} questões
+              </span>
             </div>
-            <p className="text-xs text-slate-500">
-              {currentExam?.course} • {currentExam?.discipline} • {currentExam?.classGroup}
-            </p>
           </div>
 
           {/* Right Action buttons */}
@@ -65,7 +81,7 @@ function ExamHubContent() {
             {currentExam?.status === 'Corrigida' && (
               <Link
                 href={`/resultados?examId=${id}`}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs"
               >
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> Resultados
               </Link>
@@ -73,49 +89,54 @@ function ExamHubContent() {
 
             <Link
               href={`/provas/new?edit=${id}`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition shadow-2xs"
             >
-              <Edit3 className="w-3.5 h-3.5 text-slate-500" /> Editar Prova
+              <Edit3 className="w-3.5 h-3.5 text-slate-400" /> Editar Questões
             </Link>
           </div>
         </div>
 
-        {/* Clean Underline Tabs (Directly on the baseline, no floating box) */}
-        <div className="flex items-center gap-8 -mb-px">
+        {/* Clean Underline Tabs */}
+        <div className="flex items-center gap-6 -mb-px overflow-x-auto">
           <Link
             href={`/provas/${id}?p=caderno`}
-            className={`pb-3 text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
+            className={`pb-2.5 text-xs font-semibold transition flex items-center gap-1.5 border-b-2 whitespace-nowrap ${
               activeTab === 'caderno'
                 ? 'border-[#9E0B1A] text-[#9E0B1A] font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
             }`}
           >
-            <Eye className="w-4 h-4" />
-            <span>Caderno de Prova A4</span>
+            <Printer className="w-3.5 h-3.5" />
+            <span>Caderno & Impressão</span>
           </Link>
 
           <Link
             href={`/provas/${id}?p=folha`}
-            className={`pb-3 text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
+            className={`pb-2.5 text-xs font-semibold transition flex items-center gap-1.5 border-b-2 whitespace-nowrap ${
               activeTab === 'folha'
                 ? 'border-[#9E0B1A] text-[#9E0B1A] font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
             }`}
           >
-            <FileText className="w-4 h-4" />
-            <span>Folha de Respostas (OMR)</span>
+            <FileText className="w-3.5 h-3.5" />
+            <span>Folha de Respostas OMR</span>
           </Link>
 
           <Link
             href={`/provas/${id}?p=lancamento`}
-            className={`pb-3 text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
+            className={`pb-2.5 text-xs font-semibold transition flex items-center gap-1.5 border-b-2 whitespace-nowrap ${
               activeTab === 'lancamento'
-                ? 'border-amber-600 text-amber-700 font-bold'
+                ? 'border-[#9E0B1A] text-[#9E0B1A] font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
             }`}
           >
-            <ClipboardCheck className="w-4 h-4" />
-            <span>Lançamento Manual</span>
+            <ClipboardCheck className="w-3.5 h-3.5" />
+            <span>Vincular Avulsas</span>
+            {pendingCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                {pendingCount}
+              </span>
+            )}
           </Link>
         </div>
       </div>

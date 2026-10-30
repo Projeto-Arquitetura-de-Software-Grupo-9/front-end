@@ -14,7 +14,7 @@ export interface A4AnswerSheetProps {
   discipline?: string;
   classGroup?: string;
   institution?: string;
-  versionLetter: 'A' | 'B' | 'C' | 'D';
+  versionLetter: string;
   questions: A4AnswerSheetQuestion[];
   student?: {
     name?: string;
@@ -81,7 +81,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
         transform: scale !== 1 ? `scale(${scale})` : undefined,
         transformOrigin: 'top center',
       }}
-      className={`relative bg-white text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-slate-200/90 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:shadow-none print:border-none print:p-[12mm] print:m-0 print:w-full print:min-h-screen print:break-after-page ${
+      className={`a4-print-sheet relative bg-white text-slate-900 w-[210mm] min-h-[297mm] p-[16mm] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-slate-200/90 rounded-[2px] transition-transform duration-150 flex flex-col justify-between select-text print:shadow-none print:border-none print:p-[12mm] print:m-0 print:w-full print:min-h-screen print:break-after-page ${
         isDuplex
           ? isVerso
             ? 'print:duplex-verso'
@@ -134,6 +134,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
                 app: 'CORREGE',
                 exam: examCode.replace(/[^a-zA-Z0-9]/g, ''),
                 ver: versionLetter,
+                nominal: Boolean(student?.registration),
                 std: student?.registration || 'ANON',
                 q: totalQuestions,
               })}
@@ -285,7 +286,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
       </div>
 
       {/* Optical Timing Track & Bottom Calibration Guide */}
-      <footer className="pt-3 border-t-2 border-slate-900 mt-6 flex flex-col gap-2">
+      <div className="pt-3 border-t-2 border-slate-900 mt-6 flex flex-col gap-2">
         <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 bg-slate-950 inline-block"></span>
@@ -316,7 +317,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
             Caderno {versionLetter} • Folha {pageNumber} de {totalPages} (Cartão-Resposta)
           </div>
         </div>
-      </footer>
+      </div>
     </div>
   );
 };
