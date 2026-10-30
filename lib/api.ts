@@ -11,6 +11,45 @@ export interface HealthCheckResponse {
   modules?: Record<string, string>;
 }
 
+export interface BackendExamLayoutQuestionDTO {
+  questionId: string;
+  orderIndex: number;
+  statement: string;
+  alternatives: {
+    letter: 'A' | 'B' | 'C' | 'D' | 'E';
+    text: string;
+  }[];
+  correctAlternative?: 'A' | 'B' | 'C' | 'D' | 'E';
+  pointValue: number;
+}
+
+export interface BackendExamLayoutDTO {
+  examId: string;
+  title: string;
+  versionLetter: string;
+  header: {
+    institutionName: string;
+    course: string;
+    discipline: string;
+    professorName: string;
+    examTitle: string;
+    code: string;
+    versionLetter: string;
+    date: string;
+    duration: string;
+    maxScore: number;
+    instructions: string[];
+  };
+  pages: {
+    pageNumber: number;
+    questions: BackendExamLayoutQuestionDTO[];
+  }[];
+  totalQuestions: number;
+  totalPages: number;
+  qrCodePayload: string;
+  answerKey: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'>;
+}
+
 /**
  * Utilitário fetch resiliente com timeout
  */
@@ -39,9 +78,21 @@ export const api = {
         return { online: true, data };
       }
       return { online: false };
-    } catch (err) {
+    } catch {
       return { online: false };
     }
+  },
+
+  // 1.1 Professores (Auth / Registro no back-end)
+  async createProfessor(data: { nomeCompleto: string; email: string; senhaHash?: string }): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/professores`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Falha ao registrar professor no backend');
+    const json = await res.json();
+    return json.data;
   },
 
   // 2. Disciplinas
@@ -68,7 +119,6 @@ export const api = {
     const res = await fetchWithTimeout(`${API_BASE_URL}/turmas`);
     if (!res.ok) throw new Error('Falha ao carregar turmas');
     const json = await res.json();
-    // Mapeia retorno do backend para tipo Class do frontend
     return (json.data || []).map((t: any) => ({
       id: t.id,
       name: t.nome,
@@ -168,7 +218,59 @@ export const api = {
     return json.data;
   },
 
-  // 6. Provas & Download PDF
+  // 6. Provas, Layout, Folha de Respostas & QR Code (C:\Users\davi3\back-end)
+  async getExams(): Promise<any[]> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams`);
+    if (!res.ok) throw new Error('Falha ao carregar provas do backend');
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async getExamLayout(examId: string, versionLetter = 'A'): Promise<BackendExamLayoutDTO | null> {
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/exams/${encodeURIComponent(examId)}/layout?versionLetter=${encodeURIComponent(versionLetter)}`
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data || null;
+  },
+
+  async getAnswerSheet(examId: string, versionLetter = 'A'): Promise<any | null> {
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/exams/${encodeURIComponent(examId)}/answer-sheet?versionLetter=${encodeURIComponent(versionLetter)}&includeAnswerKey=true`
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data || null;
+  },
+
+  async validateQrCode(qrCodePayload: string): Promise<{
+    valid: boolean;
+    decoded?: {
+      appId: string;
+      vId: string;
+      ver: string;
+      code: string;
+      stdId: string;
+      reg: string;
+      ts: number;
+      chk: string;
+    };
+    error?: string;
+  }> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/qr-codes/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qrCodePayload }),
+    });
+    const json = await res.json();
+    return {
+      valid: Boolean(json.valid),
+      decoded: json.decoded,
+      error: json.error,
+    };
+  },
+
   getExamPdfUrl(examId: string, options: { versionLetter: string; showAnswerKey?: boolean; showQrCode?: boolean; includeBoxNota?: boolean; isDuplex?: boolean; includeAnswerSheet?: boolean }) {
     const params = new URLSearchParams({
       versionLetter: options.versionLetter,
@@ -191,12 +293,33 @@ export const api = {
     return res.json();
   },
 
-  // 7. Correções OMR & Lançamento Manual
+  // 7. Correções OMR & Lançamento Manual (C:\Users\davi3\back-end\src\controllers\CorrecaoController.ts)
   async getCorrecoes(): Promise<Correction[]> {
     const res = await fetchWithTimeout(`${API_BASE_URL}/correcoes`);
     if (!res.ok) throw new Error('Falha ao carregar correções');
     const json = await res.json();
     return json.data || [];
+  },
+
+  async createCorrecao(payload: {
+    idVersaoProva: string;
+    idProva?: string;
+    versaoMarcada?: string;
+    idAluno?: string;
+    nomeManuscrito?: string;
+    matriculaManuscrita?: string;
+    notaTotal: number;
+    respostasLidas: Record<string, string>;
+    atribuicaoAutomatica?: boolean;
+  }): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/correcoes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Falha ao registrar correção no backend');
+    const json = await res.json();
+    return json.data;
   },
 
   async assignStudentToCorrection(correctionId: string, studentId: string): Promise<any> {
@@ -240,15 +363,22 @@ export const api = {
     qrDetected?: boolean;
     qrRaw?: string | null;
     qrData?: {
+      app?: string;
+      examId?: string;
       examCode?: string;
+      versionId?: string;
       versionLetter?: string;
       nominal?: boolean;
+      studentId?: string;
       studentRegistration?: string;
       totalQuestions?: number;
+      embeddedAnswerKey?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
     };
     versionLetter?: string;
+    versaoMarcada?: string | null;
     confidence?: number;
     markedAnswers?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
+    respostasLidas?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
     grading?: {
       correctCount: number;
       totalQuestions: number;
@@ -291,6 +421,7 @@ export const api = {
     engine?: string;
     versionLetter?: string;
     markedAnswers?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
+    respostasLidas?: Record<string, 'A' | 'B' | 'C' | 'D' | 'E'>;
     grading?: {
       correctCount: number;
       totalQuestions: number;
