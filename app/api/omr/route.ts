@@ -1,13 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 
 export const runtime = 'nodejs';
+
+function resolvePythonBinary(): string {
+  const candidates = [
+    process.env.PYTHON_PATH,
+    'C:\\Users\\davi3\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python313', 'python.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return 'python';
+}
 
 function runPythonOmrScanner(payload: Record<string, unknown>): Promise<Record<string, any>> {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(process.cwd(), 'back-end', 'omr_scanner.py');
-    const pyProcess = spawn('python', [scriptPath], {
+    const pythonBin = resolvePythonBinary();
+    const pyProcess = spawn(pythonBin, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
