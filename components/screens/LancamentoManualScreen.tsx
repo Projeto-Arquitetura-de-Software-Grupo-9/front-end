@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
-import { getVersionLetters } from '@/lib/mock-data';
+import { getVersionLetters } from '@/lib/exam-utils';
 import {
   Search,
   CheckCircle2,

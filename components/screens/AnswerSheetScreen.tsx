@@ -3,12 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { A4AnswerSheet, A4AnswerSheetQuestion } from '@/components/common/A4AnswerSheet';
-import { getVersionLetters } from '@/lib/mock-data';
+import { getVersionLetters } from '@/lib/exam-utils';
 import { downloadFile } from '@/lib/results';
 import {
   Printer,
   Download,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Camera,
   RotateCcw,
   Sparkles,
@@ -17,7 +19,7 @@ import {
   Shuffle,
   SlidersHorizontal,
   Eye,
-  BookOpen,
+  AlertCircle,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -48,12 +50,34 @@ export const AnswerSheetScreen: React.FC = () => {
   const [markedAnswers, setMarkedAnswers] = useState<Record<number, string>>({});
   const [isExporting, setIsExporting] = useState(false);
 
+  // Performance virtualization & Scale calibration
+  const [isPrintingBatch, setIsPrintingBatch] = useState(false);
+  const [batchPageIndex, setBatchPageIndex] = useState(0);
+  const [showAllBatchOnScreen, setShowAllBatchOnScreen] = useState(false);
+
   useEffect(() => {
     setMarkedAnswers({});
     setSelectedStudentId(
       selectedExam?.withStudentIdentification === false ? 'version:A' : 'all_students'
     );
+    setBatchPageIndex(0);
   }, [selectedExam?.id]);
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      setIsPrintingBatch(true);
+    };
+    const handleAfterPrint = () => {
+      setIsPrintingBatch(false);
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
 
   if (!selectedExam) {
     return (
@@ -70,6 +94,7 @@ export const AnswerSheetScreen: React.FC = () => {
       withStudentIdentification: nominal,
     });
     setSelectedStudentId(nominal ? 'all_students' : 'version:A');
+    setBatchPageIndex(0);
   };
 
   const handleToggleRandom = (random: boolean) => {
@@ -185,6 +210,19 @@ export const AnswerSheetScreen: React.FC = () => {
   };
 
   const scaleFactor = previewZoom / 100;
+
+  const handlePrint = () => {
+    setIsPrintingBatch(true);
+    addToast({
+      type: 'info',
+      title: 'Calibração OMR para Impressão',
+      message: 'Mantenha a escala em 100% (Tamanho Real) e desmarque cabeçalhos/rodapés nas opções do navegador.',
+    });
+    setTimeout(() => {
+      window.print();
+    }, 80);
+  };
+
   const handleExportPdf = async () => {
     setIsExporting(true);
     try {
@@ -211,7 +249,7 @@ export const AnswerSheetScreen: React.FC = () => {
 
   return (
     <div className="rounded-2xl border border-slate-200 overflow-visible shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
-      {/* Single Minimalist Command Bar (Consistent with PrintPreviewScreen) */}
+      {/* Single Minimalist Command Bar */}
       <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 rounded-t-2xl print:hidden">
         {/* Left: Primary Print Configuration Controls */}
         <div className="flex flex-wrap items-center gap-2">
@@ -302,14 +340,27 @@ export const AnswerSheetScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Right: Unified View Selector, Secondary Options Popover & Print Button */}
+        {/* Right: Calibration Badge, View Selector, Settings Popover & Print Button */}
         <div className="flex items-center gap-2">
+          {/* Calibração de Escala: Aviso Compacto */}
+          <div
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200/80 rounded-lg text-amber-900 text-[11px] font-medium"
+            title="Dica de Calibração OMR: Ao imprimir, deixe Escala em 100% (Tamanho Real) e desmarque Cabeçalhos e Rodapés para alinhamento micrométrico dos marcadores."
+          >
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="font-bold text-amber-800">100% Escala</span>
+            <span className="text-amber-700/80">• Sem Cabeçalhos</span>
+          </div>
+
           {/* Unified View Selector */}
           <div className="relative flex items-center">
             <Eye className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
             <select
               value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
+              onChange={(e) => {
+                setSelectedStudentId(e.target.value);
+                setBatchPageIndex(0);
+              }}
               className="text-xs font-semibold rounded-lg pl-7 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 appearance-none cursor-pointer focus:outline-none max-w-[230px] truncate"
             >
               {isNominal && (
@@ -358,48 +409,44 @@ export const AnswerSheetScreen: React.FC = () => {
             {showAdvancedPopover && (
               <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl border border-slate-200 shadow-xl p-3.5 z-40 space-y-3 text-xs animate-in fade-in zoom-in-95 duration-100">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="font-bold text-slate-800">Opções da Folha OMR</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedPopover(false)}
-                    className="text-slate-400 hover:text-slate-600 text-[11px] font-semibold cursor-pointer"
-                  >
-                    Fechar
-                  </button>
+                  <span className="font-bold text-slate-900">Ajustes & Simulação</span>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="flex items-center justify-between cursor-pointer py-1">
-                    <span className="text-slate-700 font-medium flex items-center gap-1.5">
-                      <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-                      Frente e Verso (Verso Limpo)
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={isDuplexMode}
-                      onChange={(e) => setIsDuplexMode(e.target.checked)}
-                      className="rounded border-slate-300 text-[#9E0B1A] focus:ring-[#9E0B1A]"
-                    />
-                  </label>
-                </div>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-600">Frente e Verso (Duplex)</span>
+                  <input
+                    type="checkbox"
+                    checked={isDuplexMode}
+                    onChange={(e) => setIsDuplexMode(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
 
-                {/* Zoom Control */}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-slate-600 font-medium">Zoom na Tela</span>
-                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                {/* Zoom Controls */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <span className="text-slate-600">Zoom</span>
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setPreviewZoom(Math.max(85, previewZoom - 15))}
+                      onClick={() => setPreviewZoom(Math.max(50, previewZoom - 15))}
                       className="p-1 text-slate-600 hover:text-slate-900 cursor-pointer"
                     >
                       <ZoomOut className="w-3.5 h-3.5" />
                     </button>
-                    <span className="text-[11px] font-mono font-bold px-1.5 text-slate-800">
-                      {previewZoom}%
-                    </span>
+                    <select
+                      value={previewZoom}
+                      onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+                      className="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-xs font-semibold"
+                    >
+                      <option value={50}>50%</option>
+                      <option value={65}>Ajustar</option>
+                      <option value={75}>75%</option>
+                      <option value={100}>100%</option>
+                      <option value={125}>125%</option>
+                    </select>
                     <button
                       type="button"
-                      onClick={() => setPreviewZoom(Math.min(115, previewZoom + 15))}
+                      onClick={() => setPreviewZoom(Math.min(130, previewZoom + 15))}
                       className="p-1 text-slate-600 hover:text-slate-900 cursor-pointer"
                     >
                       <ZoomIn className="w-3.5 h-3.5" />
@@ -457,7 +504,7 @@ export const AnswerSheetScreen: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handlePrint}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
           >
             <Printer className="w-3.5 h-3.5" />
@@ -470,12 +517,74 @@ export const AnswerSheetScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Clean A4 Desk Environment (Identical to PrintPreviewScreen) */}
+      {/* Clean A4 Desk Environment with Virtualized Screen Preview */}
       <div className="bg-slate-100/90 p-4 sm:p-8 overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:min-h-0">
         {isNominal && isBatchMode ? (
           <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
-            {students.map((std, sIdx) => {
-              const v = getStudentAssignedVersion(std.id, sIdx);
+            {/* Virtualized Student Navigator on Screen */}
+            {!isPrintingBatch && !showAllBatchOnScreen && (
+              <div className="w-full max-w-[210mm] bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs print:hidden">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-800">
+                    Lote da Turma: {students.length} folhas OMR
+                  </span>
+                  <span className="text-slate-400">•</span>
+                  <span className="text-slate-600 font-medium">
+                    Aluno <strong>#{batchPageIndex + 1}</strong>: {students[batchPageIndex]?.name} (Caderno {getStudentAssignedVersion(students[batchPageIndex]?.id, batchPageIndex)})
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setBatchPageIndex(Math.max(0, batchPageIndex - 1))}
+                    disabled={batchPageIndex === 0}
+                    className="p-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="font-mono text-xs text-slate-500 px-1">
+                    {batchPageIndex + 1} / {students.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setBatchPageIndex(Math.min(students.length - 1, batchPageIndex + 1))}
+                    disabled={batchPageIndex >= students.length - 1}
+                    className="p-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 cursor-pointer"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllBatchOnScreen(true)}
+                    className="ml-2 text-[11px] font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                  >
+                    Expandir Todas na Tela
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {showAllBatchOnScreen && !isPrintingBatch && (
+              <div className="w-full max-w-[210mm] flex items-center justify-between px-2 text-xs text-slate-500 print:hidden">
+                <span>Exibindo todas as {students.length} folhas na tela.</span>
+                <button
+                  type="button"
+                  onClick={() => setShowAllBatchOnScreen(false)}
+                  className="text-xs font-semibold text-[#9E0B1A] hover:underline cursor-pointer"
+                >
+                  Voltar ao Modo Rápido (1 Aluno)
+                </button>
+              </div>
+            )}
+
+            {/* Students Render: single on interactive screen, all when printing */}
+            {(isPrintingBatch || showAllBatchOnScreen
+              ? students
+              : [students[batchPageIndex] || students[0]]
+            ).map((std, sIdx) => {
+              const actualIdx = isPrintingBatch || showAllBatchOnScreen ? sIdx : batchPageIndex;
+              const v = getStudentAssignedVersion(std.id, actualIdx);
               const stdQuestions = getAnswerSheetQuestionsForVersion(v);
               const totalStudentSheets = isDuplexMode ? 2 : 1;
 
@@ -506,7 +615,7 @@ export const AnswerSheetScreen: React.FC = () => {
                     scale={scaleFactor}
                   />
 
-                  {/* Blank Back Page in Duplex Mode so sheets stay separated */}
+                  {/* Blank Back Page in Duplex Mode */}
                   {isDuplexMode && (
                     <div
                       style={{

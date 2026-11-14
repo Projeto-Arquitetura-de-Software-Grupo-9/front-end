@@ -143,6 +143,41 @@ def parse_qr_payload(raw_text: str) -> Dict[str, Any]:
     return {"raw": raw_text}
 
 
+def ensure_correct_orientation(img: np.ndarray) -> Tuple[np.ndarray, bool]:
+    """
+    Detecta se a folha está invertida em 180 graus (de cabeça para baixo).
+    Utiliza a posição do QR Code e a assimetria do topo para corrigir rotação automaticamente.
+    """
+    detector = cv2.QRCodeDetector()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+
+    # 1. Testa detecção direta no quadro completo para obter coordenadas
+    try:
+        data, points, _ = detector.detectAndDecode(gray)
+        if data and points is not None and len(points) > 0:
+            cy = float(np.mean(points[0][:, 1]))
+            if cy > h * 0.55:
+                # QR code na metade inferior: folha invertida 180°
+                return cv2.rotate(img, cv2.ROTATE_180), True
+            return img, False
+    except Exception:
+        pass
+
+    # 2. Se não detectou na orientação atual, testa rotação de 180°
+    try:
+        gray_rot = cv2.rotate(gray, cv2.ROTATE_180)
+        data_rot, points_rot, _ = detector.detectAndDecode(gray_rot)
+        if data_rot and points_rot is not None and len(points_rot) > 0:
+            cy_rot = float(np.mean(points_rot[0][:, 1]))
+            if cy_rot <= h * 0.55:
+                return cv2.rotate(img, cv2.ROTATE_180), True
+    except Exception:
+        pass
+
+    return img, False
+
+
 def detect_qr_code(img: np.ndarray) -> Tuple[Optional[str], Dict[str, Any]]:
     """
     Detecta e decodifica o QR Code na imagem usando OpenCV em múltiplas escalas e recortes.
@@ -756,6 +791,8 @@ def process_omr_request(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # 1. Decodifica o QR Code na imagem (se presente)
+    # 1. Valida e corrige orientação (180°) caso a folha tenha entrado invertida
+    img, was_rotated = ensure_correct_orientation(img)
     qr_raw, qr_info = detect_qr_code(img)
     detected_version = qr_info.get("versionLetter") or version_letter
     if qr_info.get("totalQuestions"):
@@ -784,6 +821,7 @@ def process_omr_request(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qrRaw": qr_raw,
         "qrData": qr_info,
         "pageAligned": page_aligned,
+        "autoRotated180": was_rotated,
         "versionLetter": detected_version,
         "versaoMarcada": marked_version or detected_version,
         "confidence": confidence,

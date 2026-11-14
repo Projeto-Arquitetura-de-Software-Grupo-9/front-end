@@ -82,10 +82,14 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
       } ${className}`}
     >
       {/* OMR Fiducial Corner Alignment Markers (Authentic scanning markers seen in prova.jpg) */}
-      <div className="absolute top-3 left-3 w-3 h-3 bg-slate-950 pointer-events-none" />
-      <div className="absolute top-3 right-3 w-3 h-3 bg-slate-950 pointer-events-none" />
-      <div className="absolute bottom-3 left-3 w-3 h-3 bg-slate-950 pointer-events-none" />
-      <div className="absolute bottom-3 right-3 w-3 h-3 bg-slate-950 pointer-events-none" />
+      {/* Marcador Assimétrico de Orientação Top-Left (permite correção automática 180° no OpenCV) */}
+      <div className="absolute top-3.5 left-3.5 flex items-center gap-1 pointer-events-none">
+        <div className="w-3.5 h-3.5 bg-slate-950" />
+        <div className="w-1.5 h-3.5 bg-slate-950" title="Marcador de Orientação Assimétrico OMR" />
+      </div>
+      <div className="absolute top-3.5 right-3.5 w-3.5 h-3.5 bg-slate-950 pointer-events-none" />
+      <div className="absolute bottom-3.5 left-3.5 w-3.5 h-3.5 bg-slate-950 pointer-events-none" />
+      <div className="absolute bottom-3.5 right-3.5 w-3.5 h-3.5 bg-slate-950 pointer-events-none" />
 
       {/* Main Content Area */}
       <div className="space-y-5">
@@ -150,7 +154,7 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
 
                 {/* QR Code with quiet zone and version identifier */}
                 {showQrCode && (
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center bg-white p-1.5 rounded-xs border border-slate-100 shadow-2xs" title="Quiet Zone OMR (5mm)">
                     <QrCodeGraphic
                       value={JSON.stringify({
                         app: 'CORREGE',
@@ -411,10 +415,10 @@ export const A4BlankVersoSheet: React.FC<A4BlankVersoSheetProps> = ({
       {/* OMR Fiducial Corner Alignment Markers (hidden in print if pureBlankInPrint) */}
       {!pureBlankInPrint && (
         <>
-          <div className="absolute top-3 left-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
-          <div className="absolute top-3 right-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
-          <div className="absolute bottom-3 left-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
-          <div className="absolute bottom-3 right-3 w-3 h-3 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute top-3.5 left-3.5 w-3.5 h-3.5 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute top-3.5 right-3.5 w-3.5 h-3.5 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute bottom-3.5 left-3.5 w-3.5 h-3.5 bg-slate-300 print:bg-slate-950 pointer-events-none" />
+          <div className="absolute bottom-3.5 right-3.5 w-3.5 h-3.5 bg-slate-300 print:bg-slate-950 pointer-events-none" />
         </>
       )}
 

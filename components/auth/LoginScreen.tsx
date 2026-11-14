@@ -27,9 +27,9 @@ export const LoginScreen: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<UserRole | 'invite_code'>('professor');
   const [email, setEmail] = useState(
-    authPrefillEmail || 'ricardo.silveira@catolicasc.org.br'
+    authPrefillEmail || ''
   );
-  const [password, setPassword] = useState('••••••••');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -43,11 +43,7 @@ export const LoginScreen: React.FC = () => {
   const handleTabChange = (tab: UserRole | 'invite_code') => {
     setActiveTab(tab);
     setErrorMsg(null);
-    if (tab === 'estudante') {
-      setEmail('amanda.dolores@catolicasc.edu.br');
-    } else if (tab === 'professor') {
-      setEmail(authPrefillEmail || 'ricardo.silveira@catolicasc.org.br');
-    }
+    setEmail(authPrefillEmail || '');
   };
 
   const handleOpenRecovery = () => {

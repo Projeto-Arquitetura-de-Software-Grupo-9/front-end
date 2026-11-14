@@ -63,6 +63,11 @@ function AppShellContent({ children }: AppShellProps) {
     };
   }, []);
 
+  // Headless Print Render Mode (for Playwright / Puppeteer PDF generation parity)
+  if (pathname?.startsWith('/print-render')) {
+    return <div className="bg-white min-h-screen text-slate-900">{children}</div>;
+  }
+
   const isPublicAuthRoute =
     pathname === '/cadastro' || pathname === '/recuperar-senha' || pathname === '/login';
 

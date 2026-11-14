@@ -18,6 +18,7 @@ import {
   Copy,
   Trash2,
   QrCode,
+  RefreshCw,
 } from 'lucide-react';
 
 export const ExamsListScreen: React.FC = () => {
@@ -30,9 +31,20 @@ export const ExamsListScreen: React.FC = () => {
     resetExamDraft,
     setActiveExamId,
     setIsScannerModalOpen,
+    refreshExams,
   } = useApp();
   const [statusFilter, setStatusFilter] = useState<'Todos' | 'Corrigida' | 'Pendente' | 'Em Andamento'>('Todos');
   const [disciplineFilter, setDisciplineFilter] = useState<string>('Todas');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshExams();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const disciplines = ['Todas', ...Array.from(new Set(exams.map((e) => e.discipline)))];
 
@@ -62,15 +74,33 @@ export const ExamsListScreen: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">
             Crie provas rapidamente, configure a impressão (nominal/avulsa, cadernos aleatórios, folha de resposta) e acompanhe os resultados.
           </p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Banco de Dados: {exams.length} {exams.length === 1 ? 'avaliação' : 'avaliações'}
+            </span>
+          </div>
         </div>
 
-        <Link
-          href="/provas/new"
-          onClick={() => resetExamDraft()}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" /> Nova Prova
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer disabled:opacity-50"
+            title="Sincronizar com o Banco de Dados em tempo real"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>Atualizar</span>
+          </button>
+          <Link
+            href="/provas/new"
+            onClick={() => resetExamDraft()}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" /> Nova Prova
+          </Link>
+        </div>
       </div>
 
       {/* Unified Minimalist Filter & Search Bar */}

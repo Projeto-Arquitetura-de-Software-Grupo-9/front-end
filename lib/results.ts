@@ -1,6 +1,6 @@
 import { API_BASE_URL } from './api';
 export interface ResultsReport {
-  dataSource?: 'database' | 'mock';
+  dataSource?: 'database';
   examId: string; title: string; pendingCount: number;
   metrics: { count: number; average: number | null; median: number | null; highest: number | null; lowest: number | null; standardDeviation: number | null };
   versions: {
@@ -10,7 +10,7 @@ export interface ResultsReport {
     questions: { number: number; correct: string; total: number; correctCount: number; blankCount: number; distribution: Record<string, number> }[];
   }[];
 }
-export async function getReportExams(signal: AbortSignal): Promise<{ data: { id: string; title: string }[]; dataSource: 'database' | 'mock' }> {
+export async function getReportExams(signal: AbortSignal): Promise<{ data: { id: string; title: string }[]; dataSource: 'database' }> {
   const response = await checked(await fetch(`${API_BASE_URL}/reports`, { signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]), cache: 'no-store' }));
   return response.json();
 }

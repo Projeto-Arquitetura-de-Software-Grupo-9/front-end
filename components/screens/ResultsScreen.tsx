@@ -54,7 +54,6 @@ export const ResultsScreen: React.FC = () => {
     {!catalog && <p role="status">Carregando provas do backend…</p>}
     {catalog?.error && <p role="alert">{catalog.error}</p>}
     {catalog && !catalog.error && !examId && <p>Nenhuma prova disponível no backend.</p>}
-    {catalog?.source === 'mock' && <p className="p-4 bg-amber-50 rounded-xl">Modo demonstrativo — dados fictícios em memória. Nenhum resultado do banco está sendo exibido.</p>}
     {loading && <p role="status">Carregando resultados…</p>}
     {error && <p role="alert" className="p-4 bg-amber-50 rounded-xl">{error} Use Atualizar para tentar novamente.</p>}
     {report && <>

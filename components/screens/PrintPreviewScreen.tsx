@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { A4ExamSheet, A4BlankVersoSheet, A4ExamQuestion } from '@/components/common/A4ExamSheet';
 import { A4AnswerSheet, A4AnswerSheetQuestion } from '@/components/common/A4AnswerSheet';
-import { getVersionLetters } from '@/lib/mock-data';
+import { getVersionLetters } from '@/lib/exam-utils';
 import { downloadFile } from '@/lib/results';
 import {
   Download,
@@ -16,6 +16,11 @@ import {
   SlidersHorizontal,
   Check,
   QrCode,
+  BookOpen,
+  AlertCircle,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from 'lucide-react';
 
 export const PrintPreviewScreen: React.FC = () => {
@@ -51,6 +56,13 @@ export const PrintPreviewScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [showSecondaryPopover, setShowSecondaryPopover] = useState<boolean>(false);
 
+  // New features: Duplex Spread (Book mode), Virtualized Batch, Scale calibration alert
+  const [duplexSpreadMode, setDuplexSpreadMode] = useState<'vertical' | 'book'>('vertical');
+  const [isPrintingBatch, setIsPrintingBatch] = useState<boolean>(false);
+  const [batchPageIndex, setBatchPageIndex] = useState<number>(0);
+  const [showAllBatchOnScreen, setShowAllBatchOnScreen] = useState<boolean>(false);
+  const [showCalibrationAlert, setShowCalibrationAlert] = useState<boolean>(true);
+
   // 'application' = Prova para aplicação | 'post_exam_concepts' = Gabarito comentado pós-prova
   const [printPurpose, setPrintPurpose] = useState<'application' | 'post_exam_concepts'>('application');
 
@@ -73,39 +85,51 @@ export const PrintPreviewScreen: React.FC = () => {
       setIncludeBoxNota(false);
       setIsDuplexMode(true);
       setViewFilter('batch');
+      setBatchPageIndex(0);
     }
   }, [selectedExam?.id]);
 
-  const exam = selectedExam || {
-    id: 'exam-default',
-    title: 'P1 - Direito Constitucional I - 2024.2',
-    discipline: 'Direito Constitucional',
-    course: 'Direito',
-    classGroup: 'Turma A',
-    semester: '2026.1',
-    institution: 'CATÓLICA DE SANTA CATARINA',
-    department: 'Curso de Direito | Departamento de Ciências Jurídicas',
-    code: '#CAT-DIR-2026.1',
-    date: '15 Mar, 2026',
-    duration: '2 horas',
-    instructions:
-      'Marque apenas uma alternativa por questão objetiva no cartão-resposta. Preencha completamente a bolha com caneta preta ou azul. Rasuras anularão a questão.',
-    selectedQuestionIds: ['q-disc-1', 'q-1024', 'q-1024-2', 'q-1024-3'],
-    shuffleQuestions: true,
-    shuffleAlternatives: true,
-    numberOfVersions: 4,
-    withStudentIdentification: true,
-  };
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      setIsPrintingBatch(true);
+    };
+    const handleAfterPrint = () => {
+      setIsPrintingBatch(false);
+    };
 
-  const numVersions = Math.max(1, Math.min(26, exam.numberOfVersions || 4));
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
+  const numVersions = Math.max(1, Math.min(26, selectedExam?.numberOfVersions || 4));
   const versionLetters = getVersionLetters(numVersions);
-  const isRandomOrder = (exam.shuffleQuestions ?? true) && numVersions > 1;
+  const isRandomOrder = ((selectedExam?.shuffleQuestions ?? true) && numVersions > 1);
 
   useEffect(() => {
-    if (!versionLetters.includes(previewVersion)) {
+    if (selectedExam && !versionLetters.includes(previewVersion)) {
       setPreviewVersion(versionLetters[0] || 'A');
     }
-  }, [numVersions, previewVersion]);
+  }, [selectedExam, numVersions, previewVersion, setPreviewVersion, versionLetters]);
+
+  if (!selectedExam) {
+    return (
+      <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 shadow-xs space-y-3">
+        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+          <Printer className="w-6 h-6" />
+        </div>
+        <h3 className="font-bold text-slate-900 text-base">Nenhuma avaliação selecionada</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          Selecione ou crie uma prova no menu de Provas para visualizar a pré-impressão e os cadernos de prova.
+        </p>
+      </div>
+    );
+  }
+
+  const exam = selectedExam;
 
   const getStudentAssignedVersion = (stdId: string, fallbackIndex: number): string => {
     const assignment = (exam as any).studentAssignments?.find(
@@ -121,6 +145,7 @@ export const PrintPreviewScreen: React.FC = () => {
   const handleToggleNominal = (nominal: boolean) => {
     setIsNominalMode(nominal);
     setViewFilter('batch');
+    setBatchPageIndex(0);
     if (selectedExam) {
       updateExamPrintConfig(selectedExam.id, { withStudentIdentification: nominal });
     }
@@ -172,6 +197,7 @@ export const PrintPreviewScreen: React.FC = () => {
 
   const handleViewFilterChange = (val: string) => {
     setViewFilter(val);
+    setBatchPageIndex(0);
     if (val.startsWith('version:')) {
       setPreviewVersion(val.replace('version:', ''));
     } else if (val.startsWith('student:')) {
@@ -371,7 +397,16 @@ export const PrintPreviewScreen: React.FC = () => {
   const activeBatchItems = isNominalMode ? nominalStudentsBatch : nonNominalBatch;
 
   const handlePrint = () => {
-    window.print();
+    setIsPrintingBatch(true);
+    addToast({
+      type: 'info',
+      title: 'Calibração de Impressão OMR',
+      message: 'Certifique-se de manter Escala em 100% e desmarcar Cabeçalhos/Rodapés no diálogo do navegador.',
+    });
+    // Garante que o React monte todos os nós do lote completo antes do diálogo nativo
+    setTimeout(() => {
+      window.print();
+    }, 80);
   };
 
   const handleExportPdf = async () => {
@@ -487,6 +522,74 @@ export const PrintPreviewScreen: React.FC = () => {
       );
     }
     return null;
+  };
+
+  // Helper to render sheets grouped in Duplex Book spreads (Pair of Frente + Verso)
+  const renderSheetsGrouped = (
+    sheets: SheetItem[],
+    totalPages: number,
+    vLetter: string,
+    studentObj?: { name: string; registration: string },
+    keyPrefix: string = 'single'
+  ) => {
+    if (duplexSpreadMode === 'book') {
+      const pairs: SheetItem[][] = [];
+      for (let i = 0; i < sheets.length; i += 2) {
+        pairs.push(sheets.slice(i, i + 2));
+      }
+
+      return (
+        <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
+          {pairs.map((pair, pIdx) => (
+            <div key={`${keyPrefix}-spread-${pIdx}`} className="w-full flex flex-col items-center print:w-full">
+              <div className="w-full max-w-[430mm] flex items-center justify-between px-2 mb-2 text-xs font-bold text-slate-500 uppercase tracking-wide print:hidden">
+                <span>Folha Física {pIdx + 1} de {Math.ceil(totalPages / 2)}</span>
+                <span className="text-slate-400 font-mono text-[11px]">Par Frente e Verso (Duplex)</span>
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 print:flex print:flex-col print:gap-0 items-start justify-center print:w-full">
+                {pair[0] && (
+                  <div className="flex flex-col items-center print:w-full">
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full mb-1.5 print:hidden">
+                      Frente (Folha {pair[0].pageNumber})
+                    </span>
+                    {renderSheetComponent(pair[0], totalPages, vLetter, studentObj, `${keyPrefix}-p${pIdx}-frente`)}
+                  </div>
+                )}
+                {pair[1] && (
+                  <div className="flex flex-col items-center print:w-full">
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full mb-1.5 print:hidden">
+                      Verso (Folha {pair[1].pageNumber})
+                    </span>
+                    {renderSheetComponent(pair[1], totalPages, vLetter, studentObj, `${keyPrefix}-p${pIdx}-verso`)}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Default Vertical Scroll Layout
+    return (
+      <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
+        {sheets.map((sheet) => (
+          <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
+            <div className="w-full max-w-[210mm] flex items-center justify-between px-1 mb-1.5 text-[11px] text-slate-400 print:hidden">
+              <span>
+                Folha {sheet.pageNumber} de {totalPages}
+                {isDuplexMode && ` (${sheet.pageNumber % 2 === 0 ? 'Verso' : 'Frente'})`}
+              </span>
+              <span>
+                Caderno {vLetter}
+                {studentObj && ` • ${studentObj.name}`}
+              </span>
+            </div>
+            {renderSheetComponent(sheet, totalPages, vLetter, studentObj, keyPrefix)}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -644,14 +747,41 @@ export const PrintPreviewScreen: React.FC = () => {
                 >
                   {includeAnswerSheet && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                 </span>
-                <span>Com Folha de Resposta</span>
+                <span>Com Folha OMR</span>
               </button>
             </>
           )}
+
+          {/* 5. Toggle Visual Duplex (Modo Livro / Lado a Lado) */}
+          {isDuplexMode && (
+            <button
+              type="button"
+              onClick={() => setDuplexSpreadMode(duplexSpreadMode === 'book' ? 'vertical' : 'book')}
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                duplexSpreadMode === 'book'
+                  ? 'bg-blue-50 text-blue-800 border-blue-200 shadow-2xs'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Simulador Duplex: Exibir páginas lado a lado (Frente & Verso) para validar paridade física"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+              <span className="hidden md:inline">{duplexSpreadMode === 'book' ? 'Modo Livro (Duplex)' : 'Lado a Lado'}</span>
+            </button>
+          )}
         </div>
 
-        {/* Right: View Selector, Secondary Popover, Scanner & Print Actions */}
+        {/* Right: Scale Alert, View Selector, Settings Popover, PDF & Print Actions */}
         <div className="flex items-center gap-2">
+          {/* Calibração de Escala: Aviso Compacto na Toolbar */}
+          <div
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 bg-amber-50/90 border border-amber-200/90 rounded-xl text-amber-900 text-[11px] font-medium"
+            title="Dica de Calibração OMR: No diálogo de impressão, defina Escala em 100% (Tamanho Real) e desmarque Cabeçalhos/Rodapés para manter o alinhamento óptico exato dos marcadores fiduciais."
+          >
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="font-bold text-amber-800">100% Escala</span>
+            <span className="text-amber-700/80">• Sem Cabeçalhos</span>
+          </div>
+
           {/* Unified View Selector (Lote, Caderno A..N, or Student) */}
           <div className="relative">
             <select
@@ -750,6 +880,17 @@ export const PrintPreviewScreen: React.FC = () => {
                   />
                 </label>
 
+                {/* Duplex Book View in Popover */}
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700">Modo Livro (Frente/Verso)</span>
+                  <input
+                    type="checkbox"
+                    checked={duplexSpreadMode === 'book'}
+                    onChange={(e) => setDuplexSpreadMode(e.target.checked ? 'book' : 'vertical')}
+                    className="rounded accent-blue-600 w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
                 {!isBatchMode && (
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-slate-600">Paginação</span>
@@ -776,18 +917,36 @@ export const PrintPreviewScreen: React.FC = () => {
                   </div>
                 )}
 
+                {/* Expanded Inspection Zoom */}
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                   <span className="text-slate-600">Zoom</span>
-                  <select
-                    value={previewZoom}
-                    onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
-                    className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold"
-                  >
-                    <option value={50}>50%</option>
-                    <option value={75}>75%</option>
-                    <option value={100}>100%</option>
-                    <option value={125}>125%</option>
-                  </select>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewZoom(Math.max(50, previewZoom - 15))}
+                      className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                    >
+                      <ZoomOut className="w-3 h-3" />
+                    </button>
+                    <select
+                      value={previewZoom}
+                      onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-0.5 text-xs font-semibold"
+                    >
+                      <option value={50}>50%</option>
+                      <option value={65}>Ajustar</option>
+                      <option value={75}>75%</option>
+                      <option value={100}>100%</option>
+                      <option value={125}>125%</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewZoom(Math.min(130, previewZoom + 15))}
+                      className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                    >
+                      <ZoomIn className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-100">
@@ -828,13 +987,13 @@ export const PrintPreviewScreen: React.FC = () => {
             }`}
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Imprimir</span>
+            <span>{isBatchMode ? `Imprimir Lote (${activeBatchItems.length})` : 'Imprimir'}</span>
           </button>
         </div>
       </div>
 
       {/* =====================================================================
-          MESA DE VISUALIZAÇÃO EXATA A4 (LIMPA E SEM POLUIÇÃO VISUAL)
+          MESA DE VISUALIZAÇÃO EXATA A4 (COM VIRTUALIZAÇÃO EM TELA)
          ===================================================================== */}
       <div
         onClick={() => showSecondaryPopover && setShowSecondaryPopover(false)}
@@ -842,14 +1001,80 @@ export const PrintPreviewScreen: React.FC = () => {
       >
         <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
           {isBatchMode ? (
-            /* BATCH PRINT MODE */
+            /* BATCH PRINT MODE: VIRTUALIZED SCREEN PREVIEW + FULL DOM MOUNT IN PRINT */
             <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
-              {activeBatchItems.map((batchItem) => (
+              {/* Virtualized Batch Navigator on Screen (Super fast, prevents thread lag with 50+ students) */}
+              {!isPrintingBatch && !showAllBatchOnScreen && (
+                <div className="w-full max-w-[210mm] bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs print:hidden">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-800">
+                      Lote: {activeBatchItems.length} {isNominalMode ? 'alunos' : 'cópias'}
+                    </span>
+                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-600 font-medium">
+                      Exibindo <strong>#{batchPageIndex + 1}</strong>: {activeBatchItems[batchPageIndex]?.label} (Caderno {activeBatchItems[batchPageIndex]?.assignedLetter})
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setBatchPageIndex(Math.max(0, batchPageIndex - 1))}
+                      disabled={batchPageIndex === 0}
+                      className="p-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 cursor-pointer"
+                      title="Aluno anterior"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="font-mono text-xs text-slate-500 px-1">
+                      {batchPageIndex + 1} / {activeBatchItems.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setBatchPageIndex(Math.min(activeBatchItems.length - 1, batchPageIndex + 1))}
+                      disabled={batchPageIndex >= activeBatchItems.length - 1}
+                      className="p-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 cursor-pointer"
+                      title="Próximo aluno"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllBatchOnScreen(true)}
+                      className="ml-2 text-[11px] font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                      title="Renderiza todos os alunos simultaneamente na tela"
+                    >
+                      Expandir Todos na Tela
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showAllBatchOnScreen && !isPrintingBatch && (
+                <div className="w-full max-w-[210mm] flex items-center justify-between px-2 text-xs text-slate-500 print:hidden">
+                  <span>Exibindo todos os {activeBatchItems.length} cadernos na tela.</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllBatchOnScreen(false)}
+                    className="text-xs font-semibold text-[#9E0B1A] hover:underline cursor-pointer"
+                  >
+                    Voltar ao Modo Rápido (1 Aluno)
+                  </button>
+                </div>
+              )}
+
+              {/* Items Render:
+                  - During interactive screen mode (default): renders activeBatchItems[batchPageIndex]
+                  - During print (isPrintingBatch) or expanded mode: renders all activeBatchItems */}
+              {(isPrintingBatch || showAllBatchOnScreen
+                ? activeBatchItems
+                : [activeBatchItems[batchPageIndex] || activeBatchItems[0]]
+              ).map((batchItem) => (
                 <div
                   key={batchItem.key}
                   className="w-full flex flex-col items-center gap-3 print:gap-0 print:w-full"
                 >
-                  {/* Minimalist Subtle Divider Above Each Student/Copy in Batch */}
+                  {/* Divider Above Each Student/Copy in Batch */}
                   <div className="w-full max-w-[210mm] flex items-center justify-between px-1 text-xs text-slate-500 print:hidden">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-slate-700">
@@ -866,14 +1091,12 @@ export const PrintPreviewScreen: React.FC = () => {
                     </span>
                   </div>
 
-                  {batchItem.sheets.map((sheet) =>
-                    renderSheetComponent(
-                      sheet,
-                      batchItem.totalPages,
-                      batchItem.assignedLetter,
-                      batchItem.student,
-                      batchItem.key
-                    )
+                  {renderSheetsGrouped(
+                    batchItem.sheets,
+                    batchItem.totalPages,
+                    batchItem.assignedLetter,
+                    batchItem.student,
+                    batchItem.key
                   )}
                 </div>
               ))}
@@ -928,32 +1151,16 @@ export const PrintPreviewScreen: React.FC = () => {
               })}
             </div>
           ) : (
-            /* All Sheets View (Default Exact Print Format) */
-            <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
-              {singleVersionSheets.sheets.map((sheet) => (
-                <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
-                  <div className="w-full max-w-[210mm] flex items-center justify-between px-1 mb-1.5 text-[11px] text-slate-400 print:hidden">
-                    <span>
-                      Folha {sheet.pageNumber} de {effectiveTotalPages}
-                      {isDuplexMode && ` (${sheet.pageNumber % 2 === 0 ? 'Verso' : 'Frente'})`}
-                    </span>
-                    <span>
-                      Caderno {previewVersion}
-                      {currentStudent && ` • ${currentStudent.name}`}
-                    </span>
-                  </div>
-                  {renderSheetComponent(
-                    sheet,
-                    effectiveTotalPages,
-                    previewVersion,
-                    currentStudent
-                      ? { name: currentStudent.name, registration: currentStudent.registration }
-                      : undefined,
-                    `all-ver-${previewVersion}`
-                  )}
-                </div>
-              ))}
-            </div>
+            /* All Sheets View (Default Exact Print Format with Duplex Book option) */
+            renderSheetsGrouped(
+              singleVersionSheets.sheets,
+              effectiveTotalPages,
+              previewVersion,
+              currentStudent
+                ? { name: currentStudent.name, registration: currentStudent.registration }
+                : undefined,
+              `all-ver-${previewVersion}`
+            )
           )}
         </div>
       </div>

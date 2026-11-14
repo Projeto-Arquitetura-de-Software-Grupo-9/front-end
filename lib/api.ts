@@ -226,6 +226,27 @@ export const api = {
     return json.data || [];
   },
 
+  async createExam(payload: any): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao salvar prova no banco de dados');
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
+  async deleteExam(id: string): Promise<boolean> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return res.ok;
+  },
+
   async getExamLayout(examId: string, versionLetter = 'A'): Promise<BackendExamLayoutDTO | null> {
     const res = await fetchWithTimeout(
       `${API_BASE_URL}/exams/${encodeURIComponent(examId)}/layout?versionLetter=${encodeURIComponent(versionLetter)}`

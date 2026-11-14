@@ -19,19 +19,9 @@ import {
   UserRole,
 } from '@/lib/types';
 import {
-  INITIAL_QUESTIONS,
-  INITIAL_STUDENTS,
-  INITIAL_EXAMS,
-  INITIAL_REPORT,
-  INITIAL_CLASSES,
-  INITIAL_DISCIPLINES,
-  INITIAL_APPLICATIONS,
-  INITIAL_CORRECTIONS,
-  CURRENT_USER,
-  CURRENT_STUDENT_USER,
   getVersionLetters,
   generateRandomStudentAssignments,
-} from '@/lib/mock-data';
+} from '@/lib/exam-utils';
 import { api, API_BASE_URL } from '@/lib/api';
 
 interface Toast {
@@ -114,6 +104,7 @@ interface AppContextType {
   
   // Exams (Feature 4 - Templates)
   exams: Exam[];
+  refreshExams: () => Promise<void>;
   activeExamId: string;
   setActiveExamId: (id: string) => void;
   selectedExam: Exam | undefined;
@@ -237,6 +228,123 @@ const BLANK_EXAM_DRAFT: ExamDraft = {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const EMPTY_USER: User = {
+  id: '',
+  fullName: '',
+  email: '',
+  role: 'professor',
+  createdAt: '',
+};
+
+const EMPTY_REPORT: ExamReport = {
+  examId: '',
+  examTitle: 'Relatório de Avaliação',
+  averageScore: 0,
+  medianScore: 0,
+  standardDeviation: 0,
+  highestScore: 0,
+  highestScorer: '-',
+  lowestScore: 0,
+  lowestScorersCount: 0,
+  approvalRate: 0,
+  totalStudents: 0,
+  questionsAnalytics: [],
+  studentResults: [],
+  pendingCorrectionsCount: 0,
+};
+
+function mapBackendExam(e: any): Exam {
+  const instructions = Array.isArray(e.instructions)
+    ? e.instructions.join('\n')
+    : typeof e.instructions === 'string'
+    ? e.instructions
+    : '';
+
+  const rawVersions = (Array.isArray(e.variationsJson?.versions) && e.variationsJson.versions.length > 0)
+    ? e.variationsJson.versions
+    : (Array.isArray(e.versions) && e.versions.length > 0)
+    ? e.versions
+    : [];
+
+  const mappedVersions = rawVersions.map((v: any, vIdx: number) => {
+    let qLayout = v.questions || v.questionsLayout || [];
+    if (typeof qLayout === 'string') {
+      try {
+        qLayout = JSON.parse(qLayout);
+      } catch {
+        qLayout = [];
+      }
+    }
+    const questions = (Array.isArray(qLayout) ? qLayout : []).map((q: any, qIdx: number) => ({
+      originalQuestionId: q.questionId || q.id || 'q-' + qIdx,
+      orderIndex: q.orderIndex || qIdx + 1,
+      statement: q.statement || '',
+      alternatives: (q.alternatives || []).map((a: any, aIdx: number) => ({
+        id: a.id || 'alt-' + aIdx,
+        letter: a.letter || String.fromCharCode(65 + aIdx),
+        text: typeof a === 'string' ? a : a.text || '',
+      })),
+      correctAlternative: q.correctAlternative || 'A',
+      explanation: q.explanation,
+      topic: q.topic,
+    }));
+
+    let aKey = v.answerKey || {};
+    if (typeof aKey === 'string') {
+      try {
+        aKey = JSON.parse(aKey);
+      } catch {
+        aKey = {};
+      }
+    }
+
+    const versionLetter = v.versionLetter || String.fromCharCode(65 + vIdx);
+
+    return {
+      id: v.id || 'v-' + versionLetter,
+      versionLetter,
+      questions,
+      answerKey: aKey,
+      qrCodePayload: v.qrCodePayload || JSON.stringify({ examId: e.id, examCode: e.code || '#EXAM', versionLetter }),
+    };
+  });
+
+  const selectedQuestionIds = (e.selectedQuestionIds && e.selectedQuestionIds.length > 0)
+    ? e.selectedQuestionIds
+    : (e.variationsJson?.selectedQuestionIds && e.variationsJson.selectedQuestionIds.length > 0)
+    ? e.variationsJson.selectedQuestionIds
+    : (mappedVersions[0]?.questions || []).map((q: any) => q.originalQuestionId);
+
+  return {
+    id: e.id,
+    teacherId: e.teacherId,
+    code: e.code || '#EXAM',
+    title: e.title || 'Avaliação',
+    subtitle: e.subtitle,
+    institution: e.institution || 'CATÓLICA DE SANTA CATARINA',
+    department: e.department || '',
+    course: e.course || 'Graduação',
+    discipline: e.discipline || (e.disciplinaRef?.nome || ''),
+    classGroup: e.classGroup || '',
+    semester: e.semester || '2026.1',
+    date: e.date || '',
+    duration: e.duration || '2 horas',
+    instructions,
+    status: (e.status as any) || 'ready',
+    shuffleQuestions: e.shuffleQuestions ?? e.variationsJson?.shuffleQuestions ?? true,
+    shuffleAlternatives: e.shuffleAlternatives ?? e.variationsJson?.shuffleAlternatives ?? true,
+    withStudentIdentification: e.withStudentIdentification ?? true,
+    numberOfVersions: e.variationsJson?.numberOfVersions || e.numberOfVersions || (mappedVersions.length > 0 ? mappedVersions.length : 1),
+    selectedQuestionIds,
+    versions: mappedVersions,
+    maxScore: e.maxScore || e.variationsJson?.maxScore || 10.0,
+    totalStudents: e.totalStudents || (e.variationsJson?.studentAssignments || []).length || 0,
+    averageScore: e.averageScore || 0,
+    studentAssignments: e.variationsJson?.studentAssignments || e.studentAssignments || [],
+    createdAt: e.createdAt,
+  };
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const [currentScreen, setCurrentScreenState] = useState<ScreenType>('banco-questoes');
@@ -244,7 +352,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   // Auth & LGPD
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
+  const [currentUser, setCurrentUser] = useState<User>(EMPTY_USER);
   const [authView, setAuthView] = useState<'login' | 'register' | 'recovery'>('login');
   const [authPrefillEmail, setAuthPrefillEmail] = useState<string>('');
   const [registeredUsers, setRegisteredUsers] = useState<
@@ -260,24 +368,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   >([]);
   const [recoveryCodes, setRecoveryCodes] = useState<Record<string, string>>({});
 
-  // Core Data
-  const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
-  const [disciplines, setDisciplines] = useState<Discipline[]>(INITIAL_DISCIPLINES);
-  const [classes, setClasses] = useState<Class[]>(INITIAL_CLASSES);
-  const [activeClassId, setActiveClassId] = useState<string>('class-1');
-  const [exams, setExams] = useState<Exam[]>(INITIAL_EXAMS);
-  const [activeExamId, setActiveExamId] = useState<string>('exam-1');
-  const [applications, setApplications] = useState<Application[]>(INITIAL_APPLICATIONS);
-  const [activeApplicationId, setActiveApplicationId] = useState<string>('app-1');
-  const [corrections, setCorrections] = useState<Correction[]>(INITIAL_CORRECTIONS);
-  const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
-  const [currentReport, setCurrentReport] = useState<ExamReport>({
-    ...INITIAL_REPORT,
-    medianScore: 8.0,
-    standardDeviation: 1.45,
-    pendingCorrectionsCount: 2,
-  });
-  
+  // Core Data - sem dados mockados, populados estritamente pelo backend
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [disciplines, setDisciplines] = useState<Discipline[]>([]);
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [activeClassId, setActiveClassId] = useState<string>('');
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [activeExamId, setActiveExamId] = useState<string>('');
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [activeApplicationId, setActiveApplicationId] = useState<string>('');
+  const [corrections, setCorrections] = useState<Correction[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [currentReport, setCurrentReport] = useState<ExamReport>(EMPTY_REPORT);
+
+  const refreshExams = async () => {
+    try {
+      const remoteExams = await api.getExams();
+      if (Array.isArray(remoteExams)) {
+        const mapped = remoteExams.map(mapBackendExam);
+        setExams(mapped);
+        if (mapped.length > 0) {
+          setActiveExamId((prev) => (mapped.some((x) => x.id === prev) ? prev : mapped[0].id));
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao atualizar provas do backend:', err);
+    }
+  };
+
   // Exam Wizard Draft: starts cleanly on Step 1 with clean draft
   const [examDraft, setExamDraft] = useState<ExamDraft>(BLANK_EXAM_DRAFT);
   const [examWizardStep, setExamWizardStep] = useState<number>(1);
@@ -286,7 +404,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
   const [backendUrl] = useState<string>(API_BASE_URL);
 
-  // Sincronização inicial com o backend em QAS
+  // Sincronização inicial com o banco de dados em produção
   useEffect(() => {
     let isMounted = true;
     async function syncWithBackend() {
@@ -295,20 +413,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (isMounted) {
           setIsBackendOnline(health.online);
           if (health.online) {
-            console.log('🌐 Conectado ao backend QAS:', API_BASE_URL);
             try {
-              const [remoteStudents, remoteDisciplines, remoteClasses] = await Promise.all([
+              const [remoteStudents, remoteDisciplines, remoteClasses, remoteExams, remoteQuestions, remoteCorrecoes] = await Promise.all([
                 api.getStudents().catch(() => []),
                 api.getDisciplinas().catch(() => []),
                 api.getTurmas().catch(() => []),
+                api.getExams().catch(() => []),
+                api.getQuestions().catch(() => []),
+                api.getCorrecoes().catch(() => []),
               ]);
               if (isMounted) {
-                if (remoteStudents.length > 0) setStudents(remoteStudents);
-                if (remoteDisciplines.length > 0) setDisciplines(remoteDisciplines);
-                if (remoteClasses.length > 0) setClasses(remoteClasses);
+                if (Array.isArray(remoteStudents)) setStudents(remoteStudents);
+                if (Array.isArray(remoteDisciplines)) setDisciplines(remoteDisciplines);
+                if (Array.isArray(remoteClasses)) setClasses(remoteClasses);
+                if (Array.isArray(remoteQuestions)) setQuestions(remoteQuestions);
+                if (Array.isArray(remoteCorrecoes)) setCorrections(remoteCorrecoes);
+                if (Array.isArray(remoteExams)) {
+                  const mapped = remoteExams.map(mapBackendExam);
+                  setExams(mapped);
+                  if (mapped.length > 0) {
+                    setActiveExamId((prev) => (mapped.some((x) => x.id === prev) ? prev : mapped[0].id));
+                  }
+                }
               }
             } catch (syncErr) {
-              console.warn('Sincronização parcial com QAS:', syncErr);
+              console.warn('Sincronização parcial com banco de dados:', syncErr);
             }
           }
         }
@@ -322,18 +451,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // LocalStorage Persistence for Exams & Disciplines
+  // Limpeza de cache local de provas para exibir estritamente dados reais do banco
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('correge_exams_v1');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setExams(parsed);
-            if (parsed[0]?.id) setActiveExamId(parsed[0].id);
-          }
-        }
+        localStorage.removeItem('correge_exams_v1');
         const storedDisc = localStorage.getItem('correge_disciplines_v1');
         if (storedDisc) {
           const parsedDisc = JSON.parse(storedDisc);
@@ -356,13 +478,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const persistExams = (newExams: Exam[]) => {
     setExams(newExams);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('correge_exams_v1', JSON.stringify(newExams));
-      } catch (e) {
-        console.error('Failed to save exams to localStorage:', e);
-      }
-    }
   };
 
   // Print Preview state
@@ -537,13 +652,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const fallbackName = normalizedEmail
+      ? normalizedEmail
+          .split('@')[0]
+          .split('.')
+          .map((p: string) => p.charAt(0).toUpperCase() + p.slice(1))
+          .join(' ')
+      : role === 'estudante'
+      ? 'Estudante'
+      : 'Docente';
+
     if (role === 'estudante') {
-      const displayName = registered?.fullName || CURRENT_STUDENT_USER.fullName;
+      const displayName = registered?.fullName || fallbackName;
       setCurrentUser({
-        ...CURRENT_STUDENT_USER,
-        id: registered?.id || CURRENT_STUDENT_USER.id,
+        id: registered?.id || 'std-' + Date.now(),
+        role: 'estudante',
         fullName: displayName,
-        email: email || CURRENT_STUDENT_USER.email,
+        email: email || '',
+        createdAt: registered?.createdAt || new Date().toISOString(),
       });
       setIsAuthenticated(true);
       setAuthView('login');
@@ -556,12 +682,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       return { success: true };
     } else {
-      const displayName = registered?.fullName || CURRENT_USER.fullName;
+      const displayName = registered?.fullName || fallbackName;
       setCurrentUser({
-        ...CURRENT_USER,
-        id: registered?.id || CURRENT_USER.id,
+        id: registered?.id || 'prof-' + Date.now(),
+        role: 'professor',
         fullName: displayName,
-        email: email || CURRENT_USER.email,
+        email: email || '',
+        createdAt: registered?.createdAt || new Date().toISOString(),
       });
       setIsAuthenticated(true);
       setAuthView('login');
@@ -721,16 +848,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       // Also persist password update if user recovered the default institutional account
       const isStudent = cleanEmail.endsWith('@catolicasc.edu.br');
-      const derivedName =
-        cleanEmail === CURRENT_USER.email.toLowerCase()
-          ? CURRENT_USER.fullName
-          : cleanEmail === CURRENT_STUDENT_USER.email.toLowerCase()
-          ? CURRENT_STUDENT_USER.fullName
-          : cleanEmail
-              .split('@')[0]
-              .split('.')
-              .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-              .join(' ');
+            const derivedName = cleanEmail
+        .split('@')[0]
+        .split('.')
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(' ');
 
       const newUserEntry = {
         id: `prof-${Date.now()}`,
@@ -1127,6 +1249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteExam = (id: string) => {
+    api.deleteExam(id).catch((err) => console.warn('Erro ao deletar no backend:', err));
     const nextExams = exams.filter((e) => e.id !== id);
     persistExams(nextExams);
     if (activeExamId === id && nextExams.length > 0) {
@@ -1419,6 +1542,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateQuestion,
         deleteQuestion,
         exams,
+        refreshExams,
         activeExamId,
         setActiveExamId,
         selectedExam,
