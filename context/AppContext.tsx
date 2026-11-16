@@ -607,6 +607,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // LGPD Anonymization (Feature 1.1)
   const anonymizeUser = () => {
+    api.anonymizeTeacherData().catch((err) => console.warn('Aviso de anonimização no backend:', err));
     setCurrentUser((prev) => ({
       ...prev,
       fullName: 'Usuário Removido',
@@ -922,6 +923,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
 
+    api.createDisciplina({
+      nome: cleanName,
+      codigo: generatedCode,
+      curso: data.course?.trim() || 'Direito',
+    }).catch((err) => console.warn('Aviso de criação de disciplina no backend:', err));
+
     const next = [...disciplines, newDisc];
     persistDisciplines(next);
     addToast({
@@ -933,6 +940,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteDiscipline = (id: string) => {
+    api.deleteDisciplina(id).catch((err) => console.warn('Aviso de remoção de disciplina no backend:', err));
     const target = disciplines.find((d) => d.id === id);
     const next = disciplines.filter((d) => d.id !== id);
     persistDisciplines(next);
@@ -955,6 +963,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       studentCount: 0,
       status: 'active',
     };
+    api.createTurma({
+      nome: newClass.name,
+      idDisciplina: newClass.subject,
+      periodoLetivo: newClass.term,
+    }).catch((err) => console.warn('Aviso de criação de turma no backend:', err));
+
     setClasses((prev) => [newClass, ...prev]);
     addToast({
       type: 'success',
@@ -965,6 +979,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateClass = (id: string, data: Partial<Class>) => {
+    api.updateTurma(id, data).catch((err) => console.warn('Aviso de atualização de turma no backend:', err));
     setClasses((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
     addToast({
       type: 'info',
@@ -974,6 +989,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const archiveClass = (id: string) => {
+    api.deleteTurma(id).catch((err) => console.warn('Aviso de arquivamento de turma no backend:', err));
     setClasses((prev) =>
       prev.map((c) => (c.id === id ? { ...c, status: 'archived' } : c))
     );
@@ -1008,6 +1024,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       code: isDisc ? `#Q-DISC-${nextCodeNum}` : `#Q-${nextCodeNum}`,
       type: newQData.type || 'objetiva',
     };
+    api.createQuestion({
+      statement: newQuestion.statement,
+      type: newQuestion.type,
+      discipline: newQuestion.discipline,
+      difficulty: newQuestion.difficulty,
+      topic: newQuestion.topic,
+      tags: newQuestion.tags,
+      points: newQuestion.points,
+      explanation: newQuestion.explanation,
+      alternatives: newQuestion.alternatives,
+      correctAlternative: newQuestion.correctAlternative,
+    }).catch((err) => console.warn('Aviso de criação de questão no backend:', err));
+
     setQuestions((prev) => [newQuestion, ...prev]);
     addToast({
       type: 'success',
@@ -1018,6 +1047,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateQuestion = (id: string, updatedData: Partial<Question>) => {
+    api.updateQuestion(id, updatedData).catch((err) => console.warn('Aviso de atualização de questão no backend:', err));
     setQuestions((prev) =>
       prev.map((q) => (q.id === id ? { ...q, ...updatedData } : q))
     );
@@ -1029,6 +1059,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteQuestion = (id: string) => {
+    api.deleteQuestion(id).catch((err) => console.warn('Aviso de exclusão de questão no backend:', err));
     // Soft-delete as requested by Feature 2
     setQuestions((prev) =>
       prev.map((q) =>
@@ -1099,6 +1130,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextExams = [newExam, ...exams];
     persistExams(nextExams);
     setActiveExamId(newExam.id);
+
+    api.createExam({
+      title: draft.title,
+      subtitle: `Período Letivo ${draft.semester}`,
+      institution: draft.institution,
+      department: draft.department,
+      course: draft.course,
+      discipline: draft.discipline,
+      classGroup: draft.classGroup,
+      semester: draft.semester,
+      date: draft.date,
+      duration: draft.duration,
+      instructions: draft.instructions,
+      selectedQuestionIds: draft.selectedQuestionIds,
+      shuffleQuestions: draft.shuffleQuestions,
+      shuffleAlternatives: draft.shuffleAlternatives,
+      numberOfVersions: draft.numberOfVersions,
+      maxScore: draft.maxScore,
+      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
+    }).catch((err) => console.warn('Aviso de persistência de prova no backend:', err));
+
     addToast({
       type: 'success',
       title: 'Template de Prova Salvo!',
@@ -1151,6 +1203,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
     persistExams(nextExams);
     setActiveExamId(updatedExam.id);
+
+    api.updateExam(id, {
+      title: draft.title,
+      subtitle: `Período Letivo ${draft.semester}`,
+      institution: draft.institution,
+      department: draft.department,
+      course: draft.course,
+      discipline: draft.discipline,
+      classGroup: draft.classGroup,
+      semester: draft.semester,
+      date: draft.date,
+      duration: draft.duration,
+      instructions: draft.instructions,
+      selectedQuestionIds: draft.selectedQuestionIds,
+      shuffleQuestions: draft.shuffleQuestions,
+      shuffleAlternatives: draft.shuffleAlternatives,
+      numberOfVersions: draft.numberOfVersions,
+      maxScore: draft.maxScore,
+      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
+    }).catch((err) => console.warn('Aviso de atualização de prova no backend:', err));
+
     addToast({
       type: 'success',
       title: 'Prova Atualizada com Sucesso!',
@@ -1348,6 +1421,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Manual Assignment of pending correction (Feature 9)
   const assignCorrection = (correctionId: string, studentId: string, notes?: string) => {
+    api.assignStudentToCorrection(correctionId, studentId).catch((err) => console.warn('Aviso de vinculação no backend:', err));
     const student = students.find((s) => s.id === studentId);
     setCorrections((prev) =>
       prev.map((c) =>
@@ -1415,6 +1489,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...stdData,
       id: `std-${Date.now()}`,
     };
+    api.createStudent(stdData).catch((err) => console.warn('Aviso de criação de aluno no backend:', err));
     setStudents((prev) => [newStudent, ...prev]);
     addToast({
       type: 'success',
@@ -1429,6 +1504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...s,
       id: `std-imp-${Date.now()}-${idx}`,
     }));
+    api.importStudentsBatch(newStudentsList).catch((err) => console.warn('Aviso de importação no backend:', err));
     setStudents((prev) => [...mapped, ...prev]);
     addToast({
       type: 'success',
@@ -1438,6 +1514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteStudent = (id: string) => {
+    api.deleteStudent(id).catch((err) => console.warn('Aviso de exclusão de aluno no backend:', err));
     setStudents((prev) => prev.filter((s) => s.id !== id));
     addToast({
       type: 'warning',
@@ -1447,6 +1524,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteStudentsBatch = (ids: string[]) => {
+    api.deleteStudentsBatch(ids).catch((err) => console.warn('Aviso de exclusão em lote no backend:', err));
     setStudents((prev) => prev.filter((s) => !ids.includes(s.id)));
     addToast({
       type: 'warning',

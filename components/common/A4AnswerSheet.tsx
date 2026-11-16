@@ -15,6 +15,8 @@ export interface A4AnswerSheetProps {
   classGroup?: string;
   institution?: string;
   versionLetter: string;
+  versionBubbles?: string[];
+  onVersionSelect?: (ver: string) => void;
   questions: A4AnswerSheetQuestion[];
   student?: {
     name?: string;
@@ -38,6 +40,8 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
   classGroup,
   institution = 'CATÓLICA DE SANTA CATARINA',
   versionLetter,
+  versionBubbles = ['A', 'B', 'C', 'D'],
+  onVersionSelect,
   questions,
   student,
   markedAnswers = {},
@@ -120,6 +124,29 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
               <span className="text-[11px] font-extrabold px-2.5 py-0.5 bg-red-50 text-[#9E0B1A] rounded border border-red-200">
                 CADERNO {versionLetter}
               </span>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-50 border border-slate-300 rounded" title="Bolhas de Caderno para Preenchimento">
+                <span className="text-[9px] font-black uppercase text-slate-700">Caderno:</span>
+                <div className="flex items-center gap-1">
+                  {versionBubbles.map((ver) => {
+                    const isSelected = ver === versionLetter;
+                    return (
+                      <button
+                        key={ver}
+                        type="button"
+                        onClick={() => onVersionSelect && onVersionSelect(ver)}
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center font-bold text-[9px] transition cursor-pointer ${
+                          isSelected
+                            ? 'border-slate-900 bg-slate-900 text-white font-black'
+                            : 'border-slate-700 bg-white text-slate-900 hover:bg-slate-100'
+                        }`}
+                        title={`Caderno ${ver}`}
+                      >
+                        {ver}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <span className="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-800 rounded border border-slate-200">
                 {totalQuestions} Questões
               </span>

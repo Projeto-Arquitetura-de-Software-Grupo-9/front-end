@@ -4,7 +4,7 @@
 Sistema de Geração e Correção de Provas (SGP Católica SC / Correge)
 Motor Real em Python + OpenCV para Leitura de QR Code e Reconhecimento Óptico de Marcações (OMR).
 Compatível com fotos tiradas pela câmera nativa do smartphone (com sombras, inclinação ou close-up)
-e com todos os contratos de C:\\Users\\davi3\\back-end.
+e com todos os contratos da API Correge.
 Sem dados simulados: retorna exclusivamente o que foi detectado opticamente na imagem.
 """
 
@@ -15,21 +15,19 @@ import base64
 import re
 from typing import Dict, Any, Optional, Tuple, List
 
-# Garante que o site-packages local do Python 3.13 no Windows esteja no sys.path
-for _pkg_candidate in [
-    r"C:\Users\davi3\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages",
-    os.path.expanduser(
-        r"~\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages"
-    ),
-]:
-    if _pkg_candidate not in sys.path:
-        sys.path.insert(0, _pkg_candidate)
+# Detect dynamic user site-packages if available on Windows
+_local_appdata = os.environ.get("LOCALAPPDATA", "")
+if _local_appdata:
+    for _py_ver in ["Python313", "Python312", "Python311", "Python310"]:
+        _p = os.path.join(_local_appdata, "Programs", "Python", _py_ver, "Lib", "site-packages")
+        if os.path.exists(_p) and _p not in sys.path:
+            sys.path.insert(0, _p)
 
 import cv2
 import numpy as np
 
 LETTERS = ["A", "B", "C", "D", "E"]
-VERSION_LETTERS = ["A", "B", "C", "D"]
+VERSION_LETTERS = [chr(65 + i) for i in range(26)]
 
 
 def decode_base64_image(image_base64: str) -> Optional[np.ndarray]:

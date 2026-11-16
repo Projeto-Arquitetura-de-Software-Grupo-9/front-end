@@ -84,6 +84,20 @@ export const api = {
   },
 
   // 1.1 Professores (Auth / Registro no back-end)
+  async loginProfessor(data: { email: string; senha: string }): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/professores/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Credenciais inválidas');
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
   async createProfessor(data: { nomeCompleto: string; email: string; senhaHash?: string }): Promise<any> {
     const res = await fetchWithTimeout(`${API_BASE_URL}/professores`, {
       method: 'POST',
@@ -112,6 +126,13 @@ export const api = {
     if (!res.ok) throw new Error('Falha ao criar disciplina');
     const json = await res.json();
     return json.data;
+  },
+
+  async deleteDisciplina(id: string): Promise<boolean> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/disciplinas/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return res.ok;
   },
 
   // 3. Turmas
@@ -147,6 +168,22 @@ export const api = {
     return json.data;
   },
 
+  async updateTurma(id: string, data: any): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/turmas/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.ok;
+  },
+
+  async deleteTurma(id: string): Promise<boolean> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/turmas/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return res.ok;
+  },
+
   // 4. Alunos / Students
   async getStudents(classId?: string): Promise<Student[]> {
     const url = classId ? `${API_BASE_URL}/students?classId=${classId}` : `${API_BASE_URL}/students`;
@@ -177,6 +214,15 @@ export const api = {
     return json.data;
   },
 
+  async updateStudent(id: string, data: Partial<Student>): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/students/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.ok;
+  },
+
   async importStudentsBatch(students: Omit<Student, 'id'>[]): Promise<Student[]> {
     const res = await fetchWithTimeout(`${API_BASE_URL}/students/batch`, {
       method: 'POST',
@@ -188,9 +234,46 @@ export const api = {
     return json.data || [];
   },
 
+  async importStudentsExcelFile(file: File): Promise<{
+    importedCount: number;
+    skippedCount: number;
+    totalStudents: number;
+    errors?: Array<{ row: number; reason: string }>;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/students/import`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+      15000
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao importar planilha de alunos');
+    }
+    const json = await res.json();
+    return json.data || json;
+  },
+
+  getStudentImportTemplateUrl(): string {
+    return `${API_BASE_URL}/students/import-template`;
+  },
+
   async deleteStudent(id: string): Promise<boolean> {
     const res = await fetchWithTimeout(`${API_BASE_URL}/students/${id}`, {
       method: 'DELETE',
+    });
+    return res.ok;
+  },
+
+  async deleteStudentsBatch(ids: string[]): Promise<boolean> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/students/batch-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
     });
     return res.ok;
   },
@@ -218,7 +301,23 @@ export const api = {
     return json.data;
   },
 
-  // 6. Provas, Layout, Folha de Respostas & QR Code (C:\Users\davi3\back-end)
+  async updateQuestion(id: string, data: any): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/questions/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.ok;
+  },
+
+  async deleteQuestion(id: string): Promise<boolean> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/questions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return res.ok;
+  },
+
+  // 6. Provas, Layout, Folha de Respostas & QR Code
   async getExams(): Promise<any[]> {
     const res = await fetchWithTimeout(`${API_BASE_URL}/exams`);
     if (!res.ok) throw new Error('Falha ao carregar provas do backend');
@@ -235,6 +334,20 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Falha ao salvar prova no banco de dados');
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
+  async updateExam(id: string, payload: any): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/exams/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao atualizar prova no banco de dados');
     }
     const json = await res.json();
     return json.data;
@@ -369,6 +482,13 @@ export const api = {
     });
     if (!res.ok) throw new Error('Falha ao salvar configurações');
     return res.json();
+  },
+
+  async anonymizeTeacherData(): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/settings/anonymize`, {
+      method: 'POST',
+    });
+    return res.ok;
   },
 
   // 9. Python OpenCV OMR & QR Code Engine (/api/omr -> back-end/omr_scanner.py)
