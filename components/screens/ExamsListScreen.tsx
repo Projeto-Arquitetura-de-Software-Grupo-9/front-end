@@ -19,6 +19,7 @@ import {
   Trash2,
   QrCode,
   RefreshCw,
+  Camera,
 } from 'lucide-react';
 
 export const ExamsListScreen: React.FC = () => {
@@ -83,6 +84,15 @@ export const ExamsListScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+            title="Abrir Leitor Óptico & Scanner para Corrigir Provas"
+          >
+            <Camera className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Corrigir com Leitor</span>
+          </button>
           <button
             type="button"
             onClick={handleRefresh}
@@ -255,13 +265,26 @@ export const ExamsListScreen: React.FC = () => {
 
                 {/* Action Buttons: Clean, Modern & Uncluttered */}
                 <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveExamId(exam.id);
+                      setIsScannerModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 text-xs font-bold rounded-lg transition cursor-pointer"
+                    title="Corrigir Prova com Leitor Óptico / Scanner"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Corrigir</span>
+                  </button>
+
                   <Link
                     href={`/provas/${exam.id}?p=caderno`}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white text-xs font-bold rounded-lg transition shadow-2xs"
                     title="Ver Prova no Formato A4 e Configurar Impressão"
                   >
                     <Printer className="w-3.5 h-3.5" />
-                    <span>Imprimir / Ver A4</span>
+                    <span>Imprimir</span>
                   </Link>
 
                   <Link

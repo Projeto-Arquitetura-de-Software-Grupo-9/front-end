@@ -26,13 +26,20 @@ import {
   Check,
   X,
   FileText,
+  Camera,
 } from 'lucide-react';
 
 const formatScore = (n: number | null) =>
   n === null ? '—' : n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
 export const ResultsScreen: React.FC = () => {
-  const { activeExamId, setActiveExamId, addToast, setCurrentScreen } = useApp();
+  const {
+    activeExamId,
+    setActiveExamId,
+    addToast,
+    setCurrentScreen,
+    setIsScannerModalOpen,
+  } = useApp();
 
   const [catalog, setCatalog] = useState<{
     exams: { id: string; title: string }[];
@@ -196,6 +203,16 @@ export const ResultsScreen: React.FC = () => {
               )}
             </select>
           </div>
+
+          {/* Corrigir com Leitor Button */}
+          <button
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+            title="Abrir Leitor Óptico / Scanner de Provas"
+          >
+            <Camera className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Corrigir com Leitor</span>
+          </button>
 
           {/* Refresh Button */}
           <button

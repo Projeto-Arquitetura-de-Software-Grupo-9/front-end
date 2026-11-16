@@ -5,10 +5,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
-import { User, LogOut, ArrowLeftRight, GraduationCap, BookOpen, Settings, Bell } from 'lucide-react';
+import { User, LogOut, ArrowLeftRight, GraduationCap, BookOpen, Settings, Bell, Camera } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { currentUser, login, logout, setCurrentScreen, setActiveExamId, isBackendOnline, backendUrl } = useApp();
+  const {
+    currentUser,
+    login,
+    logout,
+    setCurrentScreen,
+    setActiveExamId,
+    isBackendOnline,
+    backendUrl,
+    setIsScannerModalOpen,
+  } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const router = useRouter();
@@ -75,8 +84,19 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Controls: Notifications + User Profile */}
-      <div className="flex items-center gap-3 sm:gap-4">
+      {/* Right Controls: Scanner + Notifications + User Profile */}
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Leitor OMR Caller */}
+        <button
+          type="button"
+          onClick={() => setIsScannerModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-[#9E0B1A] border border-red-200/60 rounded-xl text-xs font-bold transition cursor-pointer"
+          title="Abrir Leitor Óptico / Scanner de Provas"
+        >
+          <Camera className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Corrigir com Leitor</span>
+        </button>
+
         {/* Notifications Button */}
         <div className="relative">
           <button
