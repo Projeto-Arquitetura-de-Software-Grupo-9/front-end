@@ -13,6 +13,7 @@ import {
   Settings,
   LogOut,
   Users,
+  BookOpen,
 } from 'lucide-react';
 
 interface NavItem {
@@ -26,9 +27,9 @@ const TEACHER_NAV_ITEMS: NavItem[] = [
   { href: '/provas', label: 'Provas', icon: FileText },
   { href: '/provas/new', label: 'Criar Prova', icon: Plus },
   { href: '/banco-questoes', label: 'Banco de Questões', icon: Folder },
+  { href: '/disciplinas', label: 'Disciplinas', icon: BookOpen },
   { href: '/turmas', label: 'Minhas Turmas', icon: GraduationCap },
   { href: '/resultados', label: 'Resultados', icon: TrendingUp },
-  { href: '/alunos', label: 'Alunos', icon: Users },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 

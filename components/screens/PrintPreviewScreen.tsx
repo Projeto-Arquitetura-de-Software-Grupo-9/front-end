@@ -56,8 +56,7 @@ export const PrintPreviewScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
-  // New features: Duplex Spread (Book mode), Virtualized Batch, Scale calibration alert
-  const [duplexSpreadMode, setDuplexSpreadMode] = useState<'vertical' | 'book'>('vertical');
+  // New features: Virtualized Batch, Scale calibration alert
   const [isPrintingBatch, setIsPrintingBatch] = useState<boolean>(false);
   const [batchPageIndex, setBatchPageIndex] = useState<number>(0);
   const [showAllBatchOnScreen, setShowAllBatchOnScreen] = useState<boolean>(false);
@@ -224,10 +223,12 @@ export const PrintPreviewScreen: React.FC = () => {
           id: qv.originalQuestionId || `q-${idx}`,
           orderIndex: idx + 1,
           statement: qv.statement,
-          alternatives: qv.alternatives,
-          correctAlternative: qv.correctAlternative,
+          type: origQ?.type || qv.type || (qv.alternatives && qv.alternatives.length > 0 ? 'objetiva' : 'discursiva'),
+          alternatives: qv.alternatives || [],
+          correctAlternative: qv.correctAlternative || 'A',
           explanation: qv.explanation || origQ?.explanation,
           topic: qv.topic || origQ?.topic,
+          maxScore: origQ?.maxScore || qv.maxScore,
         };
       });
     }
@@ -248,10 +249,12 @@ export const PrintPreviewScreen: React.FC = () => {
       id: q.id,
       orderIndex: idx + 1,
       statement: q.statement,
-      alternatives: q.alternatives,
+      type: q.type || (q.alternatives && q.alternatives.length > 0 ? 'objetiva' : 'discursiva'),
+      alternatives: q.alternatives || [],
       correctAlternative: q.correctAlternative,
       explanation: q.explanation,
       topic: q.topic,
+      maxScore: q.maxScore,
     }));
   };
 
@@ -260,32 +263,46 @@ export const PrintPreviewScreen: React.FC = () => {
     printPurpose === 'post_exam_concepts' ? false : includeAnswerSheet;
 
   const paginateQuestions = (vQuestions: A4ExamQuestion[]) => {
-    const QUESTIONS_PAGE_1 = showConceptExplanations ? 2 : 3;
-    const QUESTIONS_SUBSEQUENT_PAGES = showConceptExplanations ? 2 : 3;
+    const pagesData: { pageNumber: number; questions: A4ExamQuestion[] }[] = [];
+    let currentPageIndex = 1;
+    let currentQuestions: A4ExamQuestion[] = [];
+    let currentWeight = 0;
 
-    const page1Questions = vQuestions.slice(0, QUESTIONS_PAGE_1);
-    const remainingQuestions = vQuestions.slice(QUESTIONS_PAGE_1);
-
-    const additionalPagesCount =
-      remainingQuestions.length > 0
-        ? Math.ceil(remainingQuestions.length / QUESTIONS_SUBSEQUENT_PAGES)
-        : 0;
-
-    const totalPages = 1 + additionalPagesCount;
-
-    const pagesData: { pageNumber: number; questions: A4ExamQuestion[] }[] = [
-      { pageNumber: 1, questions: page1Questions },
-    ];
-
-    for (let p = 2; p <= totalPages; p++) {
-      const startIndex = (p - 2) * QUESTIONS_SUBSEQUENT_PAGES;
-      const pQuestions = remainingQuestions.slice(startIndex, startIndex + QUESTIONS_SUBSEQUENT_PAGES);
-      if (pQuestions.length > 0) {
-        pagesData.push({
-          pageNumber: p,
-          questions: pQuestions,
-        });
+    // Page 1 has lower capacity (2.5) due to header, student box and instructions
+    // Page 2+ has full capacity (4.0)
+    const getPageCapacity = (pageIdx: number) => {
+      if (showConceptExplanations) {
+        return pageIdx === 1 ? 2.0 : 3.0;
       }
+      return pageIdx === 1 ? 2.5 : 4.0;
+    };
+
+    const getQuestionWeight = (q: A4ExamQuestion) => {
+      const isDiscursive = q.type === 'discursiva' || !q.alternatives || q.alternatives.length === 0;
+      let w = isDiscursive ? 2.0 : 1.0;
+      if (showConceptExplanations) {
+        w += 0.4;
+      }
+      return w;
+    };
+
+    for (const q of vQuestions) {
+      const qWeight = getQuestionWeight(q);
+      const capacity = getPageCapacity(currentPageIndex);
+
+      if (currentQuestions.length > 0 && currentWeight + qWeight > capacity) {
+        pagesData.push({ pageNumber: currentPageIndex, questions: currentQuestions });
+        currentPageIndex++;
+        currentQuestions = [q];
+        currentWeight = qWeight;
+      } else {
+        currentQuestions.push(q);
+        currentWeight += qWeight;
+      }
+    }
+
+    if (currentQuestions.length > 0 || pagesData.length === 0) {
+      pagesData.push({ pageNumber: currentPageIndex, questions: currentQuestions });
     }
 
     return { totalPages: pagesData.length, pagesData };
@@ -524,7 +541,7 @@ export const PrintPreviewScreen: React.FC = () => {
     return null;
   };
 
-  // Helper to render sheets grouped in Duplex Book spreads (Pair of Frente + Verso)
+  // Helper to render sheets in clean vertical continuous sequence
   const renderSheetsGrouped = (
     sheets: SheetItem[],
     totalPages: number,
@@ -532,55 +549,16 @@ export const PrintPreviewScreen: React.FC = () => {
     studentObj?: { name: string; registration: string },
     keyPrefix: string = 'single'
   ) => {
-    if (duplexSpreadMode === 'book') {
-      const pairs: SheetItem[][] = [];
-      for (let i = 0; i < sheets.length; i += 2) {
-        pairs.push(sheets.slice(i, i + 2));
-      }
-
-      return (
-        <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
-          {pairs.map((pair, pIdx) => (
-            <div key={`${keyPrefix}-spread-${pIdx}`} className="w-full flex flex-col items-center print:w-full">
-              <div className="w-full max-w-[430mm] flex items-center justify-between px-2 mb-2 text-xs font-bold text-slate-500 uppercase tracking-wide print:hidden">
-                <span>Folha Física {pIdx + 1} de {Math.ceil(totalPages / 2)}</span>
-                <span className="text-slate-400 font-mono text-[11px]">Par Frente e Verso (Duplex)</span>
-              </div>
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 print:flex print:flex-col print:gap-0 items-start justify-center print:w-full">
-                {pair[0] && (
-                  <div className="flex flex-col items-center print:w-full">
-                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full mb-1.5 print:hidden">
-                      Frente (Folha {pair[0].pageNumber})
-                    </span>
-                    {renderSheetComponent(pair[0], totalPages, vLetter, studentObj, `${keyPrefix}-p${pIdx}-frente`)}
-                  </div>
-                )}
-                {pair[1] && (
-                  <div className="flex flex-col items-center print:w-full">
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full mb-1.5 print:hidden">
-                      Verso (Folha {pair[1].pageNumber})
-                    </span>
-                    {renderSheetComponent(pair[1], totalPages, vLetter, studentObj, `${keyPrefix}-p${pIdx}-verso`)}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    // Default Vertical Scroll Layout
     return (
       <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
         {sheets.map((sheet) => (
-          <div key={sheet.pageNumber} className="flex flex-col items-center print:w-full">
+          <div key={`${keyPrefix}-${sheet.pageNumber}`} className="flex flex-col items-center print:w-full">
             <div className="w-full max-w-[210mm] flex items-center justify-between px-1 mb-1.5 text-[11px] text-slate-400 print:hidden">
-              <span>
+              <span className="font-semibold text-slate-600">
                 Folha {sheet.pageNumber} de {totalPages}
                 {isDuplexMode && ` (${sheet.pageNumber % 2 === 0 ? 'Verso' : 'Frente'})`}
               </span>
-              <span>
+              <span className="font-mono text-slate-500">
                 Caderno {vLetter}
                 {studentObj && ` • ${studentObj.name}`}
               </span>
@@ -865,18 +843,6 @@ export const PrintPreviewScreen: React.FC = () => {
                     className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
                   />
                 </label>
-
-                {isDuplexMode && (
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-slate-700 font-medium">Modo Livro (Frente/Verso Lado a Lado)</span>
-                    <input
-                      type="checkbox"
-                      checked={duplexSpreadMode === 'book'}
-                      onChange={(e) => setDuplexSpreadMode(duplexSpreadMode === 'book' ? 'vertical' : 'book')}
-                      className="rounded accent-blue-600 w-4 h-4 cursor-pointer"
-                    />
-                  </label>
-                )}
 
                 <label className="flex items-center justify-between cursor-pointer">
                   <span className="text-slate-700 font-medium">Box de Nota no Cabeçalho</span>

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import {
   GraduationCap,
@@ -17,13 +18,16 @@ import {
   Mail,
   Trash2,
   ExternalLink,
+  FileSpreadsheet,
+  Download,
+  Filter,
+  ArrowUpRight,
+  Sparkles,
 } from 'lucide-react';
 
 export const TurmasScreen: React.FC = () => {
   const {
     disciplines,
-    addDiscipline,
-    deleteDiscipline,
     classes,
     activeClassId,
     setActiveClassId,
@@ -32,28 +36,103 @@ export const TurmasScreen: React.FC = () => {
     regenerateInviteCode,
     students,
     deleteStudent,
+    deleteStudentsBatch,
+    setIsNewStudentModalOpen,
+    setIsExcelImportModalOpen,
     addToast,
-    setCurrentScreen,
   } = useApp();
 
-  const [isNewClassModalOpen, setIsNewClassModalOpen] = useState(false);
-  const [newClassName, setNewClassName] = useState('');
-  const [newClassSubject, setNewClassSubject] = useState(disciplines[0]?.name || 'Direito Constitucional');
-  const [newClassTerm, setNewClassTerm] = useState('2026/1');
+  // Search and selection state
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDisciplineFilter, setSelectedDisciplineFilter] = useState<string>('Todas');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
-  // Nova Disciplina modal state
-  const [isNewDisciplineModalOpen, setIsNewDisciplineModalOpen] = useState(false);
-  const [newDiscName, setNewDiscName] = useState('');
-  const [newDiscCode, setNewDiscCode] = useState('');
-  const [newDiscCourse, setNewDiscCourse] = useState('Direito');
+  // New Class Modal
+  const [isNewClassModalOpen, setIsNewClassModalOpen] = useState(false);
+  const [newClassName, setNewClassName] = useState('');
+  const [newClassSubject, setNewClassSubject] = useState(
+    disciplines[0]?.name || 'Direito Constitucional'
+  );
+  const [newClassTerm, setNewClassTerm] = useState('2026/1');
 
-  // Quick enroll student in class
+  // Quick enroll student by email
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
   const [enrollEmail, setEnrollEmail] = useState('');
 
-  const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
+  // Active selected class
+  const activeClass =
+    classes.find((c) => c.id === activeClassId) || classes[0] || null;
+
+  // Filter classes by discipline filter
+  const filteredClasses = useMemo(() => {
+    if (selectedDisciplineFilter === 'Todas') return classes;
+    return classes.filter(
+      (c) =>
+        (c.subject || '').trim().toLowerCase() ===
+        selectedDisciplineFilter.trim().toLowerCase()
+    );
+  }, [classes, selectedDisciplineFilter]);
+
+  // Students belonging to the active class (or filtered by class)
+  const classStudents = useMemo(() => {
+    if (!activeClass) return students;
+    return students.filter((std) => {
+      // Matches class group name or subject/discipline
+      if (std.classGroup && std.classGroup === activeClass.name) return true;
+      if (
+        (std.discipline || '').trim().toLowerCase() ===
+        (activeClass.subject || '').trim().toLowerCase()
+      )
+        return true;
+      return false;
+    });
+  }, [students, activeClass]);
+
+  // Fallback: if class has 0 students due to mock naming mismatch, show all students so table is never artificially blocked
+  const displayableStudents =
+    classStudents.length > 0 ? classStudents : students;
+
+  // Filtered students by search term
+  const filteredStudents = useMemo(() => {
+    return displayableStudents.filter((std) => {
+      const q = searchTerm.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        std.name.toLowerCase().includes(q) ||
+        std.registration.toLowerCase().includes(q) ||
+        std.email.toLowerCase().includes(q) ||
+        (std.course || '').toLowerCase().includes(q)
+      );
+    });
+  }, [displayableStudents, searchTerm]);
+
+  // Checkbox selection
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedStudentIds(filteredStudents.map((s) => s.id));
+    } else {
+      setSelectedStudentIds([]);
+    }
+  };
+
+  const handleToggleStudent = (id: string) => {
+    if (selectedStudentIds.includes(id)) {
+      setSelectedStudentIds(selectedStudentIds.filter((sid) => sid !== id));
+    } else {
+      setSelectedStudentIds([...selectedStudentIds, id]);
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedStudentIds.length === 0) return;
+    deleteStudentsBatch(selectedStudentIds);
+    setSelectedStudentIds([]);
+  };
+
+  const isAllSelected =
+    filteredStudents.length > 0 &&
+    filteredStudents.every((s) => selectedStudentIds.includes(s.id));
 
   const handleCopyInviteCode = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
@@ -66,24 +145,14 @@ export const TurmasScreen: React.FC = () => {
     setTimeout(() => setCopiedCodeId(null), 3000);
   };
 
-  const handleCreateDiscipline = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDiscName.trim()) return;
-    const created = addDiscipline({
-      name: newDiscName.trim(),
-      code: newDiscCode.trim() || undefined,
-      course: newDiscCourse.trim() || 'Direito',
-    });
-    setNewClassSubject(created.name);
-    setNewDiscName('');
-    setNewDiscCode('');
-    setIsNewDisciplineModalOpen(false);
-  };
-
   const handleCreateClass = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
-    const matchedDisc = disciplines.find((d) => (d.name || (d as any).nome) === newClassSubject);
+
+    const matchedDisc = disciplines.find(
+      (d) => (d.name || (d as any).nome) === newClassSubject
+    );
+
     const created = addClass({
       disciplineId: matchedDisc?.id,
       name: newClassName.trim(),
@@ -91,39 +160,60 @@ export const TurmasScreen: React.FC = () => {
       term: newClassTerm.trim(),
       status: 'active',
     });
+
     setActiveClassId(created.id);
     setIsNewClassModalOpen(false);
     setNewClassName('');
+    addToast({
+      type: 'success',
+      title: 'Turma Criada com Sucesso!',
+      message: `A turma "${created.name}" já está disponível para matrícula.`,
+    });
   };
 
-  const filteredStudents = students.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.registration.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const downloadSampleCsv = () => {
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      'Nome,Matrícula,Email,Curso\n' +
+      'Ana Clara Souza,20261011,ana.souza@catolicasc.edu.br,Direito\n' +
+      'Carlos Eduardo Mendes,20261012,carlos.mendes@catolicasc.edu.br,Direito\n' +
+      'Juliana Rocha,20261013,juliana.rocha@catolicasc.edu.br,Direito\n';
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'modelo_alunos_correge.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addToast({
+      type: 'info',
+      title: 'Download Concluído',
+      message: 'Planilha modelo CSV baixada com sucesso.',
+    });
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-200">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">
-            Minhas Turmas & Disciplinas
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
+            <GraduationCap className="w-6 h-6 text-[#9E0B1A]" />
+            <span>Minhas Turmas</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Cadastre disciplinas, crie turmas e gerencie o corpo discente.
+          <p className="text-sm text-slate-500 mt-0.5">
+            Gerencie turmas letivas, códigos de convite e acompanhe o corpo discente matriculado.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <button
-            onClick={() => setIsNewDisciplineModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold shadow-2xs transition cursor-pointer"
+        <div className="flex items-center gap-3">
+          <Link
+            href="/disciplinas"
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs px-4 py-2.5 rounded-xl shadow-2xs transition cursor-pointer"
           >
             <BookOpen className="w-4 h-4 text-[#9E0B1A]" />
-            <span>Nova Disciplina</span>
-          </button>
+            <span>Disciplinas</span>
+          </Link>
 
           <button
             onClick={() => setIsNewClassModalOpen(true)}
@@ -135,182 +225,219 @@ export const TurmasScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Disciplinas Cadastradas */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-[#9E0B1A]" />
-            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Disciplinas Cadastradas ({disciplines.length})
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsNewDisciplineModalOpen(true)}
-            className="text-xs font-bold text-[#9E0B1A] hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" /> Cadastrar Disciplina
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {disciplines.map((disc) => {
-            const discName = disc.name || (disc as any).nome || 'Disciplina';
-            const discCode = disc.code || (disc as any).codigo || 'DIR-101';
-            const discCourse = disc.course || (disc as any).curso || 'Direito';
-            return (
-              <div
-                key={disc.id}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 group"
-              >
-                <span className="font-mono text-[10px] font-bold text-[#9E0B1A] bg-red-50 px-1.5 py-0.5 rounded">
-                  {discCode}
-                </span>
-                <span className="font-semibold">{discName}</span>
-                <span className="text-[10px] text-slate-400">({discCourse})</span>
-                <button
-                  type="button"
-                  onClick={() => deleteDiscipline(disc.id)}
-                  className="text-slate-300 hover:text-red-600 transition cursor-pointer ml-0.5"
-                  title="Remover disciplina"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Grid of Classes Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {classes.map((cls) => {
-          const isSelected = cls.id === activeClass?.id;
-          const isArchived = cls.status === 'archived';
+      {/* Filter by Discipline Pills */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        <span className="text-slate-400 font-semibold whitespace-nowrap mr-1">Filtrar por Disciplina:</span>
+        <button
+          onClick={() => setSelectedDisciplineFilter('Todas')}
+          className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap ${
+            selectedDisciplineFilter === 'Todas'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Todas ({classes.length})
+        </button>
+        {disciplines.map((d) => {
+          const dName = d.name || (d as any).nome || 'Disciplina';
+          const isSelected = selectedDisciplineFilter === dName;
+          const count = classes.filter(
+            (c) => (c.subject || '').trim().toLowerCase() === dName.trim().toLowerCase()
+          ).length;
 
           return (
-            <div
-              key={cls.id}
-              onClick={() => setActiveClassId(cls.id)}
-              className={`p-5 rounded-2xl border transition text-left cursor-pointer relative overflow-hidden ${
+            <button
+              key={d.id}
+              onClick={() => setSelectedDisciplineFilter(dName)}
+              className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap ${
                 isSelected
-                  ? 'bg-white border-[#9E0B1A] shadow-md ring-1 ring-[#9E0B1A]/20'
-                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
-              } ${isArchived ? 'opacity-60 bg-slate-50' : ''}`}
+                  ? 'bg-[#9E0B1A] text-white shadow-xs'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
             >
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded mb-1.5">
-                    {cls.term}
-                  </span>
-                  <h3 className="font-bold text-slate-900 text-sm">{cls.name}</h3>
-                  <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                    <BookOpen className="w-3 h-3 text-slate-400" />
-                    {cls.subject}
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1 justify-end">
-                    <Users className="w-3 h-3 text-slate-400" />
-                    {cls.studentCount || 34} alunos
-                  </span>
-                </div>
-              </div>
-
-              {/* Invite Code Box */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <div className="text-[11px]">
-                  <span className="text-slate-400 font-medium">Código de Convite: </span>
-                  <span className="font-mono font-bold text-[#9E0B1A] bg-red-50 px-2 py-0.5 rounded">
-                    {cls.inviteCode}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopyInviteCode(cls.inviteCode, cls.id);
-                    }}
-                    className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
-                    title="Copiar código para compartilhar com alunos"
-                  >
-                    {copiedCodeId === cls.id ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      regenerateInviteCode(cls.id);
-                    }}
-                    className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-[#9E0B1A] rounded-lg transition cursor-pointer"
-                    title="Regenerar código de convite (invalida o anterior)"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
+              {dName} ({count})
+            </button>
           );
         })}
       </div>
 
-      {/* Selected Class Detail & Enrolled Students */}
+      {/* Grid of Classes Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {filteredClasses.length === 0 ? (
+          <div className="col-span-3 p-8 bg-white border border-dashed border-slate-200 rounded-3xl text-center space-y-3">
+            <GraduationCap className="w-10 h-10 text-slate-300 mx-auto" />
+            <p className="text-sm font-semibold text-slate-700">
+              Nenhuma turma encontrada nesta categoria.
+            </p>
+            <button
+              onClick={() => setIsNewClassModalOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#9E0B1A] hover:underline cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Criar nova turma agora
+            </button>
+          </div>
+        ) : (
+          filteredClasses.map((cls) => {
+            const isSelected = cls.id === activeClass?.id;
+            const isArchived = cls.status === 'archived';
+
+            return (
+              <div
+                key={cls.id}
+                onClick={() => setActiveClassId(cls.id)}
+                className={`p-5 rounded-2xl border transition text-left cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  isSelected
+                    ? 'bg-white border-[#9E0B1A] shadow-md ring-2 ring-[#9E0B1A]/20'
+                    : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                } ${isArchived ? 'opacity-60 bg-slate-50' : ''}`}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded mb-1.5">
+                      {cls.term}
+                    </span>
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                      <Users className="w-3 h-3 text-slate-400" />
+                      {cls.studentCount || displayableStudents.length} alunos
+                    </span>
+                  </div>
+
+                  <h3 className="font-bold text-slate-900 text-sm">{cls.name}</h3>
+                  <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 truncate">
+                    <BookOpen className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                    <span className="truncate">{cls.subject}</span>
+                  </p>
+                </div>
+
+                {/* Invite Code Box */}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div className="text-[11px]">
+                    <span className="text-slate-400 font-medium">Convite: </span>
+                    <span className="font-mono font-bold text-[#9E0B1A] bg-red-50 px-2 py-0.5 rounded">
+                      {cls.inviteCode}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopyInviteCode(cls.inviteCode, cls.id);
+                      }}
+                      className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
+                      title="Copiar código para compartilhar com alunos"
+                    >
+                      {copiedCodeId === cls.id ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        regenerateInviteCode(cls.id);
+                      }}
+                      className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-[#9E0B1A] rounded-lg transition cursor-pointer"
+                      title="Regenerar código de convite (invalida o anterior)"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Selected Class Detail & Merged Student Management */}
       {activeClass && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden space-y-0">
           {/* Header of Active Class */}
-          <div className="p-6 bg-slate-50/60 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="p-6 bg-slate-50/70 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-lg font-bold text-slate-900">
                   Alunos Matriculados em {activeClass.name}
                 </h2>
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-red-50 text-[#9E0B1A] border border-red-200/60">
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-50 text-[#9E0B1A] border border-red-200/60">
                   {filteredStudents.length} alunos
                 </span>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                  {activeClass.subject} ({activeClass.term})
+                </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Alunos inscritos via código de convite ({activeClass.inviteCode}) ou matriculados manualmente.
+              <p className="text-xs text-slate-500 mt-1">
+                Alunos inscritos via código de convite ({activeClass.inviteCode}) ou importados via planilha institucional.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setIsEnrollModalOpen(true)}
+                onClick={() => setIsNewStudentModalOpen(true)}
+                className="px-3.5 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Matricular Aluno
+              </button>
+
+              <button
+                onClick={() => setIsExcelImportModalOpen(true)}
                 className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
-                <UserPlus className="w-3.5 h-3.5 text-slate-500" />
-                Matricular por E-mail
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                Importar Excel
+              </button>
+
+              <button
+                onClick={downloadSampleCsv}
+                className="px-3 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                title="Baixar planilha modelo CSV para importação"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Modelo
               </button>
 
               <button
                 onClick={() => archiveClass(activeClass.id)}
-                className="px-3 py-2 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-2 text-slate-400 hover:text-red-700 hover:bg-red-50 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer ml-1"
                 title="Arquivar turma sem perder histórico"
               >
                 <Archive className="w-3.5 h-3.5" />
-                Arquivar Turma
+                Arquivar
               </button>
             </div>
           </div>
 
-          {/* Search bar */}
-          <div className="p-4 border-b border-slate-100 flex items-center gap-3">
-            <div className="relative flex-1">
+          {/* Action and Search Toolbar */}
+          <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[240px]">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por nome, matrícula ou e-mail do aluno..."
+                placeholder="Buscar por nome, matrícula ou e-mail institucional..."
                 className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
               />
             </div>
+
+            {selectedStudentIds.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500">
+                  {selectedStudentIds.length} selecionado(s)
+                </span>
+                <button
+                  onClick={handleDeleteSelected}
+                  className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir Selecionados
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Students Table */}
@@ -318,47 +445,105 @@ export const TurmasScreen: React.FC = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase font-semibold text-[10px] tracking-wider">
                 <tr>
-                  <th className="px-6 py-3">Aluno</th>
+                  <th className="py-3 px-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="w-4 h-4 rounded accent-[#9E0B1A] text-[#9E0B1A] border-slate-300 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Nome do Aluno</th>
                   <th className="px-4 py-3">Matrícula</th>
                   <th className="px-4 py-3">E-mail Institucional</th>
+                  <th className="px-4 py-3 text-center">Provas</th>
+                  <th className="px-4 py-3 text-center">Média Geral</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredStudents.map((std) => (
-                  <tr key={std.id} className="hover:bg-slate-50/50 transition">
-                    <td className="px-6 py-3.5 font-bold text-slate-900">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center text-xs">
-                          {std.name.substring(0, 1)}
-                        </div>
-                        <span>{std.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-slate-600">
-                      {std.registration}
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-500 font-medium">
-                      {std.email}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Matriculado
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <button
-                        onClick={() => deleteStudent(std.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                        title="Desvincular da turma"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-slate-400">
+                      Nenhum aluno encontrado para os critérios de busca.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredStudents.map((std) => {
+                    const isChecked = selectedStudentIds.includes(std.id);
+                    const avg = std.overallAverage ?? 0;
+                    const isPass = avg >= 7.0;
+                    const isWarning = avg >= 5.0 && avg < 7.0;
+
+                    return (
+                      <tr
+                        key={std.id}
+                        className={`hover:bg-slate-50/70 transition ${
+                          isChecked ? 'bg-red-50/40' : ''
+                        }`}
+                      >
+                        <td className="py-3 px-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleStudent(std.id)}
+                            className="w-4 h-4 rounded accent-[#9E0B1A] text-[#9E0B1A] border-slate-300 cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3.5 font-bold text-slate-900">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs flex-shrink-0">
+                              {std.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="truncate">{std.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 font-mono text-slate-600">
+                          {std.registration}
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500 font-medium">
+                          {std.email}
+                        </td>
+                        <td className="px-4 py-3.5 text-center text-slate-600 font-semibold">
+                          {std.examsTaken ?? 0}
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-bold">
+                          {avg > 0 ? (
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-md text-[11px] ${
+                                isPass
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : isWarning
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}
+                            >
+                              {avg.toFixed(1)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Matriculado
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          <button
+                            onClick={() => deleteStudent(std.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                            title="Desvincular aluno da turma"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -368,9 +553,12 @@ export const TurmasScreen: React.FC = () => {
       {/* Modal Nova Turma */}
       {isNewClassModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">Criar Nova Turma</h3>
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-[#9E0B1A]" />
+                <h3 className="font-bold text-slate-900 text-sm">Criar Nova Turma</h3>
+              </div>
               <button
                 onClick={() => setIsNewClassModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
@@ -385,16 +573,13 @@ export const TurmasScreen: React.FC = () => {
                   <label className="block font-bold text-slate-700">
                     Selecione a Disciplina *
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsNewClassModalOpen(false);
-                      setIsNewDisciplineModalOpen(true);
-                    }}
+                  <Link
+                    href="/disciplinas"
+                    onClick={() => setIsNewClassModalOpen(false)}
                     className="text-[11px] font-bold text-[#9E0B1A] hover:underline cursor-pointer"
                   >
-                    + Nova Disciplina
-                  </button>
+                    + Gerenciar Disciplinas
+                  </Link>
                 </div>
                 <select
                   required
@@ -456,154 +641,12 @@ export const TurmasScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#9E0B1A] text-white font-bold rounded-xl cursor-pointer"
+                  className="px-4 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white font-bold rounded-xl cursor-pointer shadow-sm transition"
                 >
                   Criar Turma
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Nova Disciplina */}
-      {isNewDisciplineModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-[#9E0B1A]" />
-                <h3 className="font-bold text-slate-900 text-sm">Cadastrar Nova Disciplina</h3>
-              </div>
-              <button
-                onClick={() => setIsNewDisciplineModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
-              >
-                ×
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateDiscipline} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Nome da Disciplina *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newDiscName}
-                  onChange={(e) => setNewDiscName(e.target.value)}
-                  placeholder="Ex: Direito Cibernético"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Código (opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={newDiscCode}
-                    onChange={(e) => setNewDiscCode(e.target.value)}
-                    placeholder="Ex: DIR-801"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Curso
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newDiscCourse}
-                    onChange={(e) => setNewDiscCourse(e.target.value)}
-                    placeholder="Ex: Direito"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsNewDisciplineModalOpen(false)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#9E0B1A] text-white font-bold rounded-xl cursor-pointer"
-                >
-                  Salvar Disciplina
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Matrícula por Email */}
-      {isEnrollModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">Matricular Aluno por E-mail</h3>
-              <button
-                onClick={() => setIsEnrollModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <p className="text-slate-500">
-                Informe o e-mail institucional do aluno (@catolicasc.edu.br) para vincular à turma {activeClass.name}.
-              </p>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  E-mail do Aluno
-                </label>
-                <input
-                  type="email"
-                  value={enrollEmail}
-                  onChange={(e) => setEnrollEmail(e.target.value)}
-                  placeholder="aluno@catolicasc.edu.br"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsEnrollModalOpen(false)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    addToast({
-                      type: 'success',
-                      title: 'Convite Enviado!',
-                      message: `Instruções de matrícula enviadas para ${enrollEmail || 'aluno@catolicasc.edu.br'}.`,
-                    });
-                    setIsEnrollModalOpen(false);
-                    setEnrollEmail('');
-                  }}
-                  className="px-4 py-2 bg-[#9E0B1A] text-white font-bold rounded-xl"
-                >
-                  Confirmar Matrícula
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

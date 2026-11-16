@@ -1,10 +1,5 @@
-import { StudentsScreen } from '@/components/screens/StudentsScreen';
-
-export const metadata = {
-  title: 'Alunos — Correge',
-  description: 'Gerencie o corpo discente e importe turmas via planilha.',
-};
+import { redirect } from 'next/navigation';
 
 export default function AlunosPage() {
-  return <StudentsScreen />;
+  redirect('/turmas');
 }

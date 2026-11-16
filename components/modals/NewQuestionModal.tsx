@@ -214,96 +214,98 @@ export const NewQuestionModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 my-8 animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center font-bold">
-              <BookOpen className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Form wrapping header, scrollable body and fixed footer */}
+        <form onSubmit={handleSubmit} className="flex flex-col h-full max-h-[90vh] text-xs">
+          {/* Fixed Header */}
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center font-bold shrink-0">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {editingQuestion ? 'Editar Questão' : 'Cadastrar Nova Questão'}
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  {questionType === 'objetiva'
+                    ? 'Questão Objetiva de múltipla escolha com gabarito oficial'
+                    : 'Questão Discursiva com linhas pautadas para resposta escrita'}
+                </p>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsNewQuestionModalOpen(false);
+                setEditingQuestion(null);
+              }}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Scrollable Body (prevents modal from spilling off screen) */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {/* Question Type Selector (Sleek Segmented Bar) */}
+            <div className="flex items-center justify-between bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/80">
+              <div>
+                <span className="block font-bold text-slate-800 text-xs">Formato da Pergunta:</span>
+                <span className="text-[11px] text-slate-500">
+                  {questionType === 'objetiva' ? '2 a 5 alternativas' : 'Resposta escrita pelo aluno'}
+                </span>
+              </div>
+              <div className="inline-flex bg-slate-200/70 p-0.5 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setQuestionType('objetiva')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    questionType === 'objetiva'
+                      ? 'bg-white text-[#9E0B1A] font-bold shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  <span>Objetiva</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQuestionType('discursiva')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    questionType === 'discursiva'
+                      ? 'bg-white text-[#9E0B1A] font-bold shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Discursiva</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Statement */}
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {editingQuestion ? 'Editar Questão' : 'Cadastrar Nova Questão'}
-              </h2>
-              <p className="text-xs text-slate-500">
-                Conforme a Feature 2 da especificação: suporte a questões objetivas (2-5 alternativas) e discursivas.
-              </p>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700">
+                  Enunciado da Pergunta *
+                </label>
+                <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                  Markdown suportado (*itálico*, **negrito**)
+                </span>
+              </div>
+              <textarea
+                required
+                rows={3}
+                value={statement}
+                onChange={(e) => setStatement(e.target.value)}
+                placeholder="Ex: Discorra sobre os princípios fundamentais da Constituição Federal de 1988..."
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20 focus:border-[#9E0B1A]"
+              />
             </div>
-          </div>
-
-          <button
-            onClick={() => {
-              setIsNewQuestionModalOpen(false);
-              setEditingQuestion(null);
-            }}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          {/* Question Type Selector (Feature 2) */}
-          <div>
-            <label className="block font-bold text-slate-700 mb-1.5">
-              Tipo de Questão *
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setQuestionType('objetiva')}
-                className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition cursor-pointer ${
-                  questionType === 'objetiva'
-                    ? 'border-[#9E0B1A] bg-red-50/40 text-[#9E0B1A] font-bold shadow-xs'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                }`}
-              >
-                <ListOrdered className="w-4 h-4 flex-shrink-0" />
-                <div>
-                  <div className="text-xs font-semibold">Objetiva</div>
-                  <div className="text-[11px] text-slate-500">2 a 5 alternativas com uma correta</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setQuestionType('discursiva')}
-                className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition cursor-pointer ${
-                  questionType === 'discursiva'
-                    ? 'border-[#9E0B1A] bg-red-50/40 text-[#9E0B1A] font-bold shadow-xs'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                }`}
-              >
-                <FileText className="w-4 h-4 flex-shrink-0" />
-                <div>
-                  <div className="text-xs font-semibold">Discursiva</div>
-                  <div className="text-[11px] text-slate-500">Enunciado aberto + pontuação máxima</div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Statement */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block font-bold text-slate-700">
-                Enunciado da Pergunta *
-              </label>
-              <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                Suporta Markdown básico (*itálico*, **negrito**)
-              </span>
-            </div>
-            <textarea
-              required
-              rows={3}
-              value={statement}
-              onChange={(e) => setStatement(e.target.value)}
-              placeholder="Ex: Discorra sobre o princípio da dignidade da pessoa humana..."
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20 focus:border-[#9E0B1A]"
-            />
-          </div>
 
           {/* Row: Discipline, Difficulty, Points/MaxScore */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -552,25 +554,35 @@ export const NewQuestionModal: React.FC = () => {
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => {
-                setIsNewQuestionModalOpen(false);
-                setEditingQuestion(null);
-              }}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-            >
-              Cancelar
-            </button>
+          </div>
 
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
-            >
-              {editingQuestion ? 'Salvar Alterações' : 'Cadastrar no Banco'}
-            </button>
+          {/* Fixed Footer (always visible, never pushed off screen) */}
+          <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+            <span className="text-[11px] font-semibold text-slate-500">
+              {questionType === 'objetiva'
+                ? `${alternatives.length} alternativas • Gabarito (${correctAlt})`
+                : `Discursiva • Pontuação máxima: ${maxScore} pts`}
+            </span>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNewQuestionModalOpen(false);
+                  setEditingQuestion(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                className="px-5 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+              >
+                {editingQuestion ? 'Salvar Alterações' : 'Cadastrar no Banco'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

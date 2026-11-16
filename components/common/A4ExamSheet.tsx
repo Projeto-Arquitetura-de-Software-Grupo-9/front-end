@@ -7,6 +7,7 @@ export interface A4ExamQuestion {
   id: string;
   orderIndex: number;
   statement: string;
+  type?: 'objetiva' | 'discursiva';
   alternatives: {
     id: string;
     letter: 'A' | 'B' | 'C' | 'D' | 'E';
@@ -15,6 +16,7 @@ export interface A4ExamQuestion {
   correctAlternative: 'A' | 'B' | 'C' | 'D' | 'E';
   explanation?: string;
   topic?: string;
+  maxScore?: number;
 }
 
 export interface A4ExamSheetProps {
@@ -293,42 +295,66 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                 </p>
               </div>
 
-              {/* Alternatives */}
-              <div className="space-y-1 pl-5">
-                {q.alternatives.map((alt) => {
-                  const isCorrect = alt.letter === q.correctAlternative;
-                  const showHighlight = effectiveShowAnswerKey && isCorrect;
+              {/* If Objective Question: Show Alternatives */}
+              {(!q.type || q.type === 'objetiva') && q.alternatives && q.alternatives.length > 0 ? (
+                <div className="space-y-1 pl-5">
+                  {q.alternatives.map((alt) => {
+                    const isCorrect = alt.letter === q.correctAlternative;
+                    const showHighlight = effectiveShowAnswerKey && isCorrect;
 
-                  return (
-                    <div
-                      key={alt.id}
-                      className={`flex items-start justify-between py-0.5 px-2 rounded-xs transition-colors ${
-                        showHighlight
-                          ? 'bg-emerald-50/90 border border-emerald-300 text-emerald-950 font-semibold'
-                          : 'text-slate-800 hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="font-bold shrink-0">({alt.letter})</span>
-                        <span className="leading-snug">{alt.text}</span>
+                    return (
+                      <div
+                        key={alt.id}
+                        className={`flex items-start justify-between py-0.5 px-2 rounded-xs transition-colors ${
+                          showHighlight
+                            ? 'bg-emerald-50/90 border border-emerald-300 text-emerald-950 font-semibold'
+                            : 'text-slate-800 hover:bg-slate-50/50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="font-bold shrink-0">({alt.letter})</span>
+                          <span className="leading-snug">{alt.text}</span>
+                        </div>
+
+                        {showHighlight && (
+                          <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-600 text-white shrink-0 ml-3">
+                            GABARITO ({alt.letter})
+                          </span>
+                        )}
                       </div>
-
-                      {showHighlight && (
-                        <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-600 text-white shrink-0 ml-3">
-                          GABARITO ({alt.letter})
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* If Discursive Question: Show Ruled Lines for Written Response */
+                <div className="pl-5 pt-1 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold">
+                    <span className="uppercase tracking-wider">Espaço Reservado para Resposta Escrita:</span>
+                    {q.maxScore && (
+                      <span className="font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[9.5px]">
+                        Pontuação Máxima: {q.maxScore.toFixed(1)} pts
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-3.5 pt-0.5">
+                    {Array.from({ length: 8 }).map((_, lineIdx) => (
+                      <div
+                        key={lineIdx}
+                        className="w-full border-b border-slate-300 border-dashed h-3.5"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Post-Exam Conceptual Explanation Box */}
               {showConceptExplanations && (
                 <div className="ml-5 mt-2 p-2.5 rounded-sm bg-slate-50 border-l-4 border-emerald-600 border-y border-r border-slate-200 text-[10.5px] text-slate-800 space-y-1">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-extrabold uppercase tracking-wider text-emerald-900 text-[9.5px]">
-                       Explicação dos Conceitos & Fundamentação da Resposta (Alternativa {q.correctAlternative})
+                      {q.type === 'discursiva'
+                        ? `Espelho de Correção & Fundamentação Esperada (Até ${q.maxScore || 2.5} pts)`
+                        : `Explicação dos Conceitos & Fundamentação da Resposta (Alternativa ${q.correctAlternative})`}
                     </span>
                     {q.topic && (
                       <span className="px-1.5 py-0.2 rounded bg-emerald-100/80 text-emerald-900 font-semibold text-[9px]">
@@ -338,7 +364,9 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                   </div>
                   <p className="leading-relaxed text-slate-700">
                     {q.explanation ||
-                      `A alternativa correta é a (${q.correctAlternative}). O conceito avaliado fundamenta-se nos dispositivos normativos e doutrinários aplicáveis ao tema "${q.topic || exam.discipline}", excluindo-se as demais proposições por incorreção técnica ou incompatibilidade legal.`}
+                      (q.type === 'discursiva'
+                        ? 'O estudante deve demonstrar domínio do tema apresentando argumentação técnica e jurídica consistente, referenciando a legislação e doutrina aplicáveis.'
+                        : `A alternativa correta é a (${q.correctAlternative}). O conceito avaliado fundamenta-se nos dispositivos normativos e doutrinários aplicáveis ao tema "${q.topic || exam.discipline}", excluindo-se as demais proposições por incorreção técnica.`)}
                   </p>
                 </div>
               )}
