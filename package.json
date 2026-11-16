@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --no-warnings --test tests/exam-features.test.ts"
+    "test": "npx tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "jsqr": "^1.4.0",
