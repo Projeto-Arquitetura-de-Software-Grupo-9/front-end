@@ -163,10 +163,15 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
             <QrCodeGraphic
               value={JSON.stringify({
                 app: 'CORREGE',
+                code: examCode,
                 exam: examCode.replace(/[^a-zA-Z0-9]/g, ''),
+                title: examTitle,
+                disc: discipline || '',
+                turma: classGroup || '',
                 ver: versionLetter,
                 nominal: Boolean(student?.registration),
                 std: student?.registration || 'ANON',
+                name: student?.name || '',
                 q: totalQuestions,
               })}
               versionLetter={versionLetter}

@@ -191,4 +191,61 @@ describe('Frontend Core Utilities & Business Rules Suite (~100% Coverage)', () =
       assert.equal(metrics.standardDeviation, 0);
     });
   });
+
+  describe('lib/qrCode.ts: parseQrPayload machine optical decoding', () => {
+    const { parseQrPayload } = require('../lib/qrCode');
+
+    it('should parse nominal QR code payload extracting student, exam and version', () => {
+      const payload = JSON.stringify({
+        app: 'CORREGE',
+        code: '#DIR-101',
+        title: 'Direito Constitucional I',
+        disc: 'Direito Constitucional',
+        turma: 'Turma A',
+        ver: 'B',
+        nominal: true,
+        std: '2026.1.042',
+        name: 'Carlos Mendes',
+        q: 10,
+      });
+
+      const parsed = parseQrPayload(payload);
+      assert.equal(parsed.nominal, true);
+      assert.equal(parsed.studentName, 'Carlos Mendes');
+      assert.equal(parsed.studentRegistration, '2026.1.042');
+      assert.equal(parsed.versionLetter, 'B');
+      assert.equal(parsed.examCode, '#DIR-101');
+      assert.equal(parsed.discipline, 'Direito Constitucional');
+      assert.equal(parsed.totalQuestions, 10);
+    });
+
+    it('should parse non-nominal (avulsa) QR code payload correctly', () => {
+      const payload = JSON.stringify({
+        app: 'CORREGE',
+        code: '#DIR-101',
+        ver: 'A',
+        nominal: false,
+        std: 'ANON',
+        q: 15,
+      });
+
+      const parsed = parseQrPayload(payload);
+      assert.equal(parsed.nominal, false);
+      assert.equal(parsed.studentRegistration, undefined);
+      assert.equal(parsed.versionLetter, 'A');
+      assert.equal(parsed.totalQuestions, 15);
+    });
+
+    it('should extract embedded answer key string or dictionary', () => {
+      const payload = JSON.stringify({
+        app: 'CORREGE',
+        ver: 'C',
+        k: 'ABCDE',
+      });
+
+      const parsed = parseQrPayload(payload);
+      assert.equal(parsed.versionLetter, 'C');
+      assert.deepEqual(parsed.embeddedKey, { 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E' });
+    });
+  });
 });

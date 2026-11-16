@@ -21,6 +21,7 @@ export interface A4ExamQuestion {
 
 export interface A4ExamSheetProps {
   exam: {
+    id?: string;
     title: string;
     discipline: string;
     course?: string;
@@ -161,9 +162,14 @@ export const A4ExamSheet: React.FC<A4ExamSheetProps> = ({
                       value={JSON.stringify({
                         app: 'CORREGE',
                         code: exam.code || '#EXAM-2024',
+                        examId: exam.id,
+                        title: exam.title,
+                        disc: exam.discipline || '',
+                        turma: exam.classGroup || '',
                         ver: versionLetter,
                         nominal: Boolean(student?.registration),
                         std: student?.registration || 'ANON',
+                        name: student?.name || '',
                         pg: pageNumber,
                       })}
                       versionLetter={versionLetter}
