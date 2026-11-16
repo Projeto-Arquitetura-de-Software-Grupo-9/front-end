@@ -350,11 +350,15 @@ export const CreateExamScreen: React.FC = () => {
                   }
                   className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-[#9E0B1A] transition"
                 >
-                  {disciplines.map((d) => (
-                    <option key={d.id} value={d.name}>
-                      {d.name} ({d.code})
-                    </option>
-                  ))}
+                  {disciplines.map((d) => {
+                    const dName = d.name || (d as any).nome || 'Disciplina';
+                    const dCode = d.code || (d as any).codigo || '';
+                    return (
+                      <option key={d.id} value={dName}>
+                        {dName} {dCode ? `(${dCode})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               )}
             </div>

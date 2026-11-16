@@ -350,11 +350,14 @@ export const NewQuestionModal: React.FC = () => {
                   onChange={(e) => setDiscipline(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
                 >
-                  {disciplines.map((d) => (
-                    <option key={d.id} value={d.name}>
-                      {d.name}
-                    </option>
-                  ))}
+                  {disciplines.map((d) => {
+                    const dName = d.name || (d as any).nome || 'Disciplina';
+                    return (
+                      <option key={d.id} value={dName}>
+                        {dName}
+                      </option>
+                    );
+                  })}
                 </select>
               )}
             </div>

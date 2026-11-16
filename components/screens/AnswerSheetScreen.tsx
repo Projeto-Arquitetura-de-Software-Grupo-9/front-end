@@ -22,6 +22,7 @@ import {
   AlertCircle,
   ZoomIn,
   ZoomOut,
+  QrCode,
 } from 'lucide-react';
 
 export const AnswerSheetScreen: React.FC = () => {
@@ -46,7 +47,7 @@ export const AnswerSheetScreen: React.FC = () => {
     isNominal ? 'all_students' : 'version:A'
   );
   const [isDuplexMode, setIsDuplexMode] = useState<boolean>(true);
-  const [showAdvancedPopover, setShowAdvancedPopover] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [markedAnswers, setMarkedAnswers] = useState<Record<number, string>>({});
   const [isExporting, setIsExporting] = useState(false);
 
@@ -249,263 +250,95 @@ export const AnswerSheetScreen: React.FC = () => {
 
   return (
     <div className="rounded-2xl border border-slate-200 overflow-visible shadow-xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
-      {/* Single Minimalist Command Bar */}
-      <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 rounded-t-2xl print:hidden">
-        {/* Left: Primary Print Configuration Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 1. Nominal vs Avulsa */}
-          <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
-            <button
-              type="button"
-              onClick={() => handleToggleNominal(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                isNominal
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-              title="Folhas identificadas por aluno da turma"
-            >
-              <UserCheck className="w-3.5 h-3.5 text-[#9E0B1A]" />
-              <span>Nominal</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleNominal(false)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                !isNominal
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-              title="Folha avulsa sem nome pré-impresso"
-            >
-              <UserX className="w-3.5 h-3.5" />
-              <span>Avulsa</span>
-            </button>
-          </div>
+      {/* Top Command Bar Limpa com Apenas o Essencial */}
+      <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 rounded-t-2xl print:hidden">
+        {/* Left: Título & Botão de Toggle da Sidebar */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+              isSidebarOpen
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+            title={isSidebarOpen ? 'Recolher painel de opções' : 'Expandir painel de opções laterais'}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Opções da Folha</span>
+          </button>
 
           <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 
-          {/* 2. Ordem Fixa vs Aleatória + N Cadernos */}
-          <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
-            <button
-              type="button"
-              onClick={() => handleToggleRandom(false)}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                !isRandomOrder
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              Ordem Fixa
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleRandom(true)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                isRandomOrder
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Shuffle className="w-3 h-3 text-[#9E0B1A]" />
-              <span>Aleatória</span>
-            </button>
-
-            {isRandomOrder && (
-              <div className="flex items-center gap-1 pl-1.5 pr-1 border-l border-slate-200 ml-1">
-                <input
-                  type="number"
-                  min={2}
-                  max={26}
-                  value={numVersions}
-                  onChange={(e) => handleChangeNumVersions( parseInt(e.target.value, 10) || 2 )}
-                  className="w-9 px-1 py-0.5 bg-white border border-slate-200 rounded text-center text-xs font-bold text-slate-900 focus:outline-none"
-                  title="Quantidade de cadernos diferentes (A..Z)"
-                />
-                <span className="text-[10px] font-semibold text-slate-500 hidden md:inline">
-                  cadernos
-                </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 hidden md:inline">Visualizando:</span>
+            <div className="relative flex items-center">
+              <Eye className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+              <select
+                value={selectedStudentId}
+                onChange={(e) => {
+                  setSelectedStudentId(e.target.value);
+                  setBatchPageIndex(0);
+                }}
+                className="text-xs font-semibold rounded-xl pl-7 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 appearance-none cursor-pointer focus:outline-none max-w-[220px] truncate"
+              >
                 {isNominal && (
-                  <button
-                    type="button"
-                    onClick={() => reshuffleExamStudents(selectedExam.id)}
-                    className="p-1 text-slate-500 hover:text-[#9E0B1A] rounded transition cursor-pointer"
-                    title="Sortear novamente qual aluno recebe cada caderno"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                  </button>
+                  <option value="all_students">
+                    Lote da Turma ({students.length} folhas)
+                  </option>
                 )}
-              </div>
-            )}
+                <optgroup label="Folha por Caderno (Avulsa):">
+                  {availableVersionLetters.map((v) => (
+                    <option key={v} value={`version:${v}`}>
+                      Caderno {v} {!isNominal ? '(Avulsa)' : '(Sem Nome)'}
+                    </option>
+                  ))}
+                </optgroup>
+                {isNominal && (
+                  <optgroup label="Aluno Específico:">
+                    {students.map((s, sIdx) => {
+                      const v = getStudentAssignedVersion(s.id, sIdx);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name} (Cad. {v})
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                )}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+            </div>
           </div>
         </div>
 
-        {/* Right: Calibration Badge, View Selector, Settings Popover & Print Button */}
+        {/* Right: Apenas o Essencial (Caller do Leitor QR, Baixar PDF e Imprimir) */}
         <div className="flex items-center gap-2">
-          {/* Calibração de Escala: Aviso Compacto */}
-          <div
-            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200/80 rounded-lg text-amber-900 text-[11px] font-medium"
-            title="Dica de Calibração OMR: Ao imprimir, deixe Escala em 100% (Tamanho Real) e desmarque Cabeçalhos e Rodapés para alinhamento micrométrico dos marcadores."
+          {/* Caller Essencial do Leitor de QR Code / OMR */}
+          <button
+            type="button"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+            title="Abrir Câmera e Leitor QR / OMR"
           >
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span className="font-bold text-amber-800">100% Escala</span>
-            <span className="text-amber-700/80">• Sem Cabeçalhos</span>
-          </div>
-
-          {/* Unified View Selector */}
-          <div className="relative flex items-center">
-            <Eye className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-            <select
-              value={selectedStudentId}
-              onChange={(e) => {
-                setSelectedStudentId(e.target.value);
-                setBatchPageIndex(0);
-              }}
-              className="text-xs font-semibold rounded-lg pl-7 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 appearance-none cursor-pointer focus:outline-none max-w-[230px] truncate"
-            >
-              {isNominal && (
-                <option value="all_students">
-                  Lote da Turma ({students.length} folhas)
-                </option>
-              )}
-              <optgroup label="Folha por Caderno (Avulsa):">
-                {availableVersionLetters.map((v) => (
-                  <option key={v} value={`version:${v}`}>
-                    Folha Caderno {v} {!isNominal ? '(Avulsa)' : '(Sem Nome)'}
-                  </option>
-                ))}
-              </optgroup>
-              {isNominal && (
-                <optgroup label="Ver Folha de Aluno Específico:">
-                  {students.map((s, sIdx) => {
-                    const v = getStudentAssignedVersion(s.id, sIdx);
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {s.name} (Caderno {v})
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
-          </div>
-
-          {/* Secondary Settings Popover */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowAdvancedPopover((prev) => !prev)}
-              className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
-                showAdvancedPopover
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-              title="Opções de simulação, frente e verso e zoom"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </button>
-
-            {showAdvancedPopover && (
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl border border-slate-200 shadow-xl p-3.5 z-40 space-y-3 text-xs animate-in fade-in zoom-in-95 duration-100">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="font-bold text-slate-900">Ajustes & Simulação</span>
-                </div>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-600">Frente e Verso (Duplex)</span>
-                  <input
-                    type="checkbox"
-                    checked={isDuplexMode}
-                    onChange={(e) => setIsDuplexMode(e.target.checked)}
-                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
-                  />
-                </label>
-
-                {/* Zoom Controls */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <span className="text-slate-600">Zoom</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewZoom(Math.max(50, previewZoom - 15))}
-                      className="p-1 text-slate-600 hover:text-slate-900 cursor-pointer"
-                    >
-                      <ZoomOut className="w-3.5 h-3.5" />
-                    </button>
-                    <select
-                      value={previewZoom}
-                      onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
-                      className="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-xs font-semibold"
-                    >
-                      <option value={50}>50%</option>
-                      <option value={65}>Ajustar</option>
-                      <option value={75}>75%</option>
-                      <option value={100}>100%</option>
-                      <option value={125}>125%</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewZoom(Math.min(130, previewZoom + 15))}
-                      className="p-1 text-slate-600 hover:text-slate-900 cursor-pointer"
-                    >
-                      <ZoomIn className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Simulation & Scanner Tools */}
-                <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSimulateFill();
-                      setShowAdvancedPopover(false);
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition cursor-pointer"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Simular Bolhas Marcadas</span>
-                  </button>
-
-                  {Object.keys(markedAnswers).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleClear();
-                        setShowAdvancedPopover(false);
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold transition cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Limpar Bolhas ({Object.keys(markedAnswers).length})</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAdvancedPopover(false);
-                      setIsScannerModalOpen(true);
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition cursor-pointer"
-                  >
-                    <Camera className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                    <span>Abrir Leitor QR / OMR</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Primary Print Action Button */}
-          <button type="button" disabled={isExporting} onClick={handleExportPdf} className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold disabled:opacity-50">
-            <Download className="w-3.5 h-3.5" />{isExporting ? 'Exportando…' : 'Baixar PDF'}
+            <Camera className="w-3.5 h-3.5 text-[#9E0B1A]" />
+            <span className="hidden sm:inline">Simular Leitor QR</span>
           </button>
+
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={handleExportPdf}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{isExporting ? '...' : 'PDF'}</span>
+          </button>
+
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>
@@ -517,8 +350,205 @@ export const AnswerSheetScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Clean A4 Desk Environment with Virtualized Screen Preview */}
-      <div className="bg-slate-100/90 p-4 sm:p-8 overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:min-h-0">
+      <div className="flex flex-col lg:flex-row items-stretch min-h-[750px] relative print:block">
+        {/* =====================================================================
+            SIDEBAR VERTICAL DE OPÇÕES DA FOLHA OMR (AO LADO DA FOLHA)
+           ===================================================================== */}
+        {isSidebarOpen && (
+          <aside className="w-full lg:w-80 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-5 flex flex-col gap-5 print:hidden overflow-y-auto max-h-[calc(100vh-180px)]">
+            {/* 1. Tipo de Folha (Nominal vs Avulsa) */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Identificação da Folha
+              </span>
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => handleToggleNominal(true)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    isNominal
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-[#9E0B1A]" />
+                  <span>Nominal</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleNominal(false)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    !isNominal
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <UserX className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Avulsa</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Cadernos & Variações */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Cadernos & Variações
+              </span>
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 mb-2">
+                <button
+                  type="button"
+                  onClick={() => handleToggleRandom(false)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                    !isRandomOrder
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Ordem Fixa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleRandom(true)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                    isRandomOrder
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Aleatória
+                </button>
+              </div>
+
+              {isRandomOrder && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <span className="text-slate-600 font-medium">Cadernos Diferentes (A..Z):</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={26}
+                      value={numVersions}
+                      onChange={(e) => handleChangeNumVersions(parseInt(e.target.value, 10) || 2)}
+                      className="w-12 py-1 text-center font-bold bg-white border border-slate-300 rounded-lg text-[#9E0B1A] text-xs focus:outline-none"
+                    />
+                  </div>
+                  {isNominal && (
+                    <button
+                      type="button"
+                      onClick={() => reshuffleExamStudents(selectedExam.id)}
+                      className="w-full py-1.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#9E0B1A]" />
+                      <span>Sortear Distribuição</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Formato Físico */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Layout Físico
+              </span>
+              <div className="bg-slate-50/70 p-3.5 border border-slate-200/90 rounded-2xl text-xs">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <span className="text-slate-700 font-medium block">Frente e Verso (Duplex)</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Verso 100% em branco de segurança</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isDuplexMode}
+                    onChange={(e) => setIsDuplexMode(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 4. Simulação de Preenchimento OMR */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Simulação OMR
+              </span>
+              <div className="space-y-2 bg-slate-50/70 p-3.5 border border-slate-200/90 rounded-2xl text-xs">
+                <button
+                  type="button"
+                  onClick={handleSimulateFill}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 font-semibold transition cursor-pointer shadow-2xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Simular Bolhas Marcadas</span>
+                </button>
+
+                {Object.keys(markedAnswers).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-semibold transition cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Limpar Bolhas ({Object.keys(markedAnswers).length})</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 5. Zoom & Escala */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Zoom em Tela
+              </span>
+              <div className="flex items-center justify-between bg-slate-50/70 p-3 border border-slate-200/90 rounded-2xl text-xs">
+                <span className="text-slate-600 font-medium">Escala de Inspeção:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewZoom(Math.max(50, previewZoom - 15))}
+                    className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                    title="Diminuir zoom"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <select
+                    value={previewZoom}
+                    onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-800"
+                  >
+                    <option value={50}>50%</option>
+                    <option value={65}>Ajustar</option>
+                    <option value={75}>75%</option>
+                    <option value={100}>100%</option>
+                    <option value={125}>125%</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewZoom(Math.min(130, previewZoom + 15))}
+                    className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                    title="Aumentar zoom"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. Calibração OMR */}
+            <div className="p-3 bg-amber-50/90 border border-amber-200/90 rounded-2xl text-[11px] text-amber-900 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Calibração OMR</span>
+              </div>
+              <p className="text-amber-800/90 leading-relaxed">
+                Ao imprimir, marque <strong>Escala 100% (Tamanho Real)</strong> e desmarque Cabeçalhos/Rodapés para manter o alinhamento micrométrico dos marcadores ópticos.
+              </p>
+            </div>
+          </aside>
+        )}
+
+        {/* Clean A4 Desk Environment with Virtualized Screen Preview */}
+        <div className="flex-1 bg-slate-100/90 p-4 sm:p-8 overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:min-h-0 print:w-full">
         {isNominal && isBatchMode ? (
           <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
             {/* Virtualized Student Navigator on Screen */}
@@ -674,5 +704,6 @@ export const AnswerSheetScreen: React.FC = () => {
         )}
       </div>
     </div>
-  );
+  </div>
+);
 };

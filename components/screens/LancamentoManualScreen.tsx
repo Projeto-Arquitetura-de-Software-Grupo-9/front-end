@@ -120,88 +120,132 @@ export const LancamentoManualScreen: React.FC = () => {
 
   return (
     <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs bg-white animate-in fade-in duration-200">
-      {/* Single Minimalist Command Bar (Consistent with PrintPreviewScreen) */}
-      <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
-        {/* Left: Segmented Status Toggle & Caderno Filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg">
-            <button
-              type="button"
-              onClick={() => setActiveTab('pendentes')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'pendentes'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <span>Folhas Avulsas Pendentes</span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                  pendingCorrections.length > 0
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-slate-200 text-slate-600'
-                }`}
-              >
-                {pendingCorrections.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('atribuidas')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'atribuidas'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <span>Já Vinculadas</span>
-              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-200 text-slate-700">
-                {assignedCorrections.length}
-              </span>
-            </button>
+      {/* Top Command Bar Limpa com Apenas o Essencial */}
+      <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Título & Status */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-900">Vincular Folhas Avulsas ao Aluno</h2>
+            <span className="text-xs text-slate-400">•</span>
+            <span className="text-xs font-semibold text-slate-500">
+              {activeTab === 'pendentes' ? `${pendingCorrections.length} pendentes` : `${assignedCorrections.length} vinculadas`}
+            </span>
           </div>
-
-          <div className="h-4 w-px bg-slate-200 hidden sm:block" />
-
-          {/* Caderno Filter Dropdown */}
-          <select
-            value={selectedVersionFilter}
-            onChange={(e) => setSelectedVersionFilter(e.target.value)}
-            className="text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 cursor-pointer focus:outline-none"
-          >
-            <option value="Todas">Todos os Cadernos</option>
-            {availableVersionLetters.map((v) => (
-              <option key={v} value={v}>
-                Caderno {v}
-              </option>
-            ))}
-          </select>
         </div>
 
-        {/* Right: Search & Scan Button */}
+        {/* Right: Apenas o Essencial (Caller do Leitor de QR Code / OMR) */}
         <div className="flex items-center gap-2">
-          <div className="relative w-56 sm:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <button
+            type="button"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs"
+            title="Abrir Scanner e Câmera de Leitura OMR / QR Code"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>Escanear Folha Avulsa</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row items-stretch min-h-[550px]">
+        {/* SIDEBAR VERTICAL DE FILTROS E STATUS (AO LADO DA LISTAGEM) */}
+        <aside className="w-full lg:w-72 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-5 flex flex-col gap-5">
+          {/* 1. Abas de Status Verticais */}
+          <div>
+            <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Status da Fila
+            </span>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab('pendentes')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer text-left ${
+                  activeTab === 'pendentes'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+                }`}
+              >
+                <span>Folhas Pendentes</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    activeTab === 'pendentes'
+                      ? 'bg-amber-400 text-slate-950'
+                      : pendingCorrections.length > 0
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {pendingCorrections.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('atribuidas')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer text-left ${
+                  activeTab === 'atribuidas'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
+                }`}
+              >
+                <span>Já Vinculadas</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    activeTab === 'atribuidas'
+                      ? 'bg-emerald-400 text-slate-950'
+                      : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {assignedCorrections.length}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Filtro por Caderno */}
+          <div>
+            <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Filtrar por Caderno
+            </span>
+            <select
+              value={selectedVersionFilter}
+              onChange={(e) => setSelectedVersionFilter(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 cursor-pointer focus:outline-none"
+            >
+              <option value="Todas">Todos os Cadernos</option>
+              {availableVersionLetters.map((v) => (
+                <option key={v} value={v}>
+                  Caderno {v}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 3. Guia Rápido */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl text-[11px] text-slate-600 space-y-1.5">
+            <div className="flex items-center gap-1.5 font-bold text-slate-800">
+              <Clock className="w-3.5 h-3.5 text-[#9E0B1A]" />
+              <span>Como Funciona</span>
+            </div>
+            <p className="leading-relaxed text-slate-500">
+              Folhas avulsas não têm aluno pré-impresso no QR Code. Ao escanear, o gabarito é corrigido e listado aqui para você associar ao aluno da turma correspondente.
+            </p>
+          </div>
+        </aside>
+
+        {/* ÁREA PRINCIPAL COM BARRA DE BUSCA E LISTAGEM */}
+        <div className="flex-1 p-5 flex flex-col gap-4 overflow-x-auto">
+          {/* Barra de busca rápida */}
+          <div className="relative max-w-md">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar nome ou matrícula..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-slate-300"
+              placeholder="Buscar por nome anotado ou matrícula..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-slate-300"
             />
           </div>
-
-          <button
-            type="button"
-            onClick={() => setIsScannerModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs"
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>Ler Folha Avulsa</span>
-          </button>
-        </div>
-      </div>
 
       {/* Table Content */}
       {activeTab === 'pendentes' ? (
@@ -330,6 +374,8 @@ export const LancamentoManualScreen: React.FC = () => {
           Nenhuma folha avulsa vinculada manualmente ainda.
         </div>
       )}
+        </div>
+      </div>
 
       {/* Clean Modal to Link Student */}
       {selectedCorrectionId && correctionToAssign && (

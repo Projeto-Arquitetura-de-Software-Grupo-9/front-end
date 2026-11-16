@@ -54,7 +54,7 @@ export const PrintPreviewScreen: React.FC = () => {
   const [isDuplexMode, setIsDuplexMode] = useState<boolean>(true);
   const [includeAnswerSheet, setIncludeAnswerSheet] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [showSecondaryPopover, setShowSecondaryPopover] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
   // New features: Duplex Spread (Book mode), Virtualized Batch, Scale calibration alert
   const [duplexSpreadMode, setDuplexSpreadMode] = useState<'vertical' | 'book'>('vertical');
@@ -595,376 +595,79 @@ export const PrintPreviewScreen: React.FC = () => {
   return (
     <div className="rounded-2xl border border-slate-200/90 overflow-hidden shadow-2xs bg-white animate-in fade-in duration-200 print:border-none print:shadow-none print:rounded-none">
       {/* =====================================================================
-          BARRA ÚNICA MINIMALISTA DE CONFIGURAÇÃO E IMPRESSÃO
+          BARRA SUPERIOR LIMPA COM APENAS O ESSENCIAL
          ===================================================================== */}
-      <div className="px-4 py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 print:hidden">
-        {/* Left: Core Print Decisions (Segmented Controls) */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 1. Finalidade: Prova vs. Gabarito Comentado (Pós-Prova) */}
-          <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/70">
-            <button
-              type="button"
-              onClick={() => handleSwitchPurpose('application')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                printPurpose === 'application'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Prova
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSwitchPurpose('post_exam_concepts')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                printPurpose === 'post_exam_concepts'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Caderno de perguntas com as respostas marcadas e explicação dos conceitos para correção pós-prova"
-            >
-              Gabarito Comentado
-            </button>
-          </div>
+      <div className="px-4 py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
+        {/* Left: Título & Botão de Toggle da Sidebar */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+              isSidebarOpen
+                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+            title={isSidebarOpen ? 'Recolher painel de opções' : 'Expandir painel de opções laterais'}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Opções da Prova</span>
+          </button>
 
-          {printPurpose === 'application' && (
-            <>
-              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+          <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 
-              {/* 2. Identificação: Nominal vs. Avulsa */}
-              <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/70">
-                <button
-                  type="button"
-                  onClick={() => handleToggleNominal(true)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    isNominalMode
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Nominal ({students.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToggleNominal(false)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    !isNominalMode
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Avulsa
-                </button>
-
-                {isNominalMode ? (
-                  <button
-                    type="button"
-                    onClick={() => selectedExam && reshuffleExamStudents(selectedExam.id)}
-                    title="Redistribuir cadernos aleatoriamente entre os alunos"
-                    className="px-2 py-1 text-slate-500 hover:text-[#9E0B1A] transition cursor-pointer"
-                  >
-                    <Shuffle className="w-3.5 h-3.5" />
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-1 px-2 text-xs">
-                    <span className="text-[11px] text-slate-500">Qtd:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={200}
-                      value={nonNominalTotalCopies}
-                      onChange={(e) =>
-                        setNonNominalTotalCopies(Math.max(1, parseInt(e.target.value) || 1))
-                      }
-                      className="w-11 py-0.5 text-center font-bold bg-white border border-slate-200 rounded-md text-slate-900 text-xs focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
-
-              {/* 3. Questões & N Cadernos: Fixa vs. Aleatória (N) */}
-              <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/70">
-                <button
-                  type="button"
-                  onClick={() => handleToggleRandomQuestions(false)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    !isRandomOrder
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Ordem Fixa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToggleRandomQuestions(true)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    isRandomOrder
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Aleatória
-                </button>
-
-                {isRandomOrder && (
-                  <div
-                    className="flex items-center gap-1 px-2 text-xs"
-                    title="Quantidade de cadernos diferentes (A, B, C...)"
-                  >
-                    <span className="text-[11px] text-slate-500">Cadernos:</span>
-                    <input
-                      type="number"
-                      min={2}
-                      max={26}
-                      value={numVersions}
-                      onChange={(e) => handleChangeNumVersions(parseInt(e.target.value) || 2)}
-                      className="w-10 py-0.5 text-center font-bold bg-white border border-slate-200 rounded-md text-[#9E0B1A] text-xs focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
-
-              {/* 4. Folha de Resposta OMR Junto */}
-              <button
-                type="button"
-                onClick={() => setIncludeAnswerSheet(!includeAnswerSheet)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                  includeAnswerSheet
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
-                title="Incluir Folha de Respostas OMR em página separada (verso 100% em branco)"
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 hidden md:inline">Visualizando:</span>
+            <div className="relative">
+              <select
+                value={viewFilter}
+                onChange={(e) => handleViewFilterChange(e.target.value)}
+                className="text-xs font-semibold text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none transition max-w-[220px] truncate"
               >
-                <span
-                  className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
-                    includeAnswerSheet ? 'bg-white text-slate-900' : 'border border-slate-300'
-                  }`}
-                >
-                  {includeAnswerSheet && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                </span>
-                <span>Com Folha OMR</span>
-              </button>
-            </>
-          )}
-
-          {/* 5. Toggle Visual Duplex (Modo Livro / Lado a Lado) */}
-          {isDuplexMode && (
-            <button
-              type="button"
-              onClick={() => setDuplexSpreadMode(duplexSpreadMode === 'book' ? 'vertical' : 'book')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer ${
-                duplexSpreadMode === 'book'
-                  ? 'bg-blue-50 text-blue-800 border-blue-200 shadow-2xs'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Simulador Duplex: Exibir páginas lado a lado (Frente & Verso) para validar paridade física"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-              <span className="hidden md:inline">{duplexSpreadMode === 'book' ? 'Modo Livro (Duplex)' : 'Lado a Lado'}</span>
-            </button>
-          )}
+                {printPurpose === 'application' && (
+                  <option value="batch">
+                    {isNominalMode
+                      ? `Lote da Turma (${students.length})`
+                      : `Lote Avulso (${nonNominalTotalCopies})`}
+                  </option>
+                )}
+                <optgroup label="Caderno Específico:">
+                  {versionLetters.map((v) => (
+                    <option key={v} value={`version:${v}`}>
+                      Caderno {v}
+                    </option>
+                  ))}
+                </optgroup>
+                {printPurpose === 'application' && isNominalMode && (
+                  <optgroup label="Aluno Específico:">
+                    {students.map((s, sIdx) => {
+                      const v = getStudentAssignedVersion(s.id, sIdx);
+                      return (
+                        <option key={s.id} value={`student:${s.id}`}>
+                          {s.name} (Cad. {v})
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                )}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
         </div>
 
-        {/* Right: Scale Alert, View Selector, Settings Popover, PDF & Print Actions */}
+        {/* Right: Apenas o Essencial (Caller do Leitor QR, Baixar PDF e Imprimir) */}
         <div className="flex items-center gap-2">
-          {/* Calibração de Escala: Aviso Compacto na Toolbar */}
-          <div
-            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 bg-amber-50/90 border border-amber-200/90 rounded-xl text-amber-900 text-[11px] font-medium"
-            title="Dica de Calibração OMR: No diálogo de impressão, defina Escala em 100% (Tamanho Real) e desmarque Cabeçalhos/Rodapés para manter o alinhamento óptico exato dos marcadores fiduciais."
+          {/* Caller Essencial do Leitor de QR Code / OMR */}
+          <button
+            type="button"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+            title="Abrir Simulação de Câmera e Leitor QR / OMR"
           >
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span className="font-bold text-amber-800">100% Escala</span>
-            <span className="text-amber-700/80">• Sem Cabeçalhos</span>
-          </div>
-
-          {/* Unified View Selector (Lote, Caderno A..N, or Student) */}
-          <div className="relative">
-            <select
-              value={viewFilter}
-              onChange={(e) => handleViewFilterChange(e.target.value)}
-              className="text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none transition"
-            >
-              {printPurpose === 'application' && (
-                <option value="batch">
-                  {isNominalMode
-                    ? `Ver Lote da Turma (${students.length})`
-                    : `Ver Lote Avulso (${nonNominalTotalCopies})`}
-                </option>
-              )}
-              <optgroup label="Inspecionar Caderno:">
-                {versionLetters.map((v) => (
-                  <option key={v} value={`version:${v}`}>
-                    Caderno {v}
-                  </option>
-                ))}
-              </optgroup>
-              {printPurpose === 'application' && isNominalMode && (
-                <optgroup label="Aluno Específico:">
-                  {students.map((s, sIdx) => {
-                    const v = getStudentAssignedVersion(s.id, sIdx);
-                    return (
-                      <option key={s.id} value={`student:${s.id}`}>
-                        {s.name} (Cad. {v})
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-
-          {/* Secondary Settings Popover Button */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowSecondaryPopover(!showSecondaryPopover)}
-              className={`p-2 rounded-xl border transition cursor-pointer ${
-                showSecondaryPopover
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Opções secundárias (Frente e Verso, Box de Nota, QR Code, Zoom)"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </button>
-
-            {showSecondaryPopover && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-40 space-y-3 text-xs animate-in fade-in zoom-in-95 duration-150">
-                <div className="font-bold text-slate-900 pb-2 border-b border-slate-100">
-                  Ajustes de Página
-                </div>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-700">Frente e Verso (Duplex)</span>
-                  <input
-                    type="checkbox"
-                    checked={isDuplexMode}
-                    onChange={(e) => setIsDuplexMode(e.target.checked)}
-                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-700">Box de Nota no Cabeçalho</span>
-                  <input
-                    type="checkbox"
-                    checked={includeBoxNota}
-                    onChange={(e) => setIncludeBoxNota(e.target.checked)}
-                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-700">Destacar Gabarito</span>
-                  <input
-                    type="checkbox"
-                    checked={showAnswerKeyInPreview}
-                    onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
-                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-700">QR Code de Correção</span>
-                  <input
-                    type="checkbox"
-                    checked={showQrCodeInPreview}
-                    onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
-                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
-                  />
-                </label>
-
-                {/* Duplex Book View in Popover */}
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-700">Modo Livro (Frente/Verso)</span>
-                  <input
-                    type="checkbox"
-                    checked={duplexSpreadMode === 'book'}
-                    onChange={(e) => setDuplexSpreadMode(e.target.checked ? 'book' : 'vertical')}
-                    className="rounded accent-blue-600 w-4 h-4 cursor-pointer"
-                  />
-                </label>
-
-                {!isBatchMode && (
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-slate-600">Paginação</span>
-                    <div className="inline-flex bg-slate-100 p-0.5 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => setViewMode('all')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
-                          viewMode === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
-                        }`}
-                      >
-                         Contínua
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setViewMode('single')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
-                          viewMode === 'single' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
-                        }`}
-                      >
-                        1 Folha
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Expanded Inspection Zoom */}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-slate-600">Zoom</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewZoom(Math.max(50, previewZoom - 15))}
-                      className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
-                    >
-                      <ZoomOut className="w-3 h-3" />
-                    </button>
-                    <select
-                      value={previewZoom}
-                      onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
-                      className="bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-0.5 text-xs font-semibold"
-                    >
-                      <option value={50}>50%</option>
-                      <option value={65}>Ajustar</option>
-                      <option value={75}>75%</option>
-                      <option value={100}>100%</option>
-                      <option value={125}>125%</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewZoom(Math.min(130, previewZoom + 15))}
-                      className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
-                    >
-                      <ZoomIn className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowSecondaryPopover(false);
-                      setIsScannerModalOpen(true);
-                    }}
-                    className="w-full py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <QrCode className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                    <span>Simular Leitor QR / OMR</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+            <QrCode className="w-3.5 h-3.5 text-[#9E0B1A]" />
+            <span className="hidden sm:inline">Simular Leitor QR</span>
+          </button>
 
           <button
             type="button"
@@ -980,7 +683,7 @@ export const PrintPreviewScreen: React.FC = () => {
           <button
             type="button"
             onClick={handlePrint}
-            className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs ${
+            className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs ${
               printPurpose === 'post_exam_concepts'
                 ? 'bg-emerald-600 hover:bg-emerald-700'
                 : 'bg-[#9E0B1A] hover:bg-[#850916]'
@@ -992,13 +695,305 @@ export const PrintPreviewScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* =====================================================================
-          MESA DE VISUALIZAÇÃO EXATA A4 (COM VIRTUALIZAÇÃO EM TELA)
-         ===================================================================== */}
-      <div
-        onClick={() => showSecondaryPopover && setShowSecondaryPopover(false)}
-        className="bg-slate-100/90 p-6 sm:p-10 overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:min-h-0"
-      >
+      <div className="flex flex-col lg:flex-row items-stretch min-h-[750px] relative print:block">
+        {/* =====================================================================
+            SIDEBAR VERTICAL DE OPÇÕES (AO LADO DA FOLHA)
+           ===================================================================== */}
+        {isSidebarOpen && (
+          <aside className="w-full lg:w-80 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-5 flex flex-col gap-5 print:hidden overflow-y-auto max-h-[calc(100vh-180px)]">
+            {/* 1. Finalidade do Caderno */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Finalidade
+              </span>
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchPurpose('application')}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                    printPurpose === 'application'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Prova
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchPurpose('post_exam_concepts')}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                    printPurpose === 'post_exam_concepts'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Caderno com gabarito e explicação de conceitos"
+                >
+                  Gabarito Comentado
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Identificação da Folha */}
+            {printPurpose === 'application' && (
+              <div>
+                <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Identificação do Aluno
+                </span>
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleNominal(true)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                      isNominalMode
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Nominal ({students.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleNominal(false)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                      !isNominalMode
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Avulsa
+                  </button>
+                </div>
+
+                {isNominalMode ? (
+                  <button
+                    type="button"
+                    onClick={() => selectedExam && reshuffleExamStudents(selectedExam.id)}
+                    className="w-full py-1.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Shuffle className="w-3.5 h-3.5 text-[#9E0B1A]" />
+                    <span>Redistribuir Cadernos</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <span className="text-slate-600 font-medium">Quantidade de Cópias:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={nonNominalTotalCopies}
+                      onChange={(e) =>
+                        setNonNominalTotalCopies(Math.max(1, parseInt(e.target.value) || 1))
+                      }
+                      className="w-14 py-1 text-center font-bold bg-white border border-slate-300 rounded-lg text-slate-900 text-xs focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Cadernos & Randomização */}
+            {printPurpose === 'application' && (
+              <div>
+                <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Cadernos & Variações
+                </span>
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleRandomQuestions(false)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                      !isRandomOrder
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Ordem Fixa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleRandomQuestions(true)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-center ${
+                      isRandomOrder
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Aleatória
+                  </button>
+                </div>
+
+                {isRandomOrder && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <span className="text-slate-600 font-medium">Cadernos Diferentes (A..Z):</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={26}
+                      value={numVersions}
+                      onChange={(e) => handleChangeNumVersions(parseInt(e.target.value) || 2)}
+                      className="w-12 py-1 text-center font-bold bg-white border border-slate-300 rounded-lg text-[#9E0B1A] text-xs focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4. Estrutura Física & Impressão */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Layout Físico da Prova
+              </span>
+              <div className="space-y-2.5 bg-slate-50/70 p-3.5 border border-slate-200/90 rounded-2xl text-xs">
+                {printPurpose === 'application' && (
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-slate-700 font-medium">Com Folha de Respostas OMR</span>
+                    <input
+                      type="checkbox"
+                      checked={includeAnswerSheet}
+                      onChange={(e) => setIncludeAnswerSheet(e.target.checked)}
+                      className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                    />
+                  </label>
+                )}
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700 font-medium">Frente e Verso (Duplex)</span>
+                  <input
+                    type="checkbox"
+                    checked={isDuplexMode}
+                    onChange={(e) => setIsDuplexMode(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                {isDuplexMode && (
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-slate-700 font-medium">Modo Livro (Frente/Verso Lado a Lado)</span>
+                    <input
+                      type="checkbox"
+                      checked={duplexSpreadMode === 'book'}
+                      onChange={(e) => setDuplexSpreadMode(duplexSpreadMode === 'book' ? 'vertical' : 'book')}
+                      className="rounded accent-blue-600 w-4 h-4 cursor-pointer"
+                    />
+                  </label>
+                )}
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700 font-medium">Box de Nota no Cabeçalho</span>
+                  <input
+                    type="checkbox"
+                    checked={includeBoxNota}
+                    onChange={(e) => setIncludeBoxNota(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700 font-medium">Destacar Gabarito</span>
+                  <input
+                    type="checkbox"
+                    checked={showAnswerKeyInPreview}
+                    onChange={(e) => setShowAnswerKeyInPreview(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-700 font-medium">QR Code Institucional</span>
+                  <input
+                    type="checkbox"
+                    checked={showQrCodeInPreview}
+                    onChange={(e) => setShowQrCodeInPreview(e.target.checked)}
+                    className="rounded accent-[#9E0B1A] w-4 h-4 cursor-pointer"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 5. Visualização & Zoom */}
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Visualização em Tela
+              </span>
+              <div className="space-y-3 bg-slate-50/70 p-3.5 border border-slate-200/90 rounded-2xl text-xs">
+                {!isBatchMode && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600 font-medium">Paginação:</span>
+                    <div className="inline-flex bg-slate-200/80 p-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('all')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          viewMode === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
+                        }`}
+                      >
+                        Contínua
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('single')}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          viewMode === 'single' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
+                        }`}
+                      >
+                        1 Folha
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 font-medium">Zoom:</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewZoom(Math.max(50, previewZoom - 15))}
+                      className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                      title="Diminuir zoom"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <select
+                      value={previewZoom}
+                      onChange={(e) => setPreviewZoom(parseInt(e.target.value))}
+                      className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-800"
+                    >
+                      <option value={50}>50%</option>
+                      <option value={65}>Ajustar</option>
+                      <option value={75}>75%</option>
+                      <option value={100}>100%</option>
+                      <option value={125}>125%</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewZoom(Math.min(130, previewZoom + 15))}
+                      className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                      title="Aumentar zoom"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. Dica de Calibração */}
+            <div className="p-3 bg-amber-50/90 border border-amber-200/90 rounded-2xl text-[11px] text-amber-900 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Calibração OMR</span>
+              </div>
+              <p className="text-amber-800/90 leading-relaxed">
+                Ao imprimir, marque <strong>Escala 100% (Tamanho Real)</strong> e desmarque Cabeçalhos/Rodapés para garantir alinhamento micrométrico dos marcadores.
+              </p>
+            </div>
+          </aside>
+        )}
+
+        {/* =====================================================================
+            MESA DE VISUALIZAÇÃO EXATA A4 (COM VIRTUALIZAÇÃO EM TELA)
+           ===================================================================== */}
+        <div className="flex-1 bg-slate-100/90 p-6 sm:p-10 overflow-x-auto min-h-[750px] flex flex-col items-center justify-start print:bg-white print:p-0 print:min-h-0 print:w-full">
         <div className="w-full flex flex-col items-center gap-8 print:gap-0 print:w-full">
           {isBatchMode ? (
             /* BATCH PRINT MODE: VIRTUALIZED SCREEN PREVIEW + FULL DOM MOUNT IN PRINT */
@@ -1165,5 +1160,6 @@ export const PrintPreviewScreen: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };

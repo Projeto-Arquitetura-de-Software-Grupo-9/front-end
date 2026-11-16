@@ -114,18 +114,48 @@ export const api = {
     const res = await fetchWithTimeout(`${API_BASE_URL}/disciplinas`);
     if (!res.ok) throw new Error('Falha ao carregar disciplinas');
     const json = await res.json();
-    return json.data || [];
+    return (json.data || []).map((d: any) => ({
+      id: String(d.id),
+      teacherId: String(d.idProfessor || d.teacherId || 'prof-catolica-01'),
+      code: String(d.codigo || d.code || 'DIR-101'),
+      name: String(d.nome || d.name || 'Disciplina'),
+      course: String(d.curso || d.course || 'Direito'),
+      createdAt: String(d.createdAt || new Date().toISOString()),
+    }));
   },
 
-  async createDisciplina(data: { nome: string; codigo: string; curso: string; idProfessor?: string }): Promise<Discipline> {
+  async createDisciplina(data: {
+    nome?: string;
+    name?: string;
+    codigo?: string;
+    code?: string;
+    curso?: string;
+    course?: string;
+    idProfessor?: string;
+    teacherId?: string;
+  }): Promise<Discipline> {
+    const payload = {
+      nome: data.nome || data.name || '',
+      codigo: data.codigo || data.code || '',
+      curso: data.curso || data.course || 'Direito',
+      idProfessor: data.idProfessor || data.teacherId || 'prof-catolica-01',
+    };
     const res = await fetchWithTimeout(`${API_BASE_URL}/disciplinas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Falha ao criar disciplina');
     const json = await res.json();
-    return json.data;
+    const d = json.data || {};
+    return {
+      id: String(d.id || `disc-${Date.now()}`),
+      teacherId: String(d.idProfessor || d.teacherId || payload.idProfessor),
+      code: String(d.codigo || d.code || payload.codigo),
+      name: String(d.nome || d.name || payload.nome),
+      course: String(d.curso || d.course || payload.curso),
+      createdAt: String(d.createdAt || new Date().toISOString()),
+    };
   },
 
   async deleteDisciplina(id: string): Promise<boolean> {

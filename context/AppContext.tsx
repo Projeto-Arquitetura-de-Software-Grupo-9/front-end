@@ -424,7 +424,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ]);
               if (isMounted) {
                 if (Array.isArray(remoteStudents)) setStudents(remoteStudents);
-                if (Array.isArray(remoteDisciplines)) setDisciplines(remoteDisciplines);
+                if (Array.isArray(remoteDisciplines)) {
+                  const sanitized = remoteDisciplines
+                    .map((d: any) => ({
+                      id: String(d.id),
+                      teacherId: String(d.teacherId || d.idProfessor || 'prof-catolica-01'),
+                      code: String(d.code || d.codigo || 'DIR-101'),
+                      name: String(d.name || d.nome || 'Disciplina'),
+                      course: String(d.course || d.curso || 'Direito'),
+                      createdAt: String(d.createdAt || new Date().toISOString()),
+                    }))
+                    .filter((d: any) => Boolean(d.name));
+                  setDisciplines(sanitized);
+                }
                 if (Array.isArray(remoteClasses)) setClasses(remoteClasses);
                 if (Array.isArray(remoteQuestions)) setQuestions(remoteQuestions);
                 if (Array.isArray(remoteCorrecoes)) setCorrections(remoteCorrecoes);
@@ -460,7 +472,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (storedDisc) {
           const parsedDisc = JSON.parse(storedDisc);
           if (Array.isArray(parsedDisc) && parsedDisc.length > 0) {
-            setDisciplines(parsedDisc);
+            const sanitized = parsedDisc
+              .map((d: any) => ({
+                id: String(d.id),
+                teacherId: String(d.teacherId || d.idProfessor || 'prof-catolica-01'),
+                code: String(d.code || d.codigo || 'DIR-101'),
+                name: String(d.name || d.nome || 'Disciplina'),
+                course: String(d.course || d.curso || 'Direito'),
+                createdAt: String(d.createdAt || new Date().toISOString()),
+              }))
+              .filter((d: any) => Boolean(d.name));
+            setDisciplines(sanitized);
           }
         }
         const storedUsers = localStorage.getItem('correge_users_v1');
@@ -907,7 +929,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addDiscipline = (data: { name: string; code?: string; course?: string }): Discipline => {
     const cleanName = data.name.trim();
-    const existing = disciplines.find((d) => d.name.toLowerCase() === cleanName.toLowerCase());
+    const existing = disciplines.find(
+      (d) => (d.name || (d as any).nome || '').trim().toLowerCase() === cleanName.toLowerCase()
+    );
     if (existing) return existing;
 
     const generatedCode =
@@ -916,18 +940,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newDisc: Discipline = {
       id: `disc-${Date.now()}`,
-      teacherId: currentUser.id,
+      teacherId: currentUser.id || 'prof-catolica-01',
       code: generatedCode,
       name: cleanName,
       course: data.course?.trim() || 'Direito',
       createdAt: new Date().toISOString(),
     };
 
-    api.createDisciplina({
-      nome: cleanName,
-      codigo: generatedCode,
-      curso: data.course?.trim() || 'Direito',
-    }).catch((err) => console.warn('Aviso de criação de disciplina no backend:', err));
+    api
+      .createDisciplina({
+        nome: cleanName,
+        codigo: generatedCode,
+        curso: data.course?.trim() || 'Direito',
+        idProfessor: currentUser.id || 'prof-catolica-01',
+      })
+      .then((createdRemote) => {
+        if (createdRemote && createdRemote.id) {
+          setDisciplines((prev) => {
+            const updated = prev.map((d) => (d.id === newDisc.id ? { ...d, id: createdRemote.id } : d));
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('correge_disciplines_v1', JSON.stringify(updated));
+              } catch (e) {
+                console.error('Failed to save disciplines:', e);
+              }
+            }
+            return updated;
+          });
+        }
+      })
+      .catch((err) => console.warn('Aviso de criação de disciplina no backend:', err));
 
     const next = [...disciplines, newDisc];
     persistDisciplines(next);
@@ -947,7 +989,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast({
       type: 'info',
       title: 'Disciplina Removida',
-      message: target ? `"${target.name}" foi removida.` : 'Disciplina removida.',
+      message: target ? `"${target.name || (target as any).nome}" foi removida.` : 'Disciplina removida.',
     });
   };
 

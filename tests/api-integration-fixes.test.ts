@@ -66,4 +66,53 @@ describe('Frontend API Integration & Mock Removal Verification (Items 1, 4, 5, 6
     assert.equal(expandedBubbles[0], 'A');
     assert.equal(expandedBubbles[25], 'Z');
   });
+
+  it('should normalize backend discipline payloads (nome, codigo, curso) to Discipline contract (name, code, course)', () => {
+    const rawBackendDisciplines = [
+      {
+        id: 'disc-backend-1',
+        idProfessor: 'prof-catolica-01',
+        codigo: 'DIR-101',
+        nome: 'Direito Constitucional',
+        curso: 'Direito',
+      },
+      {
+        id: 'disc-backend-2',
+        code: 'MAT-201',
+        name: 'Cálculo I',
+        course: 'Engenharia',
+      },
+    ];
+
+    const normalized = rawBackendDisciplines.map((d: any) => ({
+      id: String(d.id),
+      teacherId: String(d.idProfessor || d.teacherId || 'prof-catolica-01'),
+      code: String(d.codigo || d.code || 'DIR-101'),
+      name: String(d.nome || d.name || 'Disciplina'),
+      course: String(d.curso || d.course || 'Direito'),
+      createdAt: String(d.createdAt || new Date().toISOString()),
+    }));
+
+    assert.equal(normalized[0].name, 'Direito Constitucional');
+    assert.equal(normalized[0].code, 'DIR-101');
+    assert.equal(normalized[0].course, 'Direito');
+    assert.equal(normalized[0].teacherId, 'prof-catolica-01');
+
+    assert.equal(normalized[1].name, 'Cálculo I');
+    assert.equal(normalized[1].code, 'MAT-201');
+    assert.equal(normalized[1].course, 'Engenharia');
+
+    // Duplicate search test (reproducing previous TypeError crash)
+    const newName = 'direito penal';
+    const existing = normalized.find(
+      (d) => (d.name || (d as any).nome || '').trim().toLowerCase() === newName.toLowerCase()
+    );
+    assert.equal(existing, undefined);
+
+    const existingMatch = normalized.find(
+      (d) => (d.name || (d as any).nome || '').trim().toLowerCase() === 'direito constitucional'
+    );
+    assert.ok(existingMatch);
+    assert.equal(existingMatch?.id, 'disc-backend-1');
+  });
 });

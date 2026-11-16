@@ -83,7 +83,7 @@ export const TurmasScreen: React.FC = () => {
   const handleCreateClass = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
-    const matchedDisc = disciplines.find((d) => d.name === newClassSubject);
+    const matchedDisc = disciplines.find((d) => (d.name || (d as any).nome) === newClassSubject);
     const created = addClass({
       disciplineId: matchedDisc?.id,
       name: newClassName.trim(),
@@ -154,26 +154,31 @@ export const TurmasScreen: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {disciplines.map((disc) => (
-            <div
-              key={disc.id}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 group"
-            >
-              <span className="font-mono text-[10px] font-bold text-[#9E0B1A] bg-red-50 px-1.5 py-0.5 rounded">
-                {disc.code}
-              </span>
-              <span className="font-semibold">{disc.name}</span>
-              <span className="text-[10px] text-slate-400">({disc.course})</span>
-              <button
-                type="button"
-                onClick={() => deleteDiscipline(disc.id)}
-                className="text-slate-300 hover:text-red-600 transition cursor-pointer ml-0.5"
-                title="Remover disciplina"
+          {disciplines.map((disc) => {
+            const discName = disc.name || (disc as any).nome || 'Disciplina';
+            const discCode = disc.code || (disc as any).codigo || 'DIR-101';
+            const discCourse = disc.course || (disc as any).curso || 'Direito';
+            return (
+              <div
+                key={disc.id}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 group"
               >
-                ×
-              </button>
-            </div>
-          ))}
+                <span className="font-mono text-[10px] font-bold text-[#9E0B1A] bg-red-50 px-1.5 py-0.5 rounded">
+                  {discCode}
+                </span>
+                <span className="font-semibold">{discName}</span>
+                <span className="text-[10px] text-slate-400">({discCourse})</span>
+                <button
+                  type="button"
+                  onClick={() => deleteDiscipline(disc.id)}
+                  className="text-slate-300 hover:text-red-600 transition cursor-pointer ml-0.5"
+                  title="Remover disciplina"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -400,11 +405,16 @@ export const TurmasScreen: React.FC = () => {
                   <option value="" disabled>
                     Selecione uma disciplina...
                   </option>
-                  {disciplines.map((d) => (
-                    <option key={d.id} value={d.name}>
-                      {d.name} ({d.code} • {d.course})
-                    </option>
-                  ))}
+                  {disciplines.map((d) => {
+                    const dName = d.name || (d as any).nome || 'Disciplina';
+                    const dCode = d.code || (d as any).codigo || 'DIR-101';
+                    const dCourse = d.course || (d as any).curso || 'Direito';
+                    return (
+                      <option key={d.id} value={dName}>
+                        {dName} ({dCode} • {dCourse})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
