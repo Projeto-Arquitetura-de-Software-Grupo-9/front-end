@@ -258,7 +258,7 @@ export const ExamsListScreen: React.FC = () => {
                     </span>
                     <span>•</span>
                     <span className="flex items-center gap-1">
-                      <Users className="w-3 h-3 text-slate-400" /> {exam.totalStudents || 32} alunos
+                      <Users className="w-3 h-3 text-slate-400" /> {exam.totalStudents ?? 0} alunos
                     </span>
                   </div>
                 </div>

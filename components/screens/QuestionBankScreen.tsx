@@ -32,12 +32,6 @@ export const QuestionBankScreen: React.FC = () => {
         q.tags.forEach((tag) => set.add(tag));
       }
     });
-    // Ensure default tags are available
-    if (set.size === 0) {
-      set.add('TAG 1');
-      set.add('TAG 2');
-      set.add('TAG 3');
-    }
     return ['Todas', ...Array.from(set)];
   }, [questions]);
 
@@ -169,7 +163,7 @@ export const QuestionBankScreen: React.FC = () => {
         ) : (
           filteredQuestions.map((q) => {
             const isExpanded = expandedQuestionId === q.id;
-            const tagsToDisplay = q.tags && q.tags.length > 0 ? q.tags : ['TAG 1', 'TAG 2', 'TAG 3'];
+            const tagsToDisplay = q.tags && q.tags.length > 0 ? q.tags : [];
 
             return (
               <div

@@ -1,42 +1,54 @@
-# ⚙️ Diagrama de Sequência — Tela de Configurações
+# Diagrama de Sequência — Configurações, Senha e Anonimização LGPD
 
-🔎 Passo 4C — Como Analisar e Ler o Diagrama
-Regra de ouro: leia sempre de cima para baixo, como se fosse o feed de um celular.
-
-Cenário analisado: Consulta e Atualização das Configurações do Sistema.
-
-Atores e objetos (o elenco): no topo, os participantes na horizontal (Professor, Frontend, Servidor, BancoDeDados).
-Linhas de vida (o tempo passando): as linhas tracejadas verticais que descem de cada objeto representam o tempo correndo — quanto mais abaixo, mais tarde o evento acontece.
-Mensagens (os diálogos): setas horizontais mostram o pedido/ação de um objeto para o outro. Setas contínuas = envio de requisição; setas tracejadas = retorno da resposta.
-Bloco alt (alternativas/decisões): representa desvios condicionais (o famoso SE/SENÃO) — a validação dos parâmetros informados (nota de corte e sensibilidade OMR), salvando no banco ou retornando erro de campos inválidos.
+Cenários cobertos: carregamento e salvamento de preferências institucionais/OMR (`/api/v1/settings`), alteração autenticada de senha (`PUT /api/v1/professores/me/password`) e anonimização irreversível conforme LGPD (`POST /api/v1/professores/me/anonymize`).
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Professor as Professor
-    participant Frontend as Frontend (Web)
-    participant Servidor as Servidor (API)
-    participant BancoDeDados as Banco de Dados
+    participant Frontend as Front-end (/configuracoes)
+    participant API as Back-end API REST (/api/v1)
+    participant DB as Banco MySQL / TiDB (Prisma)
 
-    %% Leitura
-    Professor->>Frontend: Acessa tela de configurações
-    Frontend->>Servidor: GET /configuracoes
-    Servidor->>BancoDeDados: SELECT * FROM configuracoes
-    BancoDeDados-->>Servidor: Retorna parâmetros institucionais e OMR
-    Servidor-->>Frontend: Retorna configurações atuais
-    Frontend-->>Professor: Exibe formulário preenchido
+    %% Carregamento de Configurações
+    Professor->>Frontend: Acessa tela de Configurações
+    Frontend->>API: GET /api/v1/settings?teacherId={id} (Bearer JWT)
+    API->>DB: SELECT * FROM configuracoes WHERE id_professor = ?
+    DB-->>API: Parâmetros institucionais e OMR
+    API-->>Frontend: 200 OK { data: Settings }
+    Frontend-->>Professor: Renderiza formulário preenchido
 
-    %% Salvamento
-    Professor->>Frontend: Modifica parâmetros e clica em "Salvar"
-    Frontend->>Servidor: PUT /configuracoes {instituicao, notaMinima, sensibilidadeOMR}
-
-    alt Parâmetros válidos
-        Servidor->>BancoDeDados: UPDATE configuracoes SET ...
-        BancoDeDados-->>Servidor: Confirma atualização
-        Servidor-->>Frontend: Retorna 200 OK
-        Frontend-->>Professor: Exibe toast "Configurações Salvas!"
-    else Dados inconsistentes
-        Servidor-->>Frontend: Retorna erro 400 Bad Request
-        Frontend-->>Professor: Exibe alerta de validação nos campos
+    %% Atualização de Configurações
+    Professor->>Frontend: Altera parâmetros e clica em "Salvar Configurações"
+    Frontend->>API: PUT /api/v1/settings?teacherId={id}
+    alt Parâmetros válidos (notaMinima 0..10, threshold válido)
+        API->>DB: UPSERT configuracoes
+        DB-->>API: Registro atualizado
+        API-->>Frontend: 200 OK
+        Frontend-->>Professor: Exibe confirmação "Configurações Salvas!"
+    else Campos inválidos
+        API-->>Frontend: 400 Bad Request
+        Frontend-->>Professor: Exibe erro de validação
     end
+
+    %% Alteração de Senha Autenticada
+    Professor->>Frontend: Informa senha atual e nova senha
+    Frontend->>API: PUT /api/v1/professores/me/password (Bearer JWT)
+    API->>DB: Busca hash bcrypt atual do professor
+    alt Senha atual confere
+        API->>DB: UPDATE professores SET senha_hash = bcrypt(novaSenha)
+        API-->>Frontend: 200 OK
+        Frontend-->>Professor: Exibe "Senha Atualizada!"
+    else Senha atual incorreta
+        API-->>Frontend: 401 Unauthorized
+        Frontend-->>Professor: Exibe erro de credencial
+    end
+
+    %% Anonimização LGPD
+    Professor->>Frontend: Confirma "Anonimizar Minha Conta"
+    Frontend->>API: POST /api/v1/professores/me/anonymize (Bearer JWT)
+    API->>DB: Anonimiza nome/e-mail e trava senha mantendo provas e notas
+    DB-->>API: Confirma anonimização
+    API-->>Frontend: 200 OK
+    Frontend-->>Professor: Encerra sessão JWT e redireciona ao Login
 ```

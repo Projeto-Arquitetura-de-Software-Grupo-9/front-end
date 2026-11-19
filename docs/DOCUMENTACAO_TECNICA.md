@@ -1,64 +1,69 @@
-# 📘 Documentação Técnica — SGP / Correge
+# Documentação Técnica — SGP / Correge
 
 **Sistema de Geração, Randomização e Correção Automática de Provas via QR Code e Leitura Óptica (OMR)**  
 *Centro Universitário Católica de Santa Catarina (Católica SC)*
 
 ---
 
-## 📑 Sumário
+## Sumário
 
 1. [Visão Geral da Arquitetura](#1-visão-geral-da-arquitetura)
 2. [Stack Tecnológica](#2-stack-tecnológica)
 3. [Estrutura do Projeto](#3-estrutura-do-projeto)
-4. [Arquitetura de Componentes e Fluxo de Dados](#4-arquitetura-de-componentes-e-fluxo-de-dados)
-5. [Motor de Randomização e Geração de Cadernos (A4 / Duplex)](#5-motor-de-randomização-e-geração-de-cadernos-a4--duplex)
-6. [Especificação do QR Code e Motor Óptico OMR (Python + OpenCV)](#6-especificação-do-qr-code-e-motor-óptico-omr-python--opencv)
-7. [Contratos da API REST](#7-contratos-da-api-rest)
-8. [Detecção Mobile vs. Modo de Impressão A4](#8-detecção-mobile-vs-modo-de-impressão-a4)
-9. [Segurança e Conformidade com a LGPD](#9-segurança-e-conformidade-com-a-lgpd)
-10. [Instalação e Execução do Ambiente](#10-instalação-e-execução-do-ambiente)
+4. [Modelo de Dados (MER / DER)](#4-modelo-de-dados-mer--der)
+5. [Autenticação Real (JWT + bcrypt) e Conformidade LGPD](#5-autenticação-real-jwt--bcrypt-e-conformidade-lgpd)
+6. [Motor de Randomização e Impressão A4 Duplex](#6-motor-de-randomização-e-impressão-a4-duplex)
+7. [Especificação do QR Code e Motor Óptico OMR Nativo (TypeScript)](#7-especificação-do-qr-code-e-motor-óptico-omr-nativo-typescript)
+8. [Contratos da API REST](#8-contratos-da-api-rest)
+9. [Detecção Mobile vs. Modo de Impressão A4](#9-detecção-mobile-vs-modo-de-impressão-a4)
+10. [Instalação, Testes e Execução](#10-instalação-testes-e-execução)
 
 ---
 
 ## 1. Visão Geral da Arquitetura
 
-O **Correge (SGP)** é uma plataforma híbrida (Web Desktop para gestão e impressão + Web Mobile dedicada para escaneamento e correção por câmera) projetada para automatizar todo o ciclo de avaliações acadêmicas:
+O **Correge (SGP)** é composto por dois serviços independentes que operam **100% sobre dados reais em banco relacional (MySQL / TiDB Cloud)**, sem repositórios *mock* ou dados simulados:
 
-1. **Elaboração e Banco de Questões**: Cadastro estruturado de questões objetivas (`A`–`E`) e discursivas categorizadas por disciplina, nível de dificuldade e tags temáticas.
-2. **Geração de Cadernos Múltiplos (Anti-Cola)**: Geração automática de múltiplas versões de prova (`Caderno A`, `Caderno B`, `Caderno C`, `Caderno D`, etc.) utilizando algoritmos de permutação (*Fisher-Yates* e *Rotação Cíclica*) para embaralhar a ordem das questões e das alternativas mantendo um gabarito oficial individualizado por versão.
-3. **Diagramação A4 com Marcadores Fiduciais e QR Code**: Renderização de folhas de prova e cartões-resposta OMR prontos para impressão física (incluindo compensação automática de verso em branco para impressão *Duplex* frente e verso).
-4. **Leitura de QR Code e Correção Óptica (OMR)**: Quando aberto em um smartphone, o sistema apresenta exclusivamente a interface de leitura por câmera nativa:
-   - **Etapa 1**: Abre a câmera nativa do celular, lê o QR Code da prova/cartão-resposta e identifica o exame, o caderno (`A`–`D`) e o estudante.
-   - **Etapa 2**: Exibe a prova completa na tela do celular e permite acionar a câmera nativa para fotografar as marcações feitas à caneta pelo estudante.
-   - **Etapa 3**: O motor óptico em **Python + OpenCV** (com suporte a análise óptica em `<canvas>`) detecta as bolhas preenchidas (`respostasLidas`), confronta com o gabarito oficial do caderno, calcula a nota e sincroniza o resultado com o back-end.
+1. **Front-end Web Desktop & Mobile (`front-end/`)**: aplicação Next.js 16 (App Router) que entrega o painel completo para gestão pedagógica, criação de provas e impressão A4 no Desktop, e a interface dedicada de câmera nativa no Smartphone (`MobileScannerScreen`) — além do modal de leitura ao vivo e upload no Desktop (`ScannerModal`).
+2. **Back-end REST API (`back-end/`)**: servidor Node.js + Express + TypeScript em arquitetura hexagonal com repositórios Prisma ORM, autenticação Bearer JWT + `bcryptjs`, geração de PDFs A4 via PDFKit, importação/exportação Excel via ExcelJS e validação anti-fraude de QR Codes via SHA-256.
 
 ```mermaid
 flowchart LR
-    subgraph Desktop["💻 Web Desktop (Professor)"]
+    subgraph Desktop["Web Desktop (Professor)"]
+        Auth["Login / Cadastro JWT"]
         QBank["Banco de Questões"]
         Wizard["Criador de Provas & Randomizador"]
-        PrintA4["Impressão A4 & Cartão OMR"]
-        Reports["Dashboard & Relatórios"]
+        PrintA4["Impressão A4 Duplex & Cartão OMR"]
+        ScannerWeb["ScannerModal (Câmera / Upload)"]
+        Reports["Dashboard & Exportação XLSX/PDF"]
     end
 
-    subgraph Mobile["📱 Web Mobile (Smartphone)"]
-        CamQR["1. Câmera Nativa: Ler QR Code"]
-        ViewTest["2. Visualizar Prova & Caderno"]
-        CamOMR["3. Câmera Nativa: Corrigir Prova"]
+    subgraph Mobile["Web Mobile (Smartphone)"]
+        CamQR["1. Ler QR Code (Validação Estrita)"]
+        ViewTest["2. Conferir Prova & Caderno"]
+        CamOMR["3. Leitor OMR Nativo (TypeScript)"]
     end
 
-    subgraph Backend["⚙️ Back-end & Motor OMR"]
-        NextAPI["Next.js Route (/api/omr)"]
-        PyOpenCV["Python + OpenCV (omr_scanner.py)"]
-        RestAPI["API REST Node.js / Express + Prisma"]
-        DB[("Banco de Dados")]
+    subgraph Engine["Visão Computacional no Cliente"]
+        QrDec["BarcodeDetector + jsQR Multi-Região"]
+        OmrTS["lib/omrEngine.ts (Homografia + Integral Image)"]
+        FlowTS["lib/omrScannerFlow.ts (Lookup Estrito + Nota)"]
     end
 
+    subgraph Backend["Back-end API REST (Node/Express/Prisma)"]
+        RestAPI["/api/v1/* (JWT + Zod)"]
+        DB[("MySQL / TiDB Cloud")]
+    end
+
+    Auth --> RestAPI
     QBank --> Wizard --> PrintA4
     PrintA4 -. "Folha Impressa" .-> CamQR
-    CamQR --> ViewTest --> CamOMR
-    CamOMR --> NextAPI --> PyOpenCV
-    CamOMR --> RestAPI --> DB
+    PrintA4 -. "Folha Impressa" .-> ScannerWeb
+    CamQR --> QrDec --> FlowTS
+    ScannerWeb --> QrDec
+    CamOMR --> OmrTS --> FlowTS
+    ScannerWeb --> OmrTS
+    FlowTS --> RestAPI --> DB
     DB --> Reports
 ```
 
@@ -68,227 +73,294 @@ flowchart LR
 
 | Camada | Tecnologias |
 |---|---|
-| **Front-end Web & Mobile** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Lucide Icons |
-| **Leitura de QR Code & OMR** | Python 3.13, OpenCV (`opencv-python-headless`), NumPy, Pillow, `jsqr`, `BarcodeDetector API`, `qrcode` |
-| **Back-end API REST** | Node.js, Express, TypeScript, Prisma ORM, PDFKit (`C:\Users\davi3\back-end`) |
-| **Persistência & Sincronização** | PostgreSQL / MySQL (via Prisma ORM) + Cache Resiliente `localStorage` |
+| **Front-end Web & Mobile** | Next.js 16 (App Router / Turbopack), React 19, TypeScript 5, Tailwind CSS 4, Lucide Icons |
+| **Motor Óptico OMR & QR Code** | TypeScript puro (`lib/omrEngine.ts`, `lib/omrScannerFlow.ts`), `jsqr`, `BarcodeDetector API`, `qrcode` |
+| **Back-end API REST** | Node.js 20+, Express 4, TypeScript 5, Prisma ORM 6, Zod, PDFKit, ExcelJS |
+| **Segurança** | `bcryptjs` (cost 10), `jsonwebtoken` (Bearer JWT), rate limiter em janela deslizante |
+| **Banco de Dados** | MySQL / TiDB Cloud (`prisma/schema.prisma`) |
 
 ---
 
 ## 3. Estrutura do Projeto
 
 ```text
-front-end/
-├── app/                              # Rotas Next.js App Router
-│   ├── api/omr/route.ts              # Bridge Node.js -> Python OpenCV (omr_scanner.py)
-│   ├── alunos/page.tsx               # Gestão de estudantes
-│   ├── banco-questoes/page.tsx       # Banco de questões
-│   ├── cadastro/page.tsx             # Criação de conta institucional
-│   ├── configuracoes/page.tsx        # Configurações e LGPD
-│   ├── portal-aluno/page.tsx         # Portal de consulta de notas do estudante
-│   ├── provas/                       # Listagem, criação (/new) e visualização (/[id])
-│   ├── recuperar-senha/page.tsx      # Recuperação de senha em 3 etapas
-│   ├── resultados/page.tsx           # Relatórios estatísticos e matriz de acertos
-│   ├── turmas/page.tsx               # Gestão de turmas e disciplinas
-│   ├── globals.css                   # Estilos globais e regras @media print A4
-│   └── layout.tsx                    # Root Layout e provedor global
-├── back-end/                         # Motor Python OpenCV integrado
-│   ├── omr_scanner.py                # Leitor óptico de QR Code e bolhas OMR via OpenCV
-│   └── server.py                     # Servidor HTTP Python standalone opcional (porta 5000)
-├── components/
-│   ├── auth/                         # LoginScreen, RegisterScreen, PasswordRecoveryScreen
-│   ├── common/                       # A4ExamSheet, A4AnswerSheet, QrCodeGraphic, CorregeLogo
-│   ├── layout/                       # AppShell (detecção Desktop/Mobile/Print), Header, Sidebar
-│   ├── modals/                       # NewQuestionModal, NewStudentModal, ExcelImportModal
-│   └── screens/                      # Telas principais + MobileScannerScreen
-├── context/
-│   └── AppContext.tsx                # Estado global, autenticação, geração de versões e sync API
-├── docs/                             # Documentação técnica, manual do usuário e diagramas UML
-└── lib/
-    ├── api.ts                        # Cliente HTTP para a API REST e motor OMR
-    ├── qrCode.ts                     # Gerador SVG ISO/IEC 18004 para QR Codes
-    └── types.ts                      # Contratos TypeScript de todas as entidades
+Correge/
+├── back-end/
+│   ├── api/index.ts                  # Entrypoint Vercel Serverless
+│   ├── prisma/schema.prisma          # 10 modelos relacionais (MySQL / TiDB)
+│   ├── src/
+│   │   ├── config/database.ts        # Singleton Prisma Client
+│   │   ├── controllers/              # Controladores HTTP REST
+│   │   ├── middlewares/              # authMiddleware (JWT + Rate Limit), errorHandler
+│   │   ├── repositories/
+│   │   │   ├── interfaces/           # Ports (IProfessorRepository, IExamRepository, etc.)
+│   │   │   └── prisma/               # Adapters exclusivos Prisma ORM (zero mocks)
+│   │   ├── routes/                   # Rotas /api/v1/*
+│   │   ├── services/                 # Variações, PDF A4, QR SHA-256, Relatórios
+│   │   ├── app.ts                    # Aplicação Express
+│   │   └── server.ts                 # Servidor HTTP (porta padrão 3001)
+│   └── tests/                        # Suítes unitárias, integração e relatórios
+└── front-end/
+    ├── app/                          # Rotas App Router (/provas, /banco-questoes, /resultados, /print-render...)
+    │   └── api/omr/route.ts          # Endpoint auxiliar de correção determinística (sem fallback falso)
+    ├── components/
+    │   ├── auth/                     # LoginScreen, RegisterScreen, PasswordRecoveryScreen
+    │   ├── common/                   # A4ExamSheet, A4AnswerSheet, QrCodeGraphic, CorregeLogo
+    │   ├── layout/                   # AppShell (Desktop/Mobile/Print + loading de sessão), Header, Sidebar
+    │   ├── modals/                   # ScannerModal (OMR real), NewQuestionModal, NewStudentModal, ExcelImportModal
+    │   └── screens/                  # Telas principais + MobileScannerScreen (OMR real)
+    ├── context/AppContext.tsx        # Sessão JWT verificada e sincronização real com API REST
+    ├── docs/                         # Documentação técnica, manual do usuário e diagramas UML
+    ├── lib/
+    │   ├── api.ts                    # Cliente HTTP com injeção automática de Authorization Bearer
+    │   ├── omrEngine.ts              # Motor de visão computacional OMR em TypeScript puro
+    │   ├── omrScannerFlow.ts         # Validação estrita de QR, busca exata de prova e nota determinística
+    │   ├── qrCode.ts                 # Gerador SVG ISO/IEC 18004 e parser de payloads
+    │   └── types.ts                  # Contratos TypeScript de domínio
+    └── tests/                        # Testes unitários (OMR sintético, lookup estrito, impressão, relatórios)
 ```
 
 ---
 
-## 4. Arquitetura de Componentes e Fluxo de Dados
+## 4. Modelo de Dados (MER / DER)
 
-### 4.1 Gerenciamento de Estado (`AppContext.tsx`)
-O [`AppProvider`](file:///C:/Users/davi3/front-end/context/AppContext.tsx#L240) centraliza:
-- **Autenticação e Perfis (`professor` | `estudante`)**: Login institucional (`@catolicasc.org.br` para docentes e `@catolicasc.edu.br` para estudantes), cadastro de novas contas (`registerAccount`) e redefinição de senha por código de verificação (`requestPasswordReset` / `resetPassword`).
-- **Sincronização com o Back-end (`syncWithBackend`)**: Verifica a conectividade com `API_BASE_URL` (`/api/v1/health`) e carrega disciplinas, turmas, alunos, provas e correções.
-- **Geração de Cadernos (`buildExamVersions`)**: Cria automaticamente as versões `A`, `B`, `C`, `D`... embaralhando questões e alternativas e montando o mapa `answerKey: Record<number, 'A'|'B'|'C'|'D'|'E'>` específico de cada versão.
+Espelha fielmente o schema `back-end/prisma/schema.prisma`:
+
+```mermaid
+erDiagram
+    PROFESSORES ||--o{ DISCIPLINAS : "cria"
+    PROFESSORES ||--o{ TURMAS : "gerencia"
+    DISCIPLINAS ||--o{ TURMAS : "vincula"
+    DISCIPLINAS ||--o{ PROVAS : "classifica"
+    TURMAS ||--o{ ALUNOS : "possui"
+    QUESTOES ||--o{ ALTERNATIVAS : "contem"
+    PROVAS ||--o{ VERSOES_PROVA : "gera (A..Z)"
+    VERSOES_PROVA ||--o{ CORRECOES : "recebe"
+    ALUNOS ||--o{ CORRECOES : "atribuida a"
+
+    PROFESSORES {
+        uuid id PK
+        string nome_completo
+        string email UK
+        string senha_hash
+        datetime criado_em
+    }
+    CONFIGURACOES {
+        uuid id PK
+        string id_professor UK
+        string nome_instituicao
+        float nota_minima
+        string sensibilidade_omr
+        float threshold_omr
+        boolean auto_rotacionar
+    }
+    DISCIPLINAS {
+        uuid id PK
+        uuid id_professor FK
+        string codigo
+        string nome
+        string curso
+    }
+    TURMAS {
+        uuid id PK
+        uuid id_professor FK
+        uuid id_disciplina FK
+        string nome
+        string periodo_letivo
+        string status
+    }
+    ALUNOS {
+        uuid id PK
+        uuid id_turma FK
+        string nome
+        string matricula
+        string email
+    }
+    QUESTOES {
+        uuid id PK
+        string codigo
+        string tipo
+        string disciplina
+        string dificuldade
+        text enunciado
+        char alternativa_correta
+        datetime excluido_em
+    }
+    ALTERNATIVAS {
+        uuid id PK
+        uuid id_questao FK
+        char letra
+        text texto
+        boolean correta
+    }
+    PROVAS {
+        uuid id PK
+        uuid id_disciplina FK
+        string codigo
+        string titulo
+        json variacoes_json
+    }
+    VERSOES_PROVA {
+        uuid id PK
+        uuid id_prova FK
+        char letra_versao
+        json layout_questoes
+        json gabarito_oficial
+        text payload_qr_code
+    }
+    CORRECOES {
+        uuid id PK
+        uuid id_versao_prova FK
+        uuid id_aluno FK
+        float nota_total
+        json respostas_lidas
+        boolean atribuicao_automatica
+        char versao_marcada
+    }
+```
 
 ---
 
-## 5. Motor de Randomização e Geração de Cadernos (A4 / Duplex)
+## 5. Autenticação Real (JWT + bcrypt) e Conformidade LGPD
 
-### 5.1 Permutação de Questões e Alternativas
-Para cada versão além do `Caderno A` (ou para todas as versões geradas):
-1. As questões selecionadas são permutadas via algoritmo **Fisher-Yates**.
-2. O texto da alternativa originalmente correta é rastreado antes do embaralhamento das opções `(A)` a `(E)`.
-3. Após embaralhar os textos das alternativas, a nova letra onde o texto correto foi posicionado passa a ser o gabarito oficial (`correctAlternative`) daquela questão naquele caderno específico.
-
-### 5.2 Impressão Frente e Verso (Duplex), Calibração de Escala e Virtualização
-Nos componentes [`A4ExamSheet.tsx`](file:///C:/Users/davi.simplicio/front-end/components/common/A4ExamSheet.tsx) e [`A4AnswerSheet.tsx`](file:///C:/Users/davi.simplicio/front-end/components/common/A4AnswerSheet.tsx):
-- **Calibração de Escala 100%**: Regra `@page { size: A4 portrait; margin: 0; }` em [`globals.css`](file:///C:/Users/davi.simplicio/front-end/app/globals.css) que elimina cabeçalhos e rodapés automáticos do navegador, delegando o respiro estritamente para o padding interno das folhas (`print:p-[12mm]` / `print:p-[14mm]`).
-- **Virtualização do Lote**: Em tela, o preview interativo renderiza de forma leve apenas a cópia/aluno selecionado no paginador. Durante `window.print()` (gatilhos `beforeprint` / `afterprint`), o DOM expande o lote completo instantaneamente para a impressora sem travar a thread da UI.
-- **Modo Livro (Duplex Spread)**: Toggle visual de inspeção lado a lado (Frente & Verso) no [`PrintPreviewScreen.tsx`](file:///C:/Users/davi.simplicio/front-end/components/screens/PrintPreviewScreen.tsx) para validar a compensação física de páginas e destacamento do cartão-resposta.
-- **Paridade com Exportação PDF**: Rota unificada [`/print-render`](file:///C:/Users/davi.simplicio/front-end/app/print-render/page.tsx) dedicada para consumo headless por Playwright / Puppeteer (`page.pdf({ format: 'A4', printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } })`), assegurando 100% de paridade geométrica com `window.print()`.
-- **Compensação Duplex**: Quando o modo **Frente e Verso (Duplex)** está ativo, o componente `A4BlankVersoSheet` insere automaticamente uma página em branco de compensação quando o caderno de questões termina em página ímpar, garantindo que o **Cartão-Resposta (OMR)** seja sempre impresso em uma folha física separada para destacamento.
-- **Proteção Geométrica OMR**: Marcadores fiduciais com Zona de Silêncio (*Quiet Zone*) de 5mm livre de ruídos e **marcador assimétrico de orientação (Top-Left)** que permite ao script Python detectar e corrigir automaticamente folhas inseridas de ponta-cabeça (rotação em 180°).
-Nos componentes [`A4ExamSheet.tsx`](file:///C:/Users/davi3/front-end/components/common/A4ExamSheet.tsx) e [`A4AnswerSheet.tsx`](file:///C:/Users/davi3/front-end/components/common/A4AnswerSheet.tsx):
-- Cada página possui **4 marcadores fiduciais pretos** nos cantos da folha para alinhamento óptico de perspectiva.
-- Quando o modo **Frente e Verso (Duplex)** está ativo, o componente `A4BlankVersoSheet` insere automaticamente uma página em branco de compensação quando o caderno de questões termina em página ímpar, garantindo que o **Cartão-Resposta (OMR)** seja sempre impresso em uma folha física separada para destacamento.
+- **Domínio institucional obrigatório**: apenas endereços `@catolicasc.org.br` são aceitos para cadastro e login docente.
+- **Armazenamento seguro de credenciais**: senhas (mínimo 8 caracteres) são armazenadas exclusivamente como hash `bcrypt` (`$2a$` / `$2b$` / `$2y$`). Nenhuma senha em texto puro é aceita ou persistida.
+- **Sessão JWT verificada**:
+  1. `POST /api/v1/professores/login` e `POST /api/v1/professores` retornam token JWT assinado (`Authorization: Bearer <token>`).
+  2. O front-end persiste `{ token, user }` em `localStorage['correge_auth_session']` e injeta o cabeçalho `Authorization` automaticamente em todas as requisições (`lib/api.ts`).
+  3. Ao recarregar a página, o `AppProvider` valida a expiração `exp` do JWT e consulta `GET /api/v1/professores/me` (com retrocompatibilidade para `/professores/:id`), exibindo estado de carregamento no `AppShell` e invalidando sessões expiradas/revogadas.
+- **Proteção contra força bruta**: `createAuthRateLimiter` limita tentativas por par IP + e-mail em janela deslizante (HTTP 429).
+- **Alteração autenticada de senha**: `PUT /api/v1/professores/me/password` (disponível na tela `/configuracoes`) exige validação da senha atual via `bcrypt.compare`.
+- **Recuperação de senha**: `POST /api/v1/professores/forgot-password` exige configuração SMTP real (retorna HTTP 503 `SMTP_NOT_CONFIGURED` caso ausente — sem vazar códigos demonstrativos na interface); `POST /api/v1/professores/reset-password` valida token JWT assinado com `JWT_SECRET + senhaHashAtual`, garantindo invalidação automática após uso único.
+- **Anonimização LGPD**: `POST /api/v1/professores/me/anonymize` substitui nome por `"Usuário Removido"`, e-mail por `anon-<id>@removido.local`, trava a senha no banco e preserva integralmente provas, turmas e notas acadêmicas.
 
 ---
 
-## 6. Especificação do QR Code e Motor Óptico OMR (Python + OpenCV)
+## 6. Motor de Randomização e Impressão A4 Duplex
 
-### 6.1 Formatos de Payload do QR Code Suportados
-O leitor óptico é retrocompatível com todos os formatos de QR Code gerados pelo front-end e pelo back-end:
+### 6.1 Permutação de Questões e Alternativas (Cadernos A–Z)
+- Suporta de **1 até 26 cadernos** (`A` até `Z`) via *Fisher-Yates* ou *Rotação Cíclica*.
+- Rastreia o texto da alternativa correta antes da permutação para reconstruir o `answerKey` oficial de cada caderno e sincroniza automaticamente as linhas na tabela `versoes_prova`.
 
-1. **Cabeçalho da Prova ([`A4ExamSheet.tsx`](file:///C:/Users/davi3/front-end/components/common/A4ExamSheet.tsx))**:
+### 6.2 Impressão A4, Compensação Duplex e Paridade PDF
+Nos componentes `components/common/A4ExamSheet.tsx` e `components/common/A4AnswerSheet.tsx`:
+- **Calibração 100%**: regra `@page { size: A4 portrait; margin: 0; }` em `app/globals.css`.
+- **Compensação Duplex**: quando o modo Frente e Verso está ativo e o caderno de questões termina em página ímpar, `A4BlankVersoSheet` insere verso em branco automático para que o Cartão-Resposta OMR seja impresso sempre em folha destacável isolada.
+- **4 Marcadores Fiduciais**: quadrados pretos de alto contraste nos quatro cantos com marcador assimétrico no canto superior esquerdo e *Quiet Zone* de 5 mm ao redor do QR Code.
+- **Paridade de Exportação**: rota headless `/print-render` e geração binária PDFKit no back-end (`/api/v1/exams/:id/download-pdf` e `/answer-sheet/pdf`).
+
+---
+
+## 7. Especificação do QR Code e Motor Óptico OMR Nativo (TypeScript)
+
+### 7.1 Formatos de Payload QR Code Aceitos (Validação Estrita)
+A função `validateCorregeQrRaw` (`front-end/lib/omrScannerFlow.ts`) aceita exclusivamente payloads JSON institucionais do Correge e **rejeita** URLs arbitrárias, códigos Pix ou textos genéricos:
+
+1. **Cartão-Resposta OMR (`A4AnswerSheet.tsx`)**:
    ```json
    {
      "app": "CORREGE",
-     "code": "#CAT-DIR-2026.1",
+     "examId": "uuid-da-prova",
+     "code": "#DIR-4561",
+     "exam": "DIR4561",
      "ver": "A",
      "nominal": true,
-     "std": "2024.1.001",
-     "pg": 1
-   }
-   ```
-2. **Cartão-Resposta OMR ([`A4AnswerSheet.tsx`](file:///C:/Users/davi3/front-end/components/common/A4AnswerSheet.tsx))**:
-   ```json
-   {
-     "app": "CORREGE",
-     "exam": "CATDIR20261",
-     "ver": "A",
-     "nominal": true,
-     "std": "2024.1.001",
+     "std": "2026.1.001",
+     "name": "Nome do Estudante",
      "q": 10
    }
    ```
-3. **Serviço Assinado do Back-end (`QrCodeService.ts`)**:
-   ```json
-   {
-     "appId": "CORREGE-V1",
-     "vId": "uuid-versao",
-     "ver": "A",
-     "code": "#DIR-101",
-     "stdId": "uuid-aluno",
-     "reg": "2024.1.001",
-     "ts": 1710000000,
-     "chk": "a1b2c3d4"
-   }
-   ```
+2. **Cabeçalho da Prova (`A4ExamSheet.tsx` / `ExamPdfService.ts`)**: `app: "CORREGE"` ou `"CORREGE_OMR"` com `examId`/`code`/`exam` e `ver`.
+3. **Payload Assinado (`QrCodeService.ts`)**: `appId`, `vId`, `ver`, `code`, `ts` e checksum `chk` (8 primeiros hex de SHA-256 verificado em `POST /api/v1/qr-codes/validate`).
 
-### 6.2 Pipeline de Processamento Óptico ([`back-end/omr_scanner.py`](file:///C:/Users/davi3/front-end/back-end/omr_scanner.py))
-1. **Decodificação do QR Code (`detect_qr_code` & `decodeQrFromCanvas`)**:
-   - No cliente: utiliza `BarcodeDetector` nativo do sistema operacional móvel combinado com `jsQR` em múltiplos recortes (quadro completo, centro e canto superior direito da folha A4).
-   - No servidor Python: utiliza `cv2.QRCodeDetector` com equalização de histograma adaptativa (`CLAHE`) e limiarização de Otsu.
-2. **Normalização de Iluminação Imune a Sombras (`compute_ink_maps`)**:
-   - Estima o fundo branco local do papel com filtro Gaussiano largo (`81x81`) e subtrai a imagem em tons de cinza (`cv2.subtract(bg, norm_gray)`).
-   - Elimina sombras projetadas pelo celular sobre a folha sem esvaziar o interior de bolhas totalmente preenchidas à caneta.
-3. **Detecção e Reconstrução das 5 Alternativas por Questão (`find_bubble_candidates` & `extract_5_slots_from_cluster`)**:
-   - Combina detecção de contornos circulares (`cv2.findContours`) e Transformada de Hough (`cv2.HoughCircles`).
-   - Agrupa as bolhas por linha e coluna e reconstrói geometricamente as 5 posições equidistantes (`A`, `B`, `C`, `D`, `E`), mesmo que uma marcação forte à caneta ultrapasse a borda de uma das bolhas.
-4. **Cálculo de Nota (`grade_exam`)**:
-   - Confronta estritamente as respostas detectadas (`respostasLidas`) com o `officialAnswerKey` da versão lida. Questões em branco permanecem como `null` (`0` pontos).
+### 7.2 Regras Estritas de Identificação e Zero Chute (`lib/omrScannerFlow.ts`)
+1. **QR ausente ou não institucional**: o leitor retorna mensagem de erro explícita e permanece na tela de captura.
+2. **Prova não encontrada (`EXAM_NOT_FOUND`)**: a busca é feita exclusivamente por `examId` exato ou código normalizado (`#DIR-4561` == `DIR4561`) no estado local e no banco remoto (`GET /api/v1/exams`). Caso não exista, retorna erro explícito — **nunca** utiliza `selectedExam`, `activeExamId` ou `exams[0]`.
+3. **Caderno ou gabarito ausente (`VERSION_NOT_FOUND` / `ANSWER_KEY_MISSING`)**: nunca inventa gabarito sintético e nunca assume `'A'` como padrão.
+4. **Folha avulsa (não nominal)**: o aluno permanece não atribuído (`null` / pendente) até vinculação explícita pelo professor.
+
+### 7.3 Pipeline de Visão Computacional OMR (`lib/omrEngine.ts`)
+Executa 100% no cliente em TypeScript puro (sem exigir Python/OpenCV no servidor):
+
+1. **Decodificação QR e Auto-Rotação (`decodeQrFromCanvas` + `rotateCanvasQuarterTurns`)**:
+   - Usa `BarcodeDetector` nativo quando disponível + `jsQR` multi-região (quadro inteiro, quadrante superior direito, metade superior, centro e quadrante inferior esquerdo) com passada de realce de contraste.
+   - Calcula o ângulo dos cantos localizadores do QR Code e gira automaticamente fotos tiradas de lado (`90°`/`270°`) ou de ponta-cabeça (`180°`).
+2. **Retificação de Perspectiva por Fiduciais (`detectFourCornerFiducials` + `computeHomography`)**:
+   - Localiza os 4 quadrados pretos dos cantos da folha A4 e aplica homografia 3×3 (sistema linear 8×8 por eliminação de Gauss) para o espaço canônico `1000×1414` quando todos os 4 fiduciais estão visíveis, ou opera diretamente sobre a imagem proporcional em fotos aproximadas.
+3. **Máscara Adaptativa Imune a Sombras (`buildIntegralImage`)**:
+   - Imagem integral 2D em `O(W·H)` para subtração do fundo local, eliminando sombras da mão/celular sobre a folha.
+4. **Descoberta da Grade de Bolhas (`extractConnectedComponents` + `discoverBubbleColumns`)**:
+   - Exclui a área do QR Code, detecta componentes circulares (vazados ou preenchidos), filtra pelo raio modal dominante, agrupa em linhas/colunas (*column-major*, 1 a 4 colunas, 2 a 5 alternativas) e interpola lacunas pontuais.
+   - Se uma grade mínima válida não for detectada (ex.: foto borrada, em branco ou fora de foco), retorna `sheetDetected: false` com erro explicativo e **zero respostas chutadas**.
+5. **Medição de Tinta no Núcleo Interno (`measureBubbleInk`)**:
+   - Amostra a cor real do papel no anel externo `[1.24r, 1.72r]` (percentil 80) e mede a densidade de tinta estritamente no núcleo interno `<= 0.66r` (ignorando a borda impressa do círculo).
+   - Compara contra o baseline adaptativo das bolhas não marcadas da mesma linha:
+     - **0 bolhas acima do limiar**: `null` (em branco).
+     - **1 bolha clara**: letra detectada (`A`–`E`) com índice de confiança.
+     - **2+ bolhas marcadas**: `null` + sinalizada em `ambiguousQuestions` (rasura / dupla marcação).
+6. **Prévia Visual Anotada (`renderOmrVerificationDataUrl`)**: desenha círculos verdes (marcadas), âmbar (rasuras) e cinza (vazias) sobre a foto para conferência instantânea do professor.
 
 ---
 
-## 7. Contratos da API REST
+## 8. Contratos da API REST
 
-### 7.1 Endpoint Local do Motor OMR (`POST /api/omr`)
-- **Action `"scan"`**:
-  - **Request**:
-    ```json
-    {
-      "action": "scan",
-      "imageBase64": "data:image/jpeg;base64,...",
-      "totalQuestions": 4,
-      "officialAnswerKey": { "1": "B", "2": "B", "3": "B", "4": "B" },
-      "versionLetter": "A",
-      "maxScore": 10.0
-    }
-    ```
-  - **Response**:
-    ```json
-    {
-      "success": true,
-      "engine": "python-opencv-omr",
-      "qrDetected": true,
-      "versionLetter": "A",
-      "versaoMarcada": "A",
-      "markedAnswers": { "1": "B", "2": "A", "3": "B", "4": "B" },
-      "respostasLidas": { "1": "B", "2": "A", "3": "B", "4": "B" },
-      "grading": {
-        "correctCount": 3,
-        "totalQuestions": 4,
-        "totalScore": 7.5,
-        "maxScore": 10.0,
-        "details": [...]
-      }
-    }
-    ```
+Base URL padrão local: `http://localhost:3001/api/v1`  
+Base URL produção (Vercel): `https://back-end-coral-eta.vercel.app/api/v1`
 
-### 7.2 Principais Rotas do Back-end (`/api/v1`)
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/v1/health` | Status de saúde da API e conexão com banco |
-| `POST` | `/api/v1/professores` | Cadastro de novo professor |
-| `GET` / `POST` | `/api/v1/disciplinas` | Listagem e criação de disciplinas |
-| `GET` / `POST` | `/api/v1/turmas` | Listagem e criação de turmas |
-| `GET` / `POST` | `/api/v1/students` | Listagem e cadastro de alunos (`/batch` para lote) |
-| `GET` / `POST` | `/api/v1/questions` | Banco de questões |
-| `GET` | `/api/v1/exams` | Listagem de provas e suas versões (`versions`) |
-| `GET` | `/api/v1/exams/:id/layout?versionLetter=A` | Retorna o layout paginado e `answerKey` do caderno |
-| `POST` | `/api/v1/qr-codes/validate` | Valida a integridade criptográfica (`chk`) do QR Code |
-| `GET` / `POST` | `/api/v1/correcoes` | Lista ou persiste uma correção realizada (`respostasLidas`, `notaTotal`) |
-| `PATCH` | `/api/v1/correcoes/:id/assign-student` | Vincula manualmente um aluno a uma folha avulsa corrigida |
+| `GET` | `/api/v1/health` | Saúde da API e `dataSource: "database"` |
+| `POST` | `/api/v1/professores/login` | Login docente (retorna `{ token, professor }`) |
+| `POST` | `/api/v1/professores` | Cadastro docente com bcrypt + JWT |
+| `GET` | `/api/v1/professores/me` | Perfil autenticado via Bearer JWT |
+| `PUT` | `/api/v1/professores/me/password` | Alteração autenticada de senha |
+| `POST` | `/api/v1/professores/me/anonymize` | Anonimização LGPD do docente |
+| `GET` / `POST` / `DELETE` | `/api/v1/disciplinas` | Gestão de disciplinas |
+| `GET` / `POST` / `PUT` / `DELETE` | `/api/v1/turmas` | Gestão de turmas letivas |
+| `GET` / `POST` / `PUT` / `DELETE` | `/api/v1/students` | Alunos (`/batch`, `/import`, `/import-template`) |
+| `GET` / `POST` / `PUT` / `DELETE` | `/api/v1/questions` | Banco de questões (soft-delete) |
+| `GET` / `POST` / `PUT` / `DELETE` | `/api/v1/exams` | Provas, versões e variações |
+| `GET` | `/api/v1/exams/:id/layout?versionLetter=A` | Layout paginado e gabarito oficial do caderno |
+| `GET` | `/api/v1/exams/:id/download-pdf` | PDF A4 do caderno de prova + cartão-resposta |
+| `POST` | `/api/v1/qr-codes/validate` | Valida integridade SHA-256 (`chk`) do QR Code |
+| `GET` / `POST` / `PATCH` | `/api/v1/correcoes` | Registro de correções e atribuição manual (`/:id/assign-student`) |
+| `GET` | `/api/v1/exams/:id/results` | Relatório consolidado + `/export.xlsx` e `/export.pdf` |
+| `GET` / `PUT` / `POST` | `/api/v1/settings` | Configurações institucionais e OMR (`/reset`, `/anonymize`) |
 
 ---
 
-## 8. Detecção Mobile vs. Modo de Impressão A4
+## 9. Detecção Mobile vs. Modo de Impressão A4
 
-O componente [`AppShell.tsx`](file:///C:/Users/davi3/front-end/components/layout/AppShell.tsx) gerencia a exibição responsiva:
-- Em **Smartphones** (User-Agent móvel ou largura `< 768px`), renderiza exclusivamente o [`MobileScannerScreen.tsx`](file:///C:/Users/davi3/front-end/components/screens/MobileScannerScreen.tsx).
-- Durante a **Impressão (`window.print()` / `@media print`)**, o navegador reduz a largura da página para o tamanho do papel A4 (`< 768px`). Para impedir que a interface mobile apareça na folha impressa:
-  1. [`AppShell.tsx`](file:///C:/Users/davi3/front-end/components/layout/AppShell.tsx) escuta os eventos `beforeprint` e `afterprint` (`matchMedia('print')`) e bloqueia a troca para o layout mobile.
-  2. [`app/globals.css`](file:///C:/Users/davi3/front-end/app/globals.css) aplica `.mobile-scanner-container { display: none !important; }` e `.desktop-print-container { display: block !important; }` dentro de `@media print`.
-
----
-
-## 9. Segurança e Conformidade com a LGPD
-
-- **Domínios Institucionais**: Validação estrita de e-mails `@catolicasc.org.br` (docentes) e `@catolicasc.edu.br` (estudantes).
-- **Direito ao Esquecimento / Anonimização (LGPD)**: Na tela de Configurações (`/configuracoes`), o usuário pode acionar a **Anonimização de Dados Pessoais**, que substitui o nome completo e e-mail por identificadores anônimos preservando a integridade estatística das avaliações e notas acadêmicas.
+O componente `components/layout/AppShell.tsx`:
+- Exibe indicador de carregamento enquanto o JWT da sessão é verificado no carregamento inicial.
+- Em smartphones (`User-Agent` móvel ou viewport `< 768px` em tela móvel), renderiza o leitor móvel `MobileScannerScreen.tsx`.
+- Durante a impressão (`beforeprint`, `afterprint`, `matchMedia('print')` e `@media print` em `app/globals.css`), força `.mobile-scanner-container { display: none !important; }` e `.desktop-print-container { display: flex !important; }`, garantindo impressão A4 perfeita sem interferência da UI mobile.
 
 ---
 
-## 10. Instalação e Execução do Ambiente
+## 10. Instalação, Testes e Execução
 
-### 10.1 Pré-requisitos
-- **Node.js** 18+ e `npm`
-- **Python** 3.10+ com pacotes `opencv-python-headless`, `numpy` e `pillow`:
-  ```bash
-  pip install opencv-python-headless numpy pillow
-  ```
-
-### 10.2 Executando o Front-end + Motor OMR
+### Back-end (porta 3001)
 ```bash
-# 1. Instalar dependências Node.js
+cd back-end
 npm install
-
-# 2. Iniciar o servidor de desenvolvimento Next.js (porta 3000)
+npx prisma generate
+npm run build
+npm test
+npm run test:results
 npm run dev
 ```
 
-### 10.3 Variáveis de Ambiente (`.env.local`)
+### Front-end (porta 3000)
+```bash
+cd front-end
+npm install
+npm test
+npm run build
+npm run dev
+```
+
+### Variáveis de Ambiente do Front-end (`front-end/.env.local`)
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:3333/api/v1
-PYTHON_PATH=C:\Users\davi3\AppData\Local\Programs\Python\Python313\python.exe
+NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
 ```

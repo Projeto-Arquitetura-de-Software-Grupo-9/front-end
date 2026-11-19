@@ -497,8 +497,9 @@ export const PrintPreviewScreen: React.FC = () => {
       return (
         <A4AnswerSheet
           key={`${keyPrefix}-ans-${sheet.pageNumber}`}
+          examId={exam.id}
           examTitle={exam.title}
-          examCode={exam.code || '#CAT-DIR-2026.1'}
+          examCode={exam.code || '#EXAM'}
           discipline={exam.discipline}
           classGroup={exam.classGroup}
           institution={exam.institution}
@@ -641,10 +642,10 @@ export const PrintPreviewScreen: React.FC = () => {
             type="button"
             onClick={() => setIsScannerModalOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
-            title="Abrir Simulação de Câmera e Leitor QR / OMR"
+            title="Abrir Câmera e Leitor Óptico QR / OMR"
           >
             <QrCode className="w-3.5 h-3.5 text-[#9E0B1A]" />
-            <span className="hidden sm:inline">Simular Leitor QR</span>
+            <span className="hidden sm:inline">Leitor QR / Gabarito</span>
           </button>
 
           <button

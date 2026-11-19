@@ -1,14 +1,14 @@
 <div align="center">
 
-# 🚀 Sistema de Correção Automática de Provas (SGP / Correge)
+# Sistema de Geração e Correção Automática de Provas (SGP / Correge)
 
-**Sistema web e mobile para geração, randomização e correção automatizada de avaliações via leitura de QR Code e gabarito óptico (OMR).**
+**Plataforma web e mobile para elaboração, randomização (Cadernos A–Z), impressão A4 Duplex e correção óptica (OMR) via câmera e QR Code.**
 
 ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![Python](https://img.shields.io/badge/Python_OpenCV-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
-![Express](https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma_ORM-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
 
 ![Status](https://img.shields.io/badge/status-ativo-10B981?style=flat-square)
 ![Entrega](https://img.shields.io/badge/Católica_SC-SGP_Correge-9E0B1A?style=flat-square)
@@ -17,21 +17,21 @@
 
 ---
 
-## 📚 Documentação Completa e Manuais
+## Documentação Completa e Manuais
 
-- 📘 **[Documentação Técnica Completa (`docs/DOCUMENTACAO_TECNICA.md`)](./docs/DOCUMENTACAO_TECNICA.md)** — Arquitetura Web/Mobile, motor de randomização Fisher-Yates, especificação dos payloads de QR Code, pipeline óptico Python + OpenCV (`omr_scanner.py`) e contratos da API REST.
-- 📖 **[Manual do Usuário Passo a Passo (`docs/MANUAL_DO_USUARIO.md`)](./docs/MANUAL_DO_USUARIO.md)** — Guia completo para Professores, Estudantes e uso do Leitor/Corretor de Provas pela câmera nativa do celular.
-- 📐 **[Diagrama de Classes UML (`docs/diagramas/classes.md`)](./docs/diagramas/classes.md)**
-- 🔄 **Diagramas de Sequência**:
+- **[Documentação Técnica Completa (`docs/DOCUMENTACAO_TECNICA.md`)](./docs/DOCUMENTACAO_TECNICA.md)** — Arquitetura Web/Mobile, autenticação JWT + bcrypt, motor de randomização Fisher-Yates, especificação dos payloads de QR Code, motor óptico nativo em TypeScript (`lib/omrEngine.ts`), validação estrita (`lib/omrScannerFlow.ts`), MER/DER e contratos da API REST.
+- **[Manual do Usuário Passo a Passo (`docs/MANUAL_DO_USUARIO.md`)](./docs/MANUAL_DO_USUARIO.md)** — Guia operacional para Docentes no Desktop e no Leitor Óptico OMR pelo Smartphone.
+- **[Diagrama de Classes UML (`docs/diagramas/classes.md`)](./docs/diagramas/classes.md)**
+- **Diagramas de Sequência**:
   - [Gestão e Importação de Alunos](./docs/diagramas/sequencia/alunos.md)
-  - [Resultados e Correções OMR](./docs/diagramas/sequencia/resultados.md)
-  - [Configurações e LGPD](./docs/diagramas/sequencia/configuracoes.md)
+  - [Resultados, Exportação e Correções OMR](./docs/diagramas/sequencia/resultados.md)
+  - [Configurações, Segurança e LGPD](./docs/diagramas/sequencia/configuracoes.md)
 
 ---
 
-## 👥 Equipe (Identificação dos Integrantes)
+## Equipe (Integrantes)
 
-| Nome completo | Papel / principais frentes no projeto |
+| Nome completo | Papel no projeto |
 |---|---|
 | BRUNO SCHIMIGUEL | Desenvolvedor |
 | DAVI SIMPLÍCIO | Desenvolvedor |
@@ -41,79 +41,53 @@
 
 ---
 
-## 📑 Sumário
-
-- [1. Objetivo](#1-objetivo)
-- [2. Escopo Definido](#2-escopo-definido)
-- [3. Requisitos Principais](#3-requisitos-principais)
-  - [3.1 Funcionais (RF)](#31-funcionais-rf)
-  - [3.2 Não Funcionais (RNF)](#32-não-funcionais-rnf)
-- [4. Stack Tecnológica](#4-stack-tecnológica)
-- [5. Como Executar o Projeto](#5-como-executar-o-projeto)
-- [6. Link do Projeto Hospedado](#6-link-do-projeto-hospedado)
-
----
-
 ## 1. Objetivo
 
-O objetivo central do projeto é criar e corrigir as provas do jeito mais fácil, rápido e automatizado possível. O sistema visa resolver o problema de professores que lidam com um grande volume de provas (chegando a até 400 por semana) e precisam otimizar o tempo gasto em correções manuais. Com a automatização, espera-se agilizar a devolução das avaliações para os alunos e facilitar a análise pedagógica através de estatísticas detalhadas.
+Automatizar todo o ciclo de avaliação acadêmica para docentes que corrigem dezenas ou centenas de provas por semana: cadastro de questões, geração de múltiplos cadernos embaralhados, impressão A4 otimizada com cartão-resposta OMR, leitura real de QR Code e bolhas pela câmera (ou upload de foto) e geração de relatórios estatísticos detalhados em PDF e Excel.
 
-## 2. Escopo Definido
+## 2. Escopo Implementado (100% Dados Reais — Sem Mocks)
 
-O projeto abrange o desenvolvimento de uma solução tecnológica completa para gestão de provas, englobando as seguintes etapas:
-* **Autenticação Institucional e LGPD:** Login por perfil (Docente `@catolicasc.org.br` e Estudante `@catolicasc.edu.br`), tela de criação de conta (`/cadastro`), recuperação de senha em 3 etapas (`/recuperar-senha`) e anonimização LGPD.
-* **Criação e Gestão de Avaliações:** Cadastro de questões objetivas e discursivas, definição de alternativas e resposta correta.
-* **Randomização (Cadernos A, B, C, D):** Criação de provas individualizadas para turmas grandes, embaralhando automaticamente tanto a ordem das questões quanto a posição das alternativas.
-* **Geração de Cadernos e Gabaritos A4 (Duplex):** Exportação e impressão da prova formatada em A4 (com compensação automática de verso em branco para impressão frente e verso) e folha de respostas OMR separada contendo QR Code identificador e marcadores fiduciais.
-* **Leitura e Correção Automatizada via Smartphone:** Quando aberto no celular, exibe interface dedicada que aciona a **câmera nativa do smartphone** para escanear o QR Code da prova, exibir as questões do caderno correspondente e corrigir automaticamente as respostas marcadas via **Python + OpenCV**.
-* **Análise de Dados e Relatórios:** Matriz de acertos/erros por questão e aluno, análise de distratores e exportação de notas.
-* **Gestão de Alunos e Turmas:** Importação de alunos em lote via Excel/CSV e sorteio automático de cadernos.
+- **Autenticação Docente Real (JWT + bcrypt + LGPD):** Cadastro e login exclusivos para docentes (`@catolicasc.org.br`) validados diretamente na API REST e banco MySQL/TiDB, persistência e verificação de sessão no recarregamento (`/professores/me`), alteração autenticada de senha e anonimização irreversível conforme a LGPD.
+- **Banco de Questões (Objetivas e Discursivas):** Cadastro, edição, filtros por disciplina/dificuldade/etiquetas e exclusão lógica (*soft-delete*).
+- **Randomização (Cadernos A–Z):** Embaralhamento via *Fisher-Yates* ou *Rotação Cíclica* para ordem de questões e alternativas, preservando o gabarito individualizado de cada caderno.
+- **Impressão A4 Duplex & Cartão-Resposta OMR:** Diagramação A4 com compensação automática de verso em branco, 4 marcadores fiduciais (incluindo marcador assimétrico de orientação) e QR Code institucional com `examId`, código da prova, versão do caderno e identificação nominal ou avulsa.
+- **Leitura Óptica Real (OMR) e Validação Estrita de Prova:**
+  - Motor de visão computacional nativo em **TypeScript puro (`lib/omrEngine.ts`)** que roda diretamente no navegador (Desktop e Mobile, inclusive offline e na Vercel, sem depender de Python instalado).
+  - **Validação estrita:** se a foto não tiver QR Code, se o QR não pertencer ao Correge ou se a prova/caderno não existir no banco de dados, o leitor retorna erro explícito e **nunca** assume outra prova ou gabarito alternativo.
+  - **Zero chutes:** questões sem marcação permanecem `em branco (null)`, duplas marcações/rasuras são sinalizadas em âmbar para revisão docente e imagens sem grade de bolhas legível são rejeitadas com erro claro.
+  - Prévia visual anotada sobre a foto capturada (verde = marcada, âmbar = rasura/dupla marcação).
+- **Relatórios e Exportações:** Média, mediana, desvio padrão, taxa de aprovação, análise de distratores por questão, atribuição manual de folhas avulsas e exportação `.xlsx` e `.pdf`.
+- **Gestão de Disciplinas, Turmas e Alunos:** Cadastro manual e importação em lote via planilha Excel/CSV com modelo oficial do back-end.
 
-## 3. Requisitos Principais
+## 3. Stack Tecnológica
 
-### 3.1 Funcionais (RF)
+- **Front-end Web & Mobile**: Next.js 16 (App Router / Turbopack), React 19, TypeScript 5, Tailwind CSS 4, Lucide Icons.
+- **Leitor de QR Code & Motor Óptico OMR**: Motor nativo TypeScript (`lib/omrEngine.ts`: integral image imune a sombras, detecção de 4 fiduciais + homografia 3×3, detecção de bolhas circulares e contraste de núcleo interno), `jsqr`, `BarcodeDetector API`, `qrcode`.
+- **Back-end API REST**: Node.js, Express, TypeScript, Prisma ORM (MySQL / TiDB Cloud), bcryptjs, JWT, PDFKit, ExcelJS.
 
-| Código | Requisito |
-|---|---|
-| RF01 | O sistema deve permitir a criação de um banco de questões contendo perguntas, opções de alternativas e a identificação da alternativa correta. |
-| RF02 | O sistema deve embaralhar automaticamente a ordem das questões e alternativas para gerar provas únicas para cada aluno da turma. |
-| RF03 | O sistema deve permitir a importação de uma lista de alunos para organizar a sala e gerar o caderno de provas com o nome correspondente. |
-| RF04 | O sistema deve gerar o caderno de questões e uma folha de respostas separada contendo um QR Code para leitura. |
-| RF05 | O sistema deve fornecer ferramentas para customizar o layout do caderno de provas e impressão frente e verso (duplex). |
-| RF06 | O sistema deve ler o QR Code pela câmera do celular, exibir a prova correspondente e escanear as respostas assinaladas no gabarito, calculando a nota automaticamente. |
-| RF07 | O sistema deve gerar estatísticas das respostas, detalhando qual alternativa foi a mais marcada em cada questão. |
-| RF08 | O sistema deve permitir exportar e sincronizar as correções e relatórios de notas com o back-end acadêmico. |
+## 4. Como Executar o Projeto
 
-### 3.2 Não Funcionais (RNF)
-
-| Código | Requisito |
-|---|---|
-| RNF01 | A interface de correção de provas via smartphone deve ser ágil, abrindo diretamente a câmera nativa para leitura de QR Code e correção óptica. |
-| RNF02 | O design do software deve ser minimalista, lógico e amigável para o professor, separando automaticamente a visão Desktop/Impressão A4 da visão Mobile. |
-
-## 4. Stack Tecnológica
-
-- **Front-end Web & Mobile**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4.
-- **Motor Óptico OMR & QR Code**: Python 3.13 (`opencv-python-headless`, `numpy`, `pillow`), `jsqr`, `qrcode`.
-- **Back-end API REST**: Node.js, Express, TypeScript, Prisma ORM, PDFKit.
-
-## 5. Como Executar o Projeto
-
-1. Clone o repositório e acesse a pasta:
-   ```bash
-   git clone <link-do-repositório>
-   cd front-end
-   ```
-2. Instale as dependências do Node.js e do motor Python OpenCV:
+1. Instale as dependências:
    ```bash
    npm install
-   pip install opencv-python-headless numpy pillow
    ```
-3. Inicie o servidor de desenvolvimento:
+2. Configure `.env.local` apontando para o back-end:
+   ```env
+   NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
+   ```
+   *(Em produção ou sem back-end local, o padrão aponta para `https://back-end-coral-eta.vercel.app/api/v1`.)*
+3. Execute os testes automatizados e o build de validação:
+   ```bash
+   npm test
+   npm run build
+   ```
+4. Inicie o servidor de desenvolvimento:
    ```bash
    npm run dev
    ```
-4. Acesse `http://localhost:3000` no computador (painel completo e impressão A4) ou pelo navegador do smartphone (leitor de QR Code e corretor óptico por câmera).
+5. Acesse `http://localhost:3000` no computador (painel docente completo e impressão A4) ou no smartphone (leitor óptico móvel pela câmera nativa).
 
-## 6. Link do Projeto Hospedado
-https://front-end-lemon-gamma.vercel.app/
+## 5. Links do Projeto Hospedado
+
+- **Front-end (Vercel):** https://front-end-lemon-gamma.vercel.app/
+- **Back-end API (Vercel):** https://back-end-coral-eta.vercel.app/api/v1/health

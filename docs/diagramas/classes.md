@@ -1,13 +1,8 @@
-# 📐 Diagrama de Classes — SGP / Correge
+# Diagrama de Classes UML — SGP / Correge
+
+Modelagem das entidades de domínio persistidas em MySQL/TiDB (`back-end/prisma/schema.prisma`) e do motor óptico OMR (`front-end/lib/omrEngine.ts` + `lib/omrScannerFlow.ts`).
 
 ```mermaid
----
-config:
-  theme: redux
-  class:
-    nodeSpacing: 25
-    rankSpacing: 35
----
 classDiagram
       direction LR
 
@@ -16,7 +11,20 @@ classDiagram
           +String nomeCompleto
           +String email
           +String senhaHash
-          +autenticar(email, senha) Boolean
+          +DateTime criadoEm
+          +autenticar(email, senha) JwtToken
+          +alterarSenha(senhaAtual, novaSenha) void
+          +anonimizarLGPD() void
+      }
+      class Configuracao {
+          +UUID id
+          +UUID idProfessor
+          +String nomeInstituicao
+          +String departamento
+          +Float notaMinima
+          +String sensibilidadeOmr
+          +Float thresholdOmr
+          +Boolean autoRotacionar
       }
       class Disciplina {
           +UUID id
@@ -35,28 +43,34 @@ classDiagram
       }
       class Prova {
           +UUID id
-          +UUID idProfessor
-          +UUID idTurma
           +UUID idDisciplina
           +String codigo
           +String titulo
-          +Date dataAplicacao
-          +String status
-          +Boolean embaralharQuestoes
-          +Boolean embaralharAlternativas
-          +Int numeroVersoes
-          +Decimal notaMaxima
-          +gerarVersoes() List~VersaoProva~
+          +String dataAplicacao
+          +String duracao
+          +JSON instrucoes
+          +Boolean incluirBoxNota
+          +JSON variacoesJson
+          +gerarVersoes(n) List~VersaoProva~
       }
       class Questao {
           +UUID id
-          +UUID idProfessor
-          +UUID idDisciplina
+          +String idProfessor
           +String codigo
           +String tipo
+          +String disciplina
           +String dificuldade
           +String enunciado
-          +Decimal pontuacao
+          +Char alternativaCorreta
+          +Float pontuacao
+          +DateTime excluidoEm
+      }
+      class Alternativa {
+          +UUID id
+          +UUID idQuestao
+          +Char letra
+          +String texto
+          +Boolean correta
       }
       class Aluno {
           +UUID id
@@ -65,6 +79,8 @@ classDiagram
           +String matricula
           +String email
           +String curso
+          +Int provasRealizadas
+          +Float mediaGeral
       }
       class VersaoProva {
           +UUID id
@@ -74,12 +90,14 @@ classDiagram
           +JSON gabaritoOficial
           +String payloadQrCode
       }
-      class Alternativa {
+      class QrCode {
           +UUID id
-          +UUID idQuestao
-          +Char letra
-          +String texto
-          +Boolean correta
+          +String idAplicacao
+          +String idVersaoProva
+          +Char letraVersao
+          +String codigoProva
+          +String checksumSha256
+          +validarIntegridade(payload) Boolean
       }
       class Correcao {
           +UUID id
@@ -87,35 +105,37 @@ classDiagram
           +UUID idAluno
           +String nomeManuscrito
           +String matriculaManuscrita
-          +Decimal notaTotal
+          +Float notaTotal
           +JSON respostasLidas
           +Boolean atribuicaoAutomatica
+          +Char versaoMarcada
           +DateTime dataConfirmacao
-          +calcularNota(gabaritoOficial) Decimal
           +vincularAlunoManualmente(idAluno) void
       }
+      class MotorOMR {
+          +decodeQrFromCanvas(canvas) DecodedQrResult
+          +validateCorregeQrRaw(raw) StrictQrValidation
+          +resolveExamStrictly(qr, exams) Exam
+          +analyzeAnswerSheetPixels(rgba, w, h) OmrAnalysisResult
+          +gradeExamDeterministically(respostas, gabarito) GradeOutput
+      }
 
-      %% Professor -> Entidades Principais
+      Professor "1" --> "0..1" Configuracao : configura
       Professor "1" --> "0..*" Disciplina : cria
       Professor "1" --> "0..*" Turma : gerencia
-      Professor "1" --> "0..*" Prova : cria
       Professor "1" --> "0..*" Questao : cadastra
 
-      %% Disciplina -> Turma, Prova, Questao
       Disciplina "1" --> "0..*" Turma : vincula
       Disciplina "1" --> "0..*" Prova : classifica
-      Disciplina "1" --> "0..*" Questao : categoriza
 
-      %% Ligações verticais na Coluna 2
-      Turma "1" --> "0..*" Prova : recebe
-      Prova "0..*" o-- "1..20" Questao : seleciona
-
-      %% Coluna 2 -> Coluna 3
       Turma "1" --> "0..*" Aluno : possui
-      Prova "1" *-- "1..4" VersaoProva : gera (A-D)
-      Questao "1" *-- "2..5" Alternativa : contém
+      Prova "0..*" o-- "1..20" Questao : seleciona
+      Prova "1" *-- "1..26" VersaoProva : gera (A-Z)
+      Questao "1" *-- "2..5" Alternativa : contem
 
-      %% Coluna 3 -> Coluna 4
-      VersaoProva "1" --> "0..*" Correcao : corrige (OMR)
-      Aluno "0..1" <-- "0..*" Correcao : atribuída a
+      VersaoProva "1" --> "0..*" QrCode : identifica
+      VersaoProva "1" --> "0..*" Correcao : corrige
+      Aluno "0..1" <-- "0..*" Correcao : atribuida a
+      MotorOMR ..> VersaoProva : valida gabarito
+      MotorOMR ..> Correcao : produz leitura
 ```

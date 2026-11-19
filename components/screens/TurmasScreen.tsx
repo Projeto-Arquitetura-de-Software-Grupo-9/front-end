@@ -89,13 +89,9 @@ export const TurmasScreen: React.FC = () => {
     });
   }, [students, activeClass]);
 
-  // Fallback: if class has 0 students due to mock naming mismatch, show all students so table is never artificially blocked
-  const displayableStudents =
-    classStudents.length > 0 ? classStudents : students;
-
-  // Filtered students by search term
+  // Filtered students by search term (strictly scoped to the active class)
   const filteredStudents = useMemo(() => {
-    return displayableStudents.filter((std) => {
+    return classStudents.filter((std) => {
       const q = searchTerm.trim().toLowerCase();
       if (!q) return true;
       return (
@@ -105,7 +101,7 @@ export const TurmasScreen: React.FC = () => {
         (std.course || '').toLowerCase().includes(q)
       );
     });
-  }, [displayableStudents, searchTerm]);
+  }, [classStudents, searchTerm]);
 
   // Checkbox selection
   const handleSelectAll = (checked: boolean) => {
@@ -173,11 +169,7 @@ export const TurmasScreen: React.FC = () => {
 
   const downloadSampleCsv = () => {
     const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      'Nome,Matrícula,Email,Curso\n' +
-      'Ana Clara Souza,20261011,ana.souza@catolicasc.edu.br,Direito\n' +
-      'Carlos Eduardo Mendes,20261012,carlos.mendes@catolicasc.edu.br,Direito\n' +
-      'Juliana Rocha,20261013,juliana.rocha@catolicasc.edu.br,Direito\n';
+      'data:text/csv;charset=utf-8,' + 'Nome,Matrícula,Email,Curso\n';
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -188,7 +180,7 @@ export const TurmasScreen: React.FC = () => {
     addToast({
       type: 'info',
       title: 'Download Concluído',
-      message: 'Planilha modelo CSV baixada com sucesso.',
+      message: 'Planilha modelo CSV (cabeçalhos) baixada com sucesso.',
     });
   };
 
@@ -298,7 +290,7 @@ export const TurmasScreen: React.FC = () => {
                     </span>
                     <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
                       <Users className="w-3 h-3 text-slate-400" />
-                      {cls.studentCount || displayableStudents.length} alunos
+                      {cls.studentCount ?? (isSelected ? classStudents.length : 0)} alunos
                     </span>
                   </div>
 

@@ -187,20 +187,6 @@ export const AnswerSheetScreen: React.FC = () => {
     });
   };
 
-  const handleSimulateFill = () => {
-    const simulated: Record<number, string> = {};
-    activeQuestionsList.forEach((q) => {
-      const lts = q.letters;
-      simulated[q.orderIndex] = lts[Math.floor(Math.random() * lts.length)];
-    });
-    setMarkedAnswers(simulated);
-    addToast({
-      type: 'info',
-      title: 'Marcações de Teste Preenchidas',
-      message: `${totalQuestions} questões marcadas para simular leitura óptica.`,
-    });
-  };
-
   const handleClear = () => {
     setMarkedAnswers({});
     addToast({
@@ -322,7 +308,7 @@ export const AnswerSheetScreen: React.FC = () => {
             title="Abrir Câmera e Leitor QR / OMR"
           >
             <Camera className="w-3.5 h-3.5 text-[#9E0B1A]" />
-            <span className="hidden sm:inline">Simular Leitor QR</span>
+            <span className="hidden sm:inline">Leitor QR / Gabarito</span>
           </button>
 
           <button
@@ -467,22 +453,13 @@ export const AnswerSheetScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* 4. Simulação de Preenchimento OMR */}
-            <div>
-              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Simulação OMR
-              </span>
-              <div className="space-y-2 bg-slate-50/70 p-3.5 border border-slate-200/90 rounded-2xl text-xs">
-                <button
-                  type="button"
-                  onClick={handleSimulateFill}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 font-semibold transition cursor-pointer shadow-2xs"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Simular Bolhas Marcadas</span>
-                </button>
-
-                {Object.keys(markedAnswers).length > 0 && (
+            {/* 4. Limpeza de Marcações em Tela */}
+            {Object.keys(markedAnswers).length > 0 && (
+              <div>
+                <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Marcações em Tela
+                </span>
+                <div className="space-y-2 bg-slate-50/70 p-3.5 border border-slate-200/90 rounded-2xl text-xs">
                   <button
                     type="button"
                     onClick={handleClear}
@@ -491,9 +468,9 @@ export const AnswerSheetScreen: React.FC = () => {
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Limpar Bolhas ({Object.keys(markedAnswers).length})</span>
                   </button>
-                )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* 5. Zoom & Escala */}
             <div>
@@ -624,6 +601,7 @@ export const AnswerSheetScreen: React.FC = () => {
                   className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full"
                 >
                   <A4AnswerSheet
+                    examId={selectedExam.id}
                     examTitle={selectedExam.title}
                     examCode={selectedExam.code}
                     discipline={selectedExam.discipline}
@@ -676,6 +654,7 @@ export const AnswerSheetScreen: React.FC = () => {
         ) : (
           <div className="w-full flex flex-col items-center gap-6 print:gap-0 print:w-full">
             <A4AnswerSheet
+              examId={selectedExam.id}
               examTitle={selectedExam.title}
               examCode={selectedExam.code}
               discipline={selectedExam.discipline}

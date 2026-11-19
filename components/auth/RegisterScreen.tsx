@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
+  Loader2,
 } from 'lucide-react';
 
 const COURSES_LIST = [
@@ -45,6 +46,7 @@ export const RegisterScreen: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const passwordChecks = useMemo(() => {
     const minLength = password.length >= 8;
@@ -62,11 +64,11 @@ export const RegisterScreen: React.FC = () => {
     }
     setAuthView('login');
     if (pathname === '/cadastro') {
-      router.push('/provas');
+      router.push('/login');
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -95,30 +97,33 @@ export const RegisterScreen: React.FC = () => {
       return;
     }
 
-    const res = registerAccount({
-      fullName,
-      email,
-      password,
-      department: `Curso de ${department}`,
-      role: 'professor',
-      autoLogin: true,
-    });
+    setIsSubmitting(true);
+    try {
+      const res = await registerAccount({
+        fullName,
+        email,
+        password,
+        department: `Curso de ${department}`,
+        role: 'professor',
+        autoLogin: true,
+      });
 
-    if (!res.success && res.error) {
-      setErrorMsg(res.error);
+      if (!res.success && res.error) {
+        setErrorMsg(res.error);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 text-slate-100">
-      {/* Decorative background glow */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#9E0B1A]/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#9E0B1A]/20 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-md relative z-10 space-y-6">
-        {/* Institutional Branding */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/15 text-xs font-semibold text-slate-200">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
             Católica de Santa Catarina • SGP v1.10
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-2">
@@ -129,9 +134,7 @@ export const RegisterScreen: React.FC = () => {
           </p>
         </div>
 
-        {/* Card */}
         <div className="bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-5 border border-slate-100">
-          {/* Card Header */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-red-50 text-[#9E0B1A] flex items-center justify-center">
@@ -153,16 +156,14 @@ export const RegisterScreen: React.FC = () => {
             </button>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             {errorMsg && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl flex items-center gap-2 text-xs">
-                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+              <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl flex items-start gap-2 text-xs">
+                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
-            {/* Full Name */}
             <div>
               <label className="block font-bold text-slate-700 mb-1">
                 Nome Completo do Docente *
@@ -172,29 +173,28 @@ export const RegisterScreen: React.FC = () => {
                 <input
                   type="text"
                   required
+                  disabled={isSubmitting}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ex: Prof. Dr. Carlos Eduardo Mendes"
+                  placeholder="Digite seu nome completo"
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
                 />
               </div>
             </div>
 
-            {/* Institutional Email */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block font-bold text-slate-700">
                   E-mail Institucional *
                 </label>
-                <span className="text-[10px] font-mono text-slate-400">
-                  @catolicasc.org.br
-                </span>
+                <span className="text-[10px] font-mono text-slate-400">@catolicasc.org.br</span>
               </div>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   required
+                  disabled={isSubmitting}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="nome.sobrenome@catolicasc.org.br"
@@ -203,7 +203,6 @@ export const RegisterScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Course / Department */}
             <div>
               <label className="block font-bold text-slate-700 mb-1">
                 Curso / Departamento Principal
@@ -212,6 +211,7 @@ export const RegisterScreen: React.FC = () => {
                 <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <select
                   value={department}
+                  disabled={isSubmitting}
                   onChange={(e) => setDepartment(e.target.value)}
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#9E0B1A]"
                 >
@@ -224,12 +224,9 @@ export const RegisterScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Password */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block font-bold text-slate-700">
-                  Senha de Acesso *
-                </label>
+                <label className="block font-bold text-slate-700">Senha de Acesso *</label>
                 <span className="text-[10px] text-slate-400">mín. 8 caracteres</span>
               </div>
               <div className="relative">
@@ -237,6 +234,7 @@ export const RegisterScreen: React.FC = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  disabled={isSubmitting}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Crie uma senha segura"
@@ -252,7 +250,6 @@ export const RegisterScreen: React.FC = () => {
                 </button>
               </div>
 
-              {/* Password Strength Meter */}
               {password.length > 0 && (
                 <div className="mt-2 space-y-1.5">
                   <div className="flex gap-1 h-1">
@@ -275,10 +272,18 @@ export const RegisterScreen: React.FC = () => {
                     <span className={passwordChecks.minLength ? 'text-emerald-700 font-semibold' : ''}>
                       ✓ 8+ caracteres
                     </span>
-                    <span className={passwordChecks.hasUpperAndLower ? 'text-emerald-700 font-semibold' : ''}>
+                    <span
+                      className={
+                        passwordChecks.hasUpperAndLower ? 'text-emerald-700 font-semibold' : ''
+                      }
+                    >
                       ✓ Maiúsc./minúsc.
                     </span>
-                    <span className={passwordChecks.hasNumberOrSymbol ? 'text-emerald-700 font-semibold' : ''}>
+                    <span
+                      className={
+                        passwordChecks.hasNumberOrSymbol ? 'text-emerald-700 font-semibold' : ''
+                      }
+                    >
                       ✓ Número/símbolo
                     </span>
                   </div>
@@ -286,12 +291,9 @@ export const RegisterScreen: React.FC = () => {
               )}
             </div>
 
-            {/* Confirm Password */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block font-bold text-slate-700">
-                  Confirmar Senha *
-                </label>
+                <label className="block font-bold text-slate-700">Confirmar Senha *</label>
                 {confirmPassword.length > 0 && (
                   <span
                     className={`text-[10px] font-bold flex items-center gap-1 ${
@@ -313,6 +315,7 @@ export const RegisterScreen: React.FC = () => {
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
                   required
+                  disabled={isSubmitting}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repita a senha criada"
@@ -333,12 +336,12 @@ export const RegisterScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* LGPD Consent Checkbox */}
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
               <label className="flex items-start gap-2.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={acceptedTerms}
+                  disabled={isSubmitting}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
                   className="mt-0.5 w-4 h-4 rounded text-[#9E0B1A] focus:ring-[#9E0B1A] border-slate-300"
                 />
@@ -350,17 +353,25 @@ export const RegisterScreen: React.FC = () => {
               </label>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
-              className="w-full py-3 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-[#9E0B1A] hover:bg-[#850916] disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md transition cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>Criar Conta e Acessar Painel</span>
-              <ArrowRight className="w-4 h-4" />
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Cadastrando no Servidor...</span>
+                </>
+              ) : (
+                <>
+                  <span>Criar Conta e Acessar Painel</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 
-          {/* Footer link to Login */}
           <div className="pt-3 border-t border-slate-100 text-center">
             <p className="text-xs text-slate-500">
               Já possui uma conta institucional?{' '}
@@ -375,7 +386,6 @@ export const RegisterScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Footer info */}
         <div className="text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           <span>Centro Universitário Católica de Santa Catarina • Conformidade LGPD</span>

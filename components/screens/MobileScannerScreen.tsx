@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
-import { api, BackendExamLayoutQuestionDTO } from '@/lib/api';
+import { api } from '@/lib/api';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
-import jsQR from 'jsqr';
 import {
   Camera,
   QrCode,
@@ -17,367 +16,49 @@ import {
   BookOpen,
   ArrowLeft,
   AlertCircle,
+  AlertTriangle,
+  Eye,
+  Upload,
+  PenTool,
 } from 'lucide-react';
-
-type Letter = 'A' | 'B' | 'C' | 'D' | 'E';
-const LETTERS: Letter[] = ['A', 'B', 'C', 'D', 'E'];
+import { Letter, LETTERS, ParsedQrData } from '@/lib/qrCode';
+import { Exam } from '@/lib/types';
+import {
+  decodeQrFromCanvas,
+  analyzeAnswerSheetCanvas,
+  renderOmrVerificationDataUrl,
+  OmrAnalysisResult,
+} from '@/lib/omrEngine';
+import {
+  validateCorregeQrRaw,
+  resolveExamStrictly,
+  resolveVersionAndKeyStrictly,
+  resolveStudentFromQr,
+  gradeExamDeterministically,
+  normalizeExamCode,
+  ResolvedExamQuestionMeta,
+  DeterministicGradeOutput,
+} from '@/lib/omrScannerFlow';
 
 type MobileStep = 'scan-qr' | 'view-test' | 'corrected';
 
-interface ScannedQuestionItem {
-  orderIndex: number;
-  originalQuestionId: string;
-  statement: string;
-  alternatives: Array<{
-    id?: string;
-    letter: Letter;
-    text: string;
-  }>;
-  correctAlternative: Letter;
-  topic?: string;
-}
-
-export interface ParsedQrPayload {
-  examId?: string;
-  examCode?: string;
-  versionId?: string;
+interface ResolvedMobileExam {
+  exam: Exam;
+  qr: ParsedQrData;
   versionLetter: string;
-  nominal: boolean;
-  studentId?: string;
-  studentRegistration?: string;
-  totalQuestions?: number;
-  checksum?: string;
-  embeddedKey: Record<number, Letter>;
-}
-
-/**
- * Parses any QR Code payload (old or new, JSON or plain string):
- * 1. A4ExamSheet.tsx: {"app":"CORREGE","code":"#CAT-DIR-2026.1","ver":"A","nominal":true,"std":"2024.1.001","pg":1}
- * 2. A4AnswerSheet.tsx: {"app":"CORREGE","exam":"CATDIR20261","ver":"A","nominal":true,"std":"2024.1.001","q":10}
- * 3. QrCodeGraphic.tsx: {"appId":"app-cal-1","vId":"ver-a","ver":"A","code":"#CAL-1-2024.2"}
- * 4. Back-end QrCodeService.ts: {"appId":"CORREGE-V1","vId":"...","ver":"A","code":"#DIR-101","stdId":"...","reg":"2024.1.001","ts":...,"chk":"..."}
- * 5. Back-end ExamPdfService.ts: {"app":"CORREGE","exam":"#DIR-101","ver":"A","pg":1} or {"app":"CORREGE_OMR","code":"#DIR-101","ver":"A","pages":2}
- * 6. Legacy string: "CATOLICA-OMR:V=A:APP=APP1"
- */
-function parseAnyQrString(rawText: string): ParsedQrPayload {
-  const clean = (rawText || '').trim();
-  const embeddedKey: Record<number, Letter> = {};
-
-  try {
-    const parsed = JSON.parse(clean);
-    if (parsed && typeof parsed === 'object') {
-      if (typeof parsed.k === 'string') {
-        parsed.k
-          .toUpperCase()
-          .split('')
-          .forEach((ch: string, idx: number) => {
-            if (LETTERS.includes(ch as Letter)) {
-              embeddedKey[idx + 1] = ch as Letter;
-            }
-          });
-      }
-      if (parsed.answerKey && typeof parsed.answerKey === 'object') {
-        Object.entries(parsed.answerKey).forEach(([qNum, letter]) => {
-          const up = String(letter).toUpperCase() as Letter;
-          if (LETTERS.includes(up)) {
-            embeddedKey[Number(qNum)] = up;
-          }
-        });
-      }
-
-      const rawVer = String(
-        parsed.ver || parsed.versionLetter || parsed.version || parsed.vId || 'A'
-      )
-        .toUpperCase()
-        .replace('VERSION-', '')
-        .replace('VER-', '')
-        .replace('CADERNO', '')
-        .trim();
-      const verLetter = /^[A-Z]$/.test(rawVer) ? rawVer : 'A';
-
-      const reg =
-        parsed.reg ||
-        parsed.std ||
-        parsed.registration ||
-        parsed.studentRegistration ||
-        parsed.matricula;
-      const stdId = parsed.stdId || parsed.studentId || parsed.idAluno;
-
-      return {
-        examId: parsed.examId || parsed.idProva || parsed.appId,
-        examCode:
-          parsed.code ||
-          parsed.exam ||
-          parsed.examCode ||
-          parsed.codigoProva,
-        versionId: parsed.vId || parsed.idVersaoProva || parsed.versionId,
-        versionLetter: verLetter,
-        nominal:
-          parsed.nominal !== undefined
-            ? Boolean(parsed.nominal)
-            : Boolean(reg && String(reg).toUpperCase() !== 'ANON'),
-        studentId:
-          stdId && String(stdId).toUpperCase() !== 'ANON'
-            ? String(stdId)
-            : undefined,
-        studentRegistration:
-          reg && String(reg).toUpperCase() !== 'ANON'
-            ? String(reg)
-            : undefined,
-        totalQuestions: Number(
-          parsed.q || parsed.totalQuestions || parsed.pages || 0
-        ),
-        checksum: parsed.chk,
-        embeddedKey,
-      };
-    }
-  } catch {
-    // Plain text format below
-  }
-
-  const verMatch =
-    clean.match(/(?:V|VER|VERSION|CADERNO)\s*[=:-]?\s*([A-E])\b/i) ||
-    clean.match(/\b([A-D])\b/);
-  const codeMatch = clean.match(/(#[A-Z0-9._-]+|exam-[a-z0-9-]+)/i);
-
-  return {
-    examCode: codeMatch ? codeMatch[1] : clean,
-    versionLetter: verMatch ? verMatch[1].toUpperCase() : 'A',
-    nominal: true,
-    embeddedKey,
-  };
-}
-
-/**
- * Multi-region + Hardware-accelerated QR Code decoder for a photo drawn onto <canvas>.
- */
-async function decodeQrFromCanvas(sourceCanvas: HTMLCanvasElement): Promise<string | null> {
-  const w = sourceCanvas.width;
-  const h = sourceCanvas.height;
-  if (!w || !h) return null;
-
-  // 1. Hardware BarcodeDetector (Android Chrome / iOS WebKit)
-  if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
-    try {
-      const Detector = (window as any).BarcodeDetector;
-      const detector = new Detector({ formats: ['qr_code'] });
-      const barcodes = await detector.detect(sourceCanvas);
-      if (Array.isArray(barcodes) && barcodes.length > 0 && barcodes[0]?.rawValue) {
-        return String(barcodes[0].rawValue).trim();
-      }
-    } catch {
-      // Fallback to jsQR below
-    }
-  }
-
-  const tryJsQrRegion = (
-    sx: number,
-    sy: number,
-    sw: number,
-    sh: number,
-    targetMaxDim = 850
-  ): string | null => {
-    if (sw < 20 || sh < 20) return null;
-    const scale = Math.min(1.5, targetMaxDim / Math.max(sw, sh));
-    const dw = Math.max(120, Math.round(sw * scale));
-    const dh = Math.max(120, Math.round(sh * scale));
-
-    const tmp = document.createElement('canvas');
-    tmp.width = dw;
-    tmp.height = dh;
-    const tCtx = tmp.getContext('2d', { willReadFrequently: true });
-    if (!tCtx) return null;
-
-    tCtx.imageSmoothingEnabled = false;
-    tCtx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, dw, dh);
-    const imgData = tCtx.getImageData(0, 0, dw, dh);
-    const res = jsQR(imgData.data, imgData.width, imgData.height, {
-      inversionAttempts: 'attemptBoth',
-    });
-    return res?.data?.trim() || null;
-  };
-
-  // Full photo, center crop, tight center crop, and top-right A4 header crop
-  return (
-    tryJsQrRegion(0, 0, w, h, 900) ||
-    tryJsQrRegion(w * 0.15, h * 0.15, w * 0.7, h * 0.7, 750) ||
-    tryJsQrRegion(w * 0.25, h * 0.25, w * 0.5, h * 0.5, 650) ||
-    tryJsQrRegion(w * 0.45, 0, w * 0.55, h * 0.5, 750) ||
-    tryJsQrRegion(0, 0, w, h * 0.45, 750)
-  );
-}
-
-/**
- * Pure optical pixel-density analyzer on <canvas> (no mocked data!).
- * Measures actual ink darkness inside the answer sheet grid on the captured photo
- * as a fast client-side fallback when Python OpenCV is unreachable or returns empty.
- */
-function detectBubblesOnCanvasClient(
-  canvas: HTMLCanvasElement,
-  totalQuestions: number
-): Record<number, Letter> {
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return {};
-
-  const w = canvas.width;
-  const h = canvas.height;
-  const imgData = ctx.getImageData(0, 0, w, h).data;
-
-  // Build grayscale & local background estimate to cancel camera shadows
-  const gray = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    const idx = i * 4;
-    gray[i] = 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
-  }
-
-  const sampleCircleInk = (cx: number, cy: number, radius: number): number => {
-    const r = Math.max(4, Math.round(radius));
-    const outerR = Math.round(r * 2.2);
-    let innerSum = 0;
-    let innerCount = 0;
-    let ringSum = 0;
-    let ringCount = 0;
-
-    const yStart = Math.max(0, Math.floor(cy - outerR));
-    const yEnd = Math.min(h - 1, Math.ceil(cy + outerR));
-    const xStart = Math.max(0, Math.floor(cx - outerR));
-    const xEnd = Math.min(w - 1, Math.ceil(cx + outerR));
-
-    for (let y = yStart; y <= yEnd; y++) {
-      const dy = y - cy;
-      for (let x = xStart; x <= xEnd; x++) {
-        const dx = x - cx;
-        const d2 = dx * dx + dy * dy;
-        const lum = gray[y * w + x];
-        if (d2 <= r * r) {
-          innerSum += lum;
-          innerCount++;
-        } else if (d2 > (r * 1.35) ** 2 && d2 <= outerR * outerR) {
-          ringSum += lum;
-          ringCount++;
-        }
-      }
-    }
-
-    if (innerCount === 0 || ringCount === 0) return 0;
-    const innerAvg = innerSum / innerCount;
-    const paperBgAvg = ringSum / ringCount;
-    // Relative ink darkness compared to the surrounding paper ring (0..1)
-    return Math.max(0, (paperBgAvg - innerAvg) / Math.max(80, paperBgAvg));
-  };
-
-  const numCols = totalQuestions <= 40 ? 2 : totalQuestions <= 75 ? 3 : 4;
-  const perCol = Math.max(1, Math.ceil(totalQuestions / numCols));
-
-  let bestDetected: Record<number, Letter> = {};
-
-  // Check both A4AnswerSheet.tsx layout and close-up grid framing
-  const candidateLayouts = [
-    { top: 0.335, rowH: 0.029, left: 0.075, right: 0.925, bStart: 0.10, bEnd: 0.54 },
-    { top: 0.365, rowH: 0.032, left: 0.075, right: 0.925, bStart: 0.16, bEnd: 0.82 },
-    { top: 0.14, rowH: 0.72 / Math.max(2, perCol), left: 0.05, right: 0.95, bStart: 0.12, bEnd: 0.85 },
-  ];
-
-  for (const layout of candidateLayouts) {
-    const colWidth = ((layout.right - layout.left) * w) / numCols;
-    const rowHeight = Math.max(20, layout.rowH * h);
-    const trial: Record<number, Letter> = {};
-
-    for (let qIdx = 0; qIdx < totalQuestions; qIdx++) {
-      const qNum = qIdx + 1;
-      const col = Math.floor(qIdx / perCol);
-      const row = qIdx % perCol;
-
-      const cy = layout.top * h + (row + 0.55) * rowHeight;
-      const colX = layout.left * w + col * colWidth;
-      const bStartX = colX + colWidth * layout.bStart;
-      const bEndX = colX + colWidth * layout.bEnd;
-      const stepX = (bEndX - bStartX) / 4;
-      const radius = Math.max(6, Math.min(rowHeight * 0.34, stepX * 0.34));
-
-      const scores = LETTERS.map((letter, lIdx) => ({
-        letter,
-        score: sampleCircleInk(bStartX + lIdx * stepX, cy, radius),
-      }));
-
-      scores.sort((a, b) => b.score - a.score);
-      const best = scores[0];
-      const second = scores[1];
-      const medianOther = (scores[1].score + scores[2].score + scores[3].score) / 3;
-
-      if (best.score >= 0.14 && best.score - medianOther >= 0.055 && best.score - second.score >= 0.035) {
-        trial[qNum] = best.letter;
-      }
-    }
-
-    if (Object.keys(trial).length > Object.keys(bestDetected).length) {
-      bestDetected = trial;
-    }
-  }
-
-  return bestDetected;
-}
-
-/**
- * Pure deterministic grading function comparing `markedAnswers` against `officialAnswerKey`.
- */
-function computeDeterministicGrading(
-  markedAnswers: Record<number, Letter>,
-  officialAnswerKey: Record<number, Letter>,
-  totalQuestions: number,
-  maxScore: number
-): {
-  correctCount: number;
-  totalQuestions: number;
-  totalScore: number;
+  examVersionId: string;
+  answerKey: Record<number, Letter>;
+  questionLetters: Record<number, Letter[]>;
+  objectiveQuestions: ResolvedExamQuestionMeta[];
+  discursiveQuestions: ResolvedExamQuestionMeta[];
   maxScore: number;
-  details: Array<{
-    questionNumber: number;
-    questionId: string;
-    chosen: Letter | null;
-    correct: Letter;
-    isCorrect: boolean;
-    score: number;
-  }>;
-} {
-  const totalQ = Math.max(1, totalQuestions);
-  const pointsPerQuestion = maxScore / totalQ;
-  let correctCount = 0;
-
-  const details = Array.from({ length: totalQ }, (_, idx) => {
-    const qNum = idx + 1;
-    const chosen: Letter | null = markedAnswers[qNum] || null;
-    const correct: Letter = officialAnswerKey[qNum] || 'A';
-    const isCorrect = Boolean(chosen && chosen === correct);
-    if (isCorrect) correctCount++;
-
-    return {
-      questionNumber: qNum,
-      questionId: `q-${qNum}`,
-      chosen,
-      correct,
-      isCorrect,
-      score: isCorrect ? Number(pointsPerQuestion.toFixed(2)) : 0,
-    };
-  });
-
-  const totalScore = Number(((correctCount / totalQ) * maxScore).toFixed(1));
-
-  return {
-    correctCount,
-    totalQuestions: totalQ,
-    totalScore,
-    maxScore,
-    details,
-  };
+  questionAlternativesMap: Record<number, Array<{ letter: Letter; text: string }>>;
 }
 
 export const MobileScannerScreen: React.FC = () => {
   const {
     exams,
-    activeExamId,
     setActiveExamId,
-    selectedExam,
     questions: questionBank,
     students,
     addCorrection,
@@ -386,397 +67,197 @@ export const MobileScannerScreen: React.FC = () => {
   } = useApp();
 
   const [step, setStep] = useState<MobileStep>('scan-qr');
-  const [selectedVersionLetter, setSelectedVersionLetter] = useState<string>('A');
-  const [resolvedVersionId, setResolvedVersionId] = useState<string>('');
-  const [resolvedExamId, setResolvedExamId] = useState<string>('');
-  const [resolvedExamTitle, setResolvedExamTitle] = useState<string>('');
-  const [resolvedExamDiscipline, setResolvedExamDiscipline] = useState<string>('');
-  const [scanMode, setScanMode] = useState<'nominal' | 'avulsa'>('nominal');
-  const [selectedStudentId, setSelectedStudentId] = useState<string>(
-    students[0]?.id || ''
-  );
+  const [resolved, setResolved] = useState<ResolvedMobileExam | null>(null);
+  const [scanMode, setScanMode] = useState<'nominal' | 'avulsa'>('avulsa');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [manualStudentName, setManualStudentName] = useState<string>('');
+  const [manualStudentReg, setManualStudentReg] = useState<string>('');
   const [qrRawString, setQrRawString] = useState<string | null>(null);
-  const [embeddedKeyFromQr, setEmbeddedKeyFromQr] = useState<Record<number, Letter>>({});
-  const [backendQuestions, setBackendQuestions] = useState<ScannedQuestionItem[]>([]);
-  const [backendAnswerKey, setBackendAnswerKey] = useState<Record<number, Letter>>({});
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [correctedCount, setCorrectedCount] = useState(0);
 
-  // Real answers detected from the photo (`respostasLidas`)
-  const [markedAnswers, setMarkedAnswers] = useState<Record<number, Letter>>({});
+  // Real answers detected by OMR (`null` = blank/rasura — NEVER guessed)
+  const [markedAnswers, setMarkedAnswers] = useState<Record<number, Letter | null>>({});
+  const [ambiguousQuestions, setAmbiguousQuestions] = useState<number[]>([]);
+  const [discursiveScores, setDiscursiveScores] = useState<Record<string, number>>({});
+  const [omrAnalysis, setOmrAnalysis] = useState<OmrAnalysisResult | null>(null);
+  const [verificationPreviewUrl, setVerificationPreviewUrl] = useState<string | null>(null);
+  const [showPreviewImg, setShowPreviewImg] = useState<boolean>(false);
 
-  // Official grading result
-  const [gradingResult, setGradingResult] = useState<{
-    correctCount: number;
-    totalQuestions: number;
-    totalScore: number;
-    maxScore: number;
-    details: Array<{
-      questionNumber: number;
-      questionId: string;
-      chosen: Letter | null;
-      correct: Letter;
-      isCorrect: boolean;
-      score: number;
-    }>;
-  } | null>(null);
+  const [gradingResult, setGradingResult] = useState<DeterministicGradeOutput | null>(null);
 
-  // Native smartphone camera inputs (`capture="environment"` opens the OS camera directly, not inside the webpage)
+  // Native smartphone camera inputs + gallery fallback
   const qrNativeCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const qrGalleryInputRef = useRef<HTMLInputElement | null>(null);
   const correctNativeCameraInputRef = useRef<HTMLInputElement | null>(null);
 
-  const currentExam =
-    exams.find((e) => e.id === activeExamId) || selectedExam || exams[0];
-  const versions = currentExam?.versions || [];
-
-  const activeVersion = useMemo(() => {
-    return (
-      versions.find((v) => v.versionLetter === selectedVersionLetter) ||
-      versions[0]
-    );
-  }, [versions, selectedVersionLetter]);
-
-  // Build the real list of test questions for the scanned Caderno
-  const testQuestions: ScannedQuestionItem[] = useMemo(() => {
-    if (backendQuestions.length > 0) {
-      return backendQuestions;
-    }
-
-    if (activeVersion?.questions && activeVersion.questions.length > 0) {
-      return activeVersion.questions.map((q, idx) => ({
-        orderIndex: q.orderIndex || idx + 1,
-        originalQuestionId: q.originalQuestionId || `q-${idx + 1}`,
+  const fetchBackendExamLayout = useCallback(async (examId: string, versionLetter: string) => {
+    const dto = await api.getExamLayout(examId, versionLetter).catch(() => null);
+    if (!dto) return null;
+    const flatQuestions = (dto.pages || []).flatMap((p) => p.questions || []);
+    return {
+      answerKey: dto.answerKey as Record<string, string> | undefined,
+      questionsLayout: flatQuestions.map((q) => ({
+        orderIndex: q.orderIndex,
+        questionId: q.questionId,
         statement: q.statement,
-        alternatives: (q.alternatives || []).map((a) => ({
-          id: a.id,
-          letter: a.letter as Letter,
-          text: a.text,
-        })),
-        correctAlternative: (q.correctAlternative || 'A') as Letter,
-        topic: q.topic,
-      }));
-    }
-
-    const fromBank = (currentExam?.selectedQuestionIds || [])
-      .map((id) => questionBank.find((qb) => qb.id === id))
-      .filter(Boolean);
-
-    return fromBank.map((q, idx) => ({
-      orderIndex: idx + 1,
-      originalQuestionId: q!.id,
-      statement: q!.statement,
-      alternatives: (q!.alternatives || []).map((a) => ({
-        id: a.id,
-        letter: a.letter as Letter,
-        text: a.text,
+        alternatives: q.alternatives,
+        correctAlternative: q.correctAlternative,
       })),
-      correctAlternative: q!.correctAlternative as Letter,
-      topic: q!.topic,
-    }));
-  }, [backendQuestions, activeVersion, currentExam, questionBank]);
+    };
+  }, []);
 
-  const totalQuestions = Math.max(
-    1,
-    testQuestions.length ||
-      Object.keys(backendAnswerKey).length ||
-      Object.keys(embeddedKeyFromQr).length ||
-      1
+  const buildAlternativesMap = useCallback(
+    (
+      exam: Exam,
+      versionLetter: string,
+      objectiveQuestions: ResolvedExamQuestionMeta[]
+    ): Record<number, Array<{ letter: Letter; text: string }>> => {
+      const map: Record<number, Array<{ letter: Letter; text: string }>> = {};
+      const ver = (exam.versions || []).find(
+        (v) => v.versionLetter.toUpperCase() === versionLetter.toUpperCase()
+      );
+
+      objectiveQuestions.forEach((oq) => {
+        const vq = ver?.questions?.find(
+          (item) =>
+            item.originalQuestionId === oq.questionId || item.orderIndex === oq.questionNumber
+        );
+        if (vq?.alternatives && vq.alternatives.length > 0) {
+          map[oq.questionNumber] = vq.alternatives.map((a) => ({
+            letter: a.letter as Letter,
+            text: a.text,
+          }));
+          return;
+        }
+        const bq = questionBank.find((item) => item.id === oq.questionId);
+        if (bq?.alternatives && bq.alternatives.length > 0) {
+          map[oq.questionNumber] = bq.alternatives.map((a) => ({
+            letter: a.letter as Letter,
+            text: a.text,
+          }));
+          return;
+        }
+        map[oq.questionNumber] = oq.letters.map((letter) => ({
+          letter,
+          text: `Alternativa ${letter}`,
+        }));
+      });
+
+      return map;
+    },
+    [questionBank]
   );
 
-  const officialAnswerKey = useMemo(() => {
-    const key: Record<number, Letter> = {};
-    for (let i = 1; i <= totalQuestions; i++) {
-      key[i] =
-        backendAnswerKey[i] ||
-        embeddedKeyFromQr[i] ||
-        (activeVersion?.answerKey?.[i] as Letter) ||
-        testQuestions[i - 1]?.correctAlternative ||
-        'A';
-    }
-    return key;
-  }, [totalQuestions, backendAnswerKey, embeddedKeyFromQr, activeVersion, testQuestions]);
-
-  /**
-   * Grades and persists the test correction (`POST /api/v1/correcoes` + AppContext)
-   * and transitions to Step 3 (`corrected`).
-   */
-  const executeGradingAndFinish = async (answersToGrade: Record<number, Letter>) => {
-    setIsProcessing(true);
-    try {
-      const maxScoreVal = currentExam?.maxScore || 10.0;
-      let grading = computeDeterministicGrading(
-        answersToGrade,
-        officialAnswerKey,
-        totalQuestions,
-        maxScoreVal
-      );
-
-      // Also run Python grading endpoint if reachable
+  const executeGradingAndFinish = useCallback(
+    async (
+      target: ResolvedMobileExam,
+      answersToGrade: Record<number, Letter | null>,
+      ambiguousList: number[],
+      discScores: Record<string, number>
+    ) => {
+      setIsProcessing(true);
       try {
-        const pyRes = await api.gradeOmrSheet({
+        const grading = gradeExamDeterministically({
+          objectiveQuestions: target.objectiveQuestions,
+          discursiveQuestions: target.discursiveQuestions,
           markedAnswers: answersToGrade,
-          officialAnswerKey,
-          totalQuestions,
-          versionLetter: selectedVersionLetter,
-          maxScore: maxScoreVal,
-        });
-        if (pyRes.success && pyRes.grading) {
-          grading = pyRes.grading;
-        }
-      } catch {
-        // Use deterministic grading computed above
-      }
-
-      setGradingResult(grading);
-
-      const targetStudent = students.find((s) => s.id === selectedStudentId);
-      const isNominal = scanMode === 'nominal';
-      const versionIdToSave =
-        resolvedVersionId ||
-        activeVersion?.id ||
-        `version-${selectedVersionLetter}`;
-      const examIdToSave = resolvedExamId || currentExam?.id;
-
-      const respostasLidasPayload: Record<string, string> = {};
-      Object.entries(answersToGrade).forEach(([qNum, letter]) => {
-        if (letter) {
-          respostasLidasPayload[String(qNum)] = letter;
-        }
-      });
-
-      let syncedWithBackend = false;
-      try {
-        await api.createCorrecao({
-          idVersaoProva: versionIdToSave,
-          idProva: examIdToSave,
-          versaoMarcada: selectedVersionLetter,
-          idAluno: isNominal ? targetStudent?.id : undefined,
-          nomeManuscrito: isNominal ? targetStudent?.name : 'Folha Avulsa Mobile',
-          matriculaManuscrita: isNominal ? targetStudent?.registration : undefined,
-          notaTotal: grading.totalScore,
-          respostasLidas: respostasLidasPayload,
-          atribuicaoAutomatica: isNominal,
-        });
-        syncedWithBackend = true;
-      } catch {
-        // Saved locally in AppContext below
-      }
-
-      addCorrection({
-        applicationId: 'app-1',
-        examVersionId: versionIdToSave,
-        versionLetter: selectedVersionLetter,
-        studentId: isNominal ? targetStudent?.id : undefined,
-        studentName: isNominal ? targetStudent?.name : undefined,
-        registration: isNominal ? targetStudent?.registration : undefined,
-        reportedStudentName: !isNominal ? 'Folha Avulsa Mobile' : undefined,
-        objectiveResults: grading.details.map((d) => ({
-          questionId: d.questionId,
-          chosen: d.chosen,
-          correct: d.correct,
-          isCorrect: d.isCorrect,
-          score: d.score,
-        })),
-        totalScore: grading.totalScore,
-        maxScore: grading.maxScore,
-        isAutomaticallyAssigned: isNominal,
-        syncStatus: syncedWithBackend ? 'synced' : 'pending',
-      });
-
-      setIsProcessing(false);
-      setStep('corrected');
-      setCorrectedCount((prev) => prev + 1);
-
-      addToast({
-        type: 'success',
-        title: `Prova Corrigida! Nota: ${grading.totalScore.toFixed(1)}`,
-        message: `${grading.correctCount} de ${grading.totalQuestions} questões corretas.`,
-      });
-    } catch (err: any) {
-      setIsProcessing(false);
-      addToast({
-        type: 'error',
-        title: 'Falha ao Corrigir Prova',
-        message: err?.message || 'Erro ao processar correção.',
-      });
-    }
-  };
-
-  /**
-   * Opens the test immediately after a QR Code is decoded from the native camera photo.
-   */
-  const handleQrDecoded = async (
-    rawQrText: string,
-    optimizedDataUrl: string,
-    photoCanvas: HTMLCanvasElement
-  ) => {
-    setCameraError(null);
-
-    let parsedQr = parseAnyQrString(rawQrText);
-    const verLetter = parsedQr.versionLetter || 'A';
-
-    // Match Exam locally right away so Step 2 (`view-test`) opens immediately
-    let matchedExam = currentExam;
-    const normalizeCode = (val?: string) =>
-      String(val || '')
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .toLowerCase();
-
-    if (parsedQr.examId || parsedQr.examCode) {
-      const targetId = String(parsedQr.examId || '').toLowerCase();
-      const targetCode = normalizeCode(parsedQr.examCode);
-
-      const foundLocal = exams.find(
-        (ex) =>
-          (targetId && ex.id.toLowerCase() === targetId) ||
-          (targetCode && normalizeCode(ex.code) === targetCode) ||
-          (targetCode && normalizeCode(ex.id) === targetCode) ||
-          (targetCode && normalizeCode(ex.code).includes(targetCode)) ||
-          (targetCode && targetCode.includes(normalizeCode(ex.code)))
-      );
-      if (foundLocal) {
-        matchedExam = foundLocal;
-        setActiveExamId(foundLocal.id);
-      }
-    }
-
-    // Match Student by ID or Registration from QR Code
-    if (parsedQr.studentId || parsedQr.studentRegistration) {
-      const foundStudent = students.find(
-        (s) =>
-          (parsedQr.studentId && s.id === parsedQr.studentId) ||
-          (parsedQr.studentRegistration &&
-            s.registration.toLowerCase() ===
-              String(parsedQr.studentRegistration).toLowerCase())
-      );
-      if (foundStudent) {
-        setSelectedStudentId(foundStudent.id);
-        setScanMode('nominal');
-      }
-    } else if (parsedQr.nominal === false) {
-      setScanMode('avulsa');
-    }
-
-    const localVer =
-      matchedExam?.versions?.find((v) => v.versionLetter === verLetter) ||
-      matchedExam?.versions?.[0];
-
-    const qCount =
-      parsedQr.totalQuestions ||
-      localVer?.questions?.length ||
-      matchedExam?.selectedQuestionIds?.length ||
-      totalQuestions;
-
-    // Also check if the QR photo already captured the answer bubbles
-    const clientBubbles = detectBubblesOnCanvasClient(photoCanvas, qCount);
-
-    setSelectedVersionLetter(verLetter);
-    setQrRawString(rawQrText);
-    setBackendQuestions([]);
-    setBackendAnswerKey({});
-    setEmbeddedKeyFromQr(parsedQr.embeddedKey || {});
-    setResolvedExamId(parsedQr.examId || matchedExam?.id || '');
-    setResolvedVersionId(parsedQr.versionId || localVer?.id || `version-${verLetter}`);
-    setResolvedExamTitle(matchedExam?.title || '');
-    setResolvedExamDiscipline(matchedExam?.discipline || '');
-    setMarkedAnswers(clientBubbles);
-    setGradingResult(null);
-
-    // Transition immediately to Step 2 so the user sees the test!
-    setStep('view-test');
-
-    addToast({
-      type: 'success',
-      title: `QR Code Lido: Caderno ${verLetter}`,
-      message: `Prova "${matchedExam?.title || 'Avaliação'}" aberta.`,
-    });
-
-    // Enrich with Python OpenCV bubble detection + backend exam layout in background
-    setIsProcessing(true);
-    try {
-      const loadedAnswerKey: Record<number, Letter> = {
-        ...(localVer?.answerKey as Record<number, Letter>),
-        ...(parsedQr.embeddedKey || {}),
-      };
-
-      try {
-        const omrRes = await api.scanOmrSheet({
-          imageBase64: optimizedDataUrl,
-          totalQuestions: qCount,
-          officialAnswerKey: loadedAnswerKey,
-          versionLetter: verLetter,
-          maxScore: matchedExam?.maxScore || 10.0,
+          ambiguousQuestions: ambiguousList,
+          discursiveScores: discScores,
+          maxScore: target.maxScore,
         });
 
-        const rawDetected = omrRes.respostasLidas || omrRes.markedAnswers;
-        if (omrRes.success && rawDetected && Object.keys(rawDetected).length > 0) {
-          const realDetected: Record<number, Letter> = {};
-          Object.entries(rawDetected).forEach(([k, v]) => {
-            const qNum = Number(k);
-            if (qNum >= 1 && LETTERS.includes(v as Letter)) {
-              realDetected[qNum] = v as Letter;
-            }
+        setGradingResult(grading);
+
+        const matchedStudent = selectedStudentId
+          ? students.find((s) => s.id === selectedStudentId)
+          : undefined;
+        const isNominal = scanMode === 'nominal';
+        const finalStudentId = matchedStudent?.id;
+        const finalName = matchedStudent?.name || manualStudentName.trim() || undefined;
+        const finalReg = matchedStudent?.registration || manualStudentReg.trim() || undefined;
+
+        const respostasLidasPayload: Record<string, string> = {};
+        Object.entries(answersToGrade).forEach(([qNum, letter]) => {
+          if (letter) {
+            respostasLidasPayload[String(qNum)] = letter;
+          }
+        });
+        Object.entries(discScores).forEach(([qId, score]) => {
+          respostasLidasPayload[`desc_${qId}`] = String(score);
+        });
+
+        let syncedWithBackend = false;
+        try {
+          await api.createCorrecao({
+            idVersaoProva: target.examVersionId,
+            idProva: target.exam.id,
+            versaoMarcada: target.versionLetter,
+            idAluno: finalStudentId,
+            nomeManuscrito: !isNominal && finalName ? finalName : undefined,
+            matriculaManuscrita: !isNominal && finalReg ? finalReg : undefined,
+            notaTotal: grading.totalScore,
+            respostasLidas: respostasLidasPayload,
+            atribuicaoAutomatica: Boolean(isNominal && finalStudentId),
           });
-          if (Object.keys(realDetected).length > 0) {
-            setMarkedAnswers(realDetected);
-          }
+          syncedWithBackend = true;
+        } catch {
+          // Recorded locally with syncStatus = 'pending'
         }
-      } catch {
-        // Keep clientBubbles if Python endpoint is offline
-      }
 
-      const targetExamId = parsedQr.examId || matchedExam?.id;
-      if (targetExamId) {
-        const layoutDto = await api.getExamLayout(targetExamId, verLetter).catch(() => null);
-        if (layoutDto) {
-          setResolvedExamTitle(layoutDto.title || matchedExam?.title || '');
-          setResolvedExamDiscipline(
-            layoutDto.header?.discipline || matchedExam?.discipline || ''
-          );
-          if (layoutDto.answerKey) {
-            const nextKey: Record<number, Letter> = {};
-            Object.entries(layoutDto.answerKey).forEach(([k, v]) => {
-              const up = String(v).toUpperCase() as Letter;
-              if (LETTERS.includes(up)) {
-                nextKey[Number(k)] = up;
-              }
-            });
-            if (Object.keys(nextKey).length > 0) {
-              setBackendAnswerKey(nextKey);
-            }
-          }
-          const flatQuestions: BackendExamLayoutQuestionDTO[] = (
-            layoutDto.pages || []
-          ).flatMap((p) => p.questions || []);
-          if (flatQuestions.length > 0) {
-            const mappedFromLayout: ScannedQuestionItem[] = flatQuestions.map((fq, idx) => ({
-              orderIndex: fq.orderIndex || idx + 1,
-              originalQuestionId: fq.questionId || `q-${idx + 1}`,
-              statement: fq.statement,
-              alternatives: (fq.alternatives || []).map((a) => ({
-                letter: a.letter,
-                text: a.text,
-              })),
-              correctAlternative:
-                (layoutDto.answerKey?.[fq.orderIndex || idx + 1] as Letter) ||
-                fq.correctAlternative ||
-                'A',
-            }));
-            setBackendQuestions(mappedFromLayout);
-          }
-        }
+        addCorrection({
+          applicationId: target.exam.id,
+          examVersionId: target.examVersionId,
+          versionLetter: target.versionLetter,
+          studentId: finalStudentId,
+          studentName: finalName,
+          registration: finalReg,
+          reportedStudentName: !isNominal && finalName ? finalName : undefined,
+          reportedStudentRegistration: !isNominal && finalReg ? finalReg : undefined,
+          objectiveResults: grading.objectiveResults.map((d) => ({
+            questionId: d.questionId,
+            chosen: d.chosen,
+            correct: d.correct,
+            isCorrect: d.isCorrect,
+            score: d.score,
+          })),
+          discursiveScores: grading.discursiveResults.map((d) => ({
+            questionId: d.questionId,
+            score: d.score,
+          })),
+          totalScore: grading.totalScore,
+          maxScore: grading.maxScore,
+          isAutomaticallyAssigned: Boolean(isNominal && finalStudentId),
+          syncStatus: syncedWithBackend ? 'synced' : 'pending',
+        });
+
+        setStep('corrected');
+        setCorrectedCount((prev) => prev + 1);
+
+        addToast({
+          type: 'success',
+          title: `Prova Corrigida! Nota: ${grading.totalScore.toFixed(1)}`,
+          message: `${grading.correctCount} de ${grading.totalObjectiveQuestions} acertos objetivos.`,
+        });
+      } catch (err: any) {
+        addToast({
+          type: 'error',
+          title: 'Falha ao Corrigir Prova',
+          message: err?.message || 'Erro ao processar correção.',
+        });
+      } finally {
+        setIsProcessing(false);
       }
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+    },
+    [selectedStudentId, students, scanMode, manualStudentName, manualStudentReg, addCorrection, addToast]
+  );
 
   /**
-   * Handles native smartphone camera photo input:
-   * - mode === 'qr' (Step 1): Reads the QR Code from the photo taken by the phone camera and opens the test (Step 2).
-   * - mode === 'correct-test' (Step 2): Reads the marked answers from the photo taken by the phone camera and IMMEDIATELY corrects the test (Step 3).
+   * Handles native smartphone camera / gallery photo input:
+   * - mode === 'qr' (Step 1): Strictly validates Correge QR + looks up exact exam in DB (NO fallbacks!).
+   * - mode === 'correct-test' (Step 2): Runs real pure-TS OMR bubble recognition on the photographed answer sheet.
    */
   const handleNativeCameraPhoto = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -792,96 +273,231 @@ export const MobileScannerScreen: React.FC = () => {
       const rawDataUrl = reader.result;
       if (typeof rawDataUrl !== 'string') {
         setIsProcessing(false);
+        setCameraError('Não foi possível ler a imagem capturada.');
         return;
       }
 
       const img = new Image();
       img.onload = async () => {
-        const maxDim = 1400;
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        }
-        const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-
-        if (mode === 'qr') {
-          const qrText = await decodeQrFromCanvas(canvas);
-          if (qrText) {
-            setIsProcessing(false);
-            await handleQrDecoded(qrText, optimizedDataUrl, canvas);
+        try {
+          const maxDim = 1600;
+          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) {
+            setCameraError('Erro ao preparar imagem para leitura óptica.');
             return;
           }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          try {
-            const res = await api.scanOmrSheet({
-              imageBase64: optimizedDataUrl,
-              totalQuestions,
-              officialAnswerKey,
-              versionLetter: selectedVersionLetter,
-              maxScore: currentExam?.maxScore || 10.0,
-            });
-            setIsProcessing(false);
-            if (res.success && res.qrDetected && res.qrRaw) {
-              await handleQrDecoded(res.qrRaw, optimizedDataUrl, canvas);
-            } else {
+          if (mode === 'qr') {
+            // 1. Decode QR strictly
+            const decodedQr = await decodeQrFromCanvas(canvas);
+            if (!decodedQr) {
               setCameraError(
-                'Nenhum QR Code foi encontrado na foto. Aponte a câmera para o QR Code no canto superior direito da prova.'
+                'Nenhum QR Code foi encontrado na foto. Aproxime a câmera do QR Code oficial no topo da prova ou do cartão-resposta.'
               );
+              return;
             }
-          } catch {
-            setIsProcessing(false);
-            setCameraError(
-              'Não foi possível ler o QR Code na foto. Aproxime a câmera do QR Code da prova e tente novamente.'
+
+            // 2. Validate Correge institutional QR format
+            const qrCheck = validateCorregeQrRaw(decodedQr.raw);
+            if (!qrCheck.ok || !qrCheck.parsed) {
+              setCameraError(qrCheck.error || 'QR Code inválido.');
+              return;
+            }
+
+            // 3. Strictly resolve exam from local state or backend DB (ZERO fallback to another exam!)
+            const examRes = await resolveExamStrictly(
+              qrCheck.parsed,
+              exams,
+              () => api.getExams()
+            );
+            if (!examRes.ok || !examRes.exam) {
+              setCameraError(examRes.error || 'Prova não encontrada no sistema.');
+              return;
+            }
+
+            // 4. Strictly resolve Caderno version & official answer key (ZERO guessed/default keys!)
+            const keyRes = await resolveVersionAndKeyStrictly(
+              examRes.exam,
+              qrCheck.parsed.versionLetter,
+              questionBank,
+              fetchBackendExamLayout
+            );
+            if (
+              !keyRes.ok ||
+              !keyRes.answerKey ||
+              !keyRes.objectiveQuestions ||
+              !keyRes.questionLetters
+            ) {
+              setCameraError(keyRes.error || 'Gabarito oficial não encontrado.');
+              return;
+            }
+
+            const altMap = buildAlternativesMap(
+              examRes.exam,
+              keyRes.versionLetter!,
+              keyRes.objectiveQuestions
+            );
+
+            const resolvedData: ResolvedMobileExam = {
+              exam: examRes.exam,
+              qr: qrCheck.parsed,
+              versionLetter: keyRes.versionLetter!,
+              examVersionId: keyRes.examVersionId!,
+              answerKey: keyRes.answerKey,
+              questionLetters: keyRes.questionLetters,
+              objectiveQuestions: keyRes.objectiveQuestions,
+              discursiveQuestions: keyRes.discursiveQuestions || [],
+              maxScore: keyRes.maxScore || examRes.exam.maxScore || 10,
+              questionAlternativesMap: altMap,
+            };
+
+            setResolved(resolvedData);
+            setActiveExamId(examRes.exam.id);
+            setQrRawString(decodedQr.raw);
+            setGradingResult(null);
+            setDiscursiveScores({});
+
+            // Match student strictly (never force students[0] on avulsa!)
+            const matchedStudent = resolveStudentFromQr(qrCheck.parsed, students);
+            if (qrCheck.parsed.nominal) {
+              setScanMode('nominal');
+              setSelectedStudentId(matchedStudent?.id || '');
+              setManualStudentName(matchedStudent?.name || qrCheck.parsed.studentName || '');
+              setManualStudentReg(
+                matchedStudent?.registration || qrCheck.parsed.studentRegistration || ''
+              );
+            } else {
+              setScanMode('avulsa');
+              setSelectedStudentId('');
+              setManualStudentName('');
+              setManualStudentReg('');
+            }
+
+            // Check if the Step 1 photo ALSO contains a readable answer sheet bubble grid
+            const { analysis, orientedCanvas } = analyzeAnswerSheetCanvas(canvas, {
+              totalQuestions: resolvedData.objectiveQuestions.length,
+              questionLetters: resolvedData.questionLetters,
+              qrLocation: decodedQr.location,
+              rotationQuarterTurns: decodedQr.rotationQuarterTurns,
+            });
+
+            if (analysis.sheetDetected) {
+              setOmrAnalysis(analysis);
+              setMarkedAnswers(analysis.markedAnswers);
+              setAmbiguousQuestions(analysis.ambiguousQuestions);
+              setVerificationPreviewUrl(renderOmrVerificationDataUrl(orientedCanvas, analysis));
+            } else {
+              setOmrAnalysis(null);
+              setMarkedAnswers({});
+              setAmbiguousQuestions([]);
+              setVerificationPreviewUrl(null);
+            }
+
+            setStep('view-test');
+
+            addToast({
+              type: 'success',
+              title: `QR Code Lido: Caderno ${resolvedData.versionLetter}`,
+              message: analysis.sheetDetected
+                ? `Prova "${resolvedData.exam.title}" aberta com leitura óptica do gabarito.`
+                : `Prova "${resolvedData.exam.title}" aberta. Agora fotografe o cartão-resposta.`,
+            });
+          } else {
+            // mode === 'correct-test': Read answer bubbles strictly from photographed answer sheet
+            if (!resolved) {
+              setCameraError('Nenhuma prova identificada. Leia o QR Code primeiro.');
+              return;
+            }
+
+            // If this photo also contains a QR code, verify it belongs to the SAME exam & Caderno!
+            const decodedQr = await decodeQrFromCanvas(canvas);
+            if (decodedQr) {
+              const qrCheck = validateCorregeQrRaw(decodedQr.raw);
+              if (qrCheck.ok && qrCheck.parsed) {
+                const sameId =
+                  qrCheck.parsed.examId && qrCheck.parsed.examId === resolved.exam.id;
+                const sameCode =
+                  normalizeExamCode(qrCheck.parsed.examCode) &&
+                  normalizeExamCode(qrCheck.parsed.examCode) ===
+                    normalizeExamCode(resolved.exam.code);
+                if (!sameId && !sameCode) {
+                  setCameraError(
+                    `O QR Code desta folha (${qrCheck.parsed.examCode || qrCheck.parsed.examId}) pertence a OUTRA prova diferente de "${resolved.exam.title}". Volte ao Passo 1 para escanear esta prova.`
+                  );
+                  return;
+                }
+                if (
+                  qrCheck.parsed.versionLetter &&
+                  qrCheck.parsed.versionLetter.toUpperCase() !==
+                    resolved.versionLetter.toUpperCase()
+                ) {
+                  setCameraError(
+                    `Caderno divergente: o cartão-resposta fotografado é do Caderno ${qrCheck.parsed.versionLetter}, mas a prova aberta é do Caderno ${resolved.versionLetter}.`
+                  );
+                  return;
+                }
+              }
+            }
+
+            const { analysis, orientedCanvas } = analyzeAnswerSheetCanvas(canvas, {
+              totalQuestions: resolved.objectiveQuestions.length,
+              questionLetters: resolved.questionLetters,
+              qrLocation: decodedQr?.location || null,
+              rotationQuarterTurns: decodedQr?.rotationQuarterTurns || 0,
+            });
+
+            if (!analysis.sheetDetected) {
+              setCameraError(
+                analysis.error ||
+                  'Não foi possível ler as bolhas do cartão-resposta na foto. Enquadre toda a grade de respostas em local bem iluminado e tente novamente.'
+              );
+              return;
+            }
+
+            setOmrAnalysis(analysis);
+            setMarkedAnswers(analysis.markedAnswers);
+            setAmbiguousQuestions(analysis.ambiguousQuestions);
+            setVerificationPreviewUrl(renderOmrVerificationDataUrl(orientedCanvas, analysis));
+
+            // If rasura/ambiguous or discursive questions exist, let teacher confirm on Step 2 before finalizing
+            if (
+              analysis.ambiguousQuestions.length > 0 ||
+              resolved.discursiveQuestions.length > 0
+            ) {
+              setShowPreviewImg(true);
+              addToast({
+                type: 'warning',
+                title: 'Conferência Necessária Antes de Finalizar',
+                message:
+                  analysis.ambiguousQuestions.length > 0
+                    ? `Rasura/dupla marcação detectada nas questões ${analysis.ambiguousQuestions
+                        .map((q) => `Q${q}`)
+                        .join(', ')}. Revise e toque em Concluir Correção.`
+                    : 'Gabarito objetivo lido! Informe as notas das questões discursivas abaixo e toque em Concluir Correção.',
+              });
+              return;
+            }
+
+            await executeGradingAndFinish(
+              resolved,
+              analysis.markedAnswers,
+              analysis.ambiguousQuestions,
+              discursiveScores
             );
           }
-        } else {
-          // mode === 'correct-test': Scan the marked answers from the photo and immediately correct the test!
-          let detectedFromPhoto: Record<number, Letter> = {
-            ...markedAnswers,
-          };
-
-          // 1. Client-side optical bubble analysis on the photo canvas
-          const clientDetected = detectBubblesOnCanvasClient(canvas, totalQuestions);
-          Object.entries(clientDetected).forEach(([k, v]) => {
-            const qNum = Number(k);
-            if (qNum >= 1 && LETTERS.includes(v as Letter)) {
-              detectedFromPhoto[qNum] = v as Letter;
-            }
-          });
-
-          // 2. Python OpenCV optical bubble analysis (/api/omr)
-          try {
-            const res = await api.scanOmrSheet({
-              imageBase64: optimizedDataUrl,
-              totalQuestions,
-              officialAnswerKey,
-              versionLetter: selectedVersionLetter,
-              maxScore: currentExam?.maxScore || 10.0,
-            });
-            const pyAnswers = res.respostasLidas || res.markedAnswers || {};
-            Object.entries(pyAnswers).forEach(([k, v]) => {
-              const qNum = Number(k);
-              if (qNum >= 1 && LETTERS.includes(v as Letter)) {
-                detectedFromPhoto[qNum] = v as Letter;
-              }
-            });
-          } catch {
-            // Proceed with client-side optical detection + any answers selected on screen
-          }
-
-          setMarkedAnswers(detectedFromPhoto);
-
-          // Immediately grade & correct the test with the answers found!
-          await executeGradingAndFinish(detectedFromPhoto);
+        } finally {
+          setIsProcessing(false);
         }
       };
+
       img.onerror = () => {
         setIsProcessing(false);
-        setCameraError('Erro ao carregar a foto da câmera.');
+        setCameraError('Erro ao carregar a foto capturada.');
       };
       img.src = rawDataUrl;
     };
@@ -891,27 +507,48 @@ export const MobileScannerScreen: React.FC = () => {
 
   const handleScanNextTest = () => {
     setStep('scan-qr');
+    setResolved(null);
     setGradingResult(null);
     setMarkedAnswers({});
-    setEmbeddedKeyFromQr({});
-    setBackendQuestions([]);
-    setBackendAnswerKey({});
+    setAmbiguousQuestions([]);
+    setDiscursiveScores({});
+    setOmrAnalysis(null);
+    setVerificationPreviewUrl(null);
+    setShowPreviewImg(false);
     setQrRawString(null);
     setCameraError(null);
+    setSelectedStudentId('');
+    setManualStudentName('');
+    setManualStudentReg('');
   };
 
-  const currentStudent =
-    students.find((s) => s.id === selectedStudentId) || students[0];
-  const answeredCount = Object.keys(markedAnswers).length;
+  const currentStudent = useMemo(
+    () => (selectedStudentId ? students.find((s) => s.id === selectedStudentId) : null),
+    [students, selectedStudentId]
+  );
+
+  const answeredCount = useMemo(
+    () => Object.values(markedAnswers).filter((v) => v !== null && v !== undefined).length,
+    [markedAnswers]
+  );
+
+  const totalObjective = resolved?.objectiveQuestions.length || 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col select-none">
-      {/* Hidden Native Smartphone Camera Inputs (Opens OS Camera directly, never inside the webpage) */}
+      {/* Hidden Native Smartphone Camera Inputs + Gallery Picker */}
       <input
         ref={qrNativeCameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
+        onChange={(e) => handleNativeCameraPhoto(e, 'qr')}
+        className="hidden"
+      />
+      <input
+        ref={qrGalleryInputRef}
+        type="file"
+        accept="image/*"
         onChange={(e) => handleNativeCameraPhoto(e, 'qr')}
         className="hidden"
       />
@@ -986,7 +623,7 @@ export const MobileScannerScreen: React.FC = () => {
             >
               2
             </span>
-            <span>Ver Prova</span>
+            <span>Ler Gabarito</span>
           </div>
 
           <div className="h-px w-6 bg-slate-800" />
@@ -1012,16 +649,14 @@ export const MobileScannerScreen: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 p-4 flex flex-col justify-between max-w-md w-full mx-auto space-y-4">
-        {/* ===================================================================
-            STEP 1: OPEN NATIVE PHONE CAMERA TO SCAN THE QR CODE
-        =================================================================== */}
+        {/* STEP 1: SCAN QR CODE */}
         {step === 'scan-qr' && (
           <>
             <div className="flex-1 flex flex-col justify-center space-y-4">
               {cameraError && (
                 <div className="p-3.5 bg-rose-950/70 border border-rose-500/50 rounded-2xl flex items-start gap-2.5 text-xs text-rose-200">
                   <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <span>{cameraError}</span>
+                  <span className="leading-relaxed">{cameraError}</span>
                 </div>
               )}
 
@@ -1035,10 +670,10 @@ export const MobileScannerScreen: React.FC = () => {
                   <div className="space-y-3 py-8">
                     <span className="inline-block w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
                     <p className="text-sm font-bold text-emerald-400">
-                      Lendo QR Code da Foto...
+                      Validando QR Code no Sistema...
                     </p>
                     <p className="text-xs text-slate-400">
-                      Identificando prova e caderno
+                      Verificando prova cadastrada e gabarito oficial
                     </p>
                   </div>
                 ) : (
@@ -1051,7 +686,8 @@ export const MobileScannerScreen: React.FC = () => {
                         Escanear QR Code da Prova
                       </h1>
                       <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                        Toque no botão abaixo para abrir a câmera do celular e fotografar o QR Code impresso na prova ou no cartão-resposta.
+                        Fotografe o cartão-resposta oficial do Correge. O sistema valida a prova no
+                        banco de dados antes de realizar a leitura óptica das bolhas.
                       </p>
                     </div>
                   </div>
@@ -1059,8 +695,7 @@ export const MobileScannerScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Primary Button: Opens Native Phone Camera directly */}
-            <div className="pt-2 pb-4">
+            <div className="pt-2 pb-4 space-y-2">
               <button
                 type="button"
                 onClick={() => qrNativeCameraInputRef.current?.click()}
@@ -1070,132 +705,208 @@ export const MobileScannerScreen: React.FC = () => {
                 <Camera className="w-5 h-5" />
                 <span>Abrir Câmera e Ler QR Code</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => qrGalleryInputRef.current?.click()}
+                disabled={isProcessing}
+                className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Selecionar Foto da Galeria</span>
+              </button>
             </div>
           </>
         )}
 
-        {/* ===================================================================
-            STEP 2: SHOW THE SCANNED TEST & OPEN NATIVE CAMERA TO CORRECT IT
-        =================================================================== */}
-        {step === 'view-test' && (
+        {/* STEP 2: VIEW MATCHED EXAM & SCAN/REVIEW ANSWER SHEET */}
+        {step === 'view-test' && resolved && (
           <>
             <div className="space-y-3 flex-1 overflow-y-auto pr-0.5">
+              {cameraError && (
+                <div className="p-3.5 bg-rose-950/70 border border-rose-500/50 rounded-2xl flex items-start gap-2.5 text-xs text-rose-200">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{cameraError}</span>
+                </div>
+              )}
+
               {/* Scanned Test Header Card */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
-                  <div>
+                  <div className="min-w-0">
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      <QrCode className="w-3 h-3" /> QR Code Identificado
+                      <QrCode className="w-3 h-3" /> Prova Confirmada
                     </span>
-                    <h2 className="text-sm font-black text-white mt-1.5">
-                      {resolvedExamTitle || currentExam?.title || 'Avaliação Institucional'}
+                    <h2 className="text-sm font-black text-white mt-1.5 truncate">
+                      {resolved.exam.title}
                     </h2>
                     <p className="text-xs text-slate-400">
-                      {resolvedExamDiscipline || currentExam?.discipline} •{' '}
-                      {currentExam?.classGroup}
+                      {resolved.exam.discipline} • {resolved.exam.code}
                     </p>
                     {qrRawString && (
-                      <p className="text-[10px] font-mono text-slate-500 mt-1 truncate max-w-[230px]">
-                        Payload: {qrRawString}
+                      <p className="text-[10px] font-mono text-slate-500 mt-1 truncate max-w-[220px]">
+                        QR: {qrRawString}
                       </p>
                     )}
                   </div>
 
                   <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-[#9E0B1A] text-white shrink-0">
-                    CADERNO {selectedVersionLetter}
+                    CADERNO {resolved.versionLetter}
                   </span>
                 </div>
 
-                {/* Student Identified by QR Code */}
-                <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
-                      <User className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="truncate">
-                      <span className="text-[10px] text-slate-400 block">
-                        Estudante
-                      </span>
-                      <select
-                        value={selectedStudentId}
-                        onChange={(e) => setSelectedStudentId(e.target.value)}
-                        className="bg-transparent font-bold text-white text-xs focus:outline-none cursor-pointer"
-                      >
-                        {students.map((st) => (
-                          <option
-                            key={st.id}
-                            value={st.id}
-                            className="bg-slate-900 text-white"
-                          >
-                            {st.name} ({st.registration})
+                {/* Student identification */}
+                <div className="pt-2.5 border-t border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
+                        <User className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[10px] text-slate-400 block">
+                          {scanMode === 'nominal' ? 'Estudante (Nominal)' : 'Estudante (Folha Avulsa)'}
+                        </span>
+                        <select
+                          value={selectedStudentId}
+                          onChange={(e) => {
+                            const id = e.target.value;
+                            setSelectedStudentId(id);
+                            const st = students.find((s) => s.id === id);
+                            if (st) {
+                              setManualStudentName(st.name);
+                              setManualStudentReg(st.registration);
+                            }
+                          }}
+                          className="w-full bg-transparent font-bold text-white text-xs focus:outline-none cursor-pointer truncate"
+                        >
+                          <option value="" className="bg-slate-900 text-slate-300">
+                            Pendente de atribuição (Folha Avulsa)
                           </option>
-                        ))}
-                      </select>
+                          {students.map((st) => (
+                            <option
+                              key={st.id}
+                              value={st.id}
+                              className="bg-slate-900 text-white"
+                            >
+                              {st.name} ({st.registration})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="text-right shrink-0">
-                    <span className="text-[10px] text-slate-400 block">
-                      Respostas Lidas
-                    </span>
-                    <span className="font-mono font-bold text-emerald-400">
-                      {answeredCount}/{totalQuestions}
-                    </span>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] text-slate-400 block">Marcadas</span>
+                      <span className="font-mono font-bold text-emerald-400">
+                        {answeredCount}/{totalObjective}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Full Scanned Test Questions List */}
+              {/* OMR Detection Summary & Visual Overlay */}
+              {omrAnalysis && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5" />
+                      OMR Lido ({Math.round(omrAnalysis.overallConfidence * 100)}% conf.)
+                    </span>
+                    {verificationPreviewUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPreviewImg((v) => !v)}
+                        className="text-[11px] font-bold text-amber-300 hover:underline cursor-pointer"
+                      >
+                        {showPreviewImg ? 'Ocultar Foto' : 'Ver Marcações'}
+                      </button>
+                    )}
+                  </div>
+                  {showPreviewImg && verificationPreviewUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={verificationPreviewUrl}
+                      alt="Verificação óptica das bolhas"
+                      className="w-full max-h-60 object-contain rounded-xl border border-slate-800 bg-black"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Ambiguous / Rasura alert */}
+              {ambiguousQuestions.length > 0 && (
+                <div className="p-3 bg-amber-950/60 border border-amber-500/50 rounded-2xl flex items-start gap-2 text-xs text-amber-200">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    Possível rasura/dupla marcação em:{' '}
+                    <strong>{ambiguousQuestions.map((q) => `Q${q}`).join(', ')}</strong>. Deixadas
+                    sem marcação automática — ajuste abaixo se necessário.
+                  </span>
+                </div>
+              )}
+
+              {/* Objective Questions List */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between px-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                     <BookOpen className="w-3.5 h-3.5 text-[#9E0B1A]" />
-                    Questões da Prova (Caderno {selectedVersionLetter})
+                    Questões Objetivas ({totalObjective})
                   </span>
                 </div>
 
-                {testQuestions.map((q, idx) => {
-                  const qNum = idx + 1;
-                  const studentChoice = markedAnswers[qNum];
+                {resolved.objectiveQuestions.map((q) => {
+                  const qNum = q.questionNumber;
+                  const studentChoice = markedAnswers[qNum] ?? null;
+                  const isAmbiguous = ambiguousQuestions.includes(qNum) && studentChoice === null;
+                  const alts = resolved.questionAlternativesMap[qNum] || [];
 
                   return (
                     <div
-                      key={q.originalQuestionId || qNum}
-                      className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5"
+                      key={q.questionId || qNum}
+                      className={`bg-slate-900 border rounded-2xl p-3.5 space-y-2.5 ${
+                        isAmbiguous ? 'border-amber-500/70' : 'border-slate-800'
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-xs font-black text-white bg-slate-800 px-2 py-0.5 rounded-md font-mono">
                           Questão {qNum < 10 ? `0${qNum}` : qNum}
                         </span>
-                        {studentChoice ? (
-                          <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
-                            Resposta Lida: {studentChoice}
+                        {isAmbiguous ? (
+                          <span className="text-[11px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/40 px-2 py-0.5 rounded-md">
+                            Rasura / Dupla Marcação
+                          </span>
+                        ) : studentChoice ? (
+                          <span className="text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                            Lida: {studentChoice}
                           </span>
                         ) : (
-                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-800/70 px-2 py-0.5 rounded-md">
-                            Aguardando leitura
+                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-800/70 px-2 py-0.5 rounded-md">
+                            Em branco
                           </span>
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-200 leading-relaxed">
-                        {q.statement}
-                      </p>
+                      <p className="text-xs text-slate-200 leading-relaxed">{q.statement}</p>
 
-                      {/* Alternatives of this question on the test */}
                       <div className="space-y-1.5 pt-1">
-                        {q.alternatives.map((alt) => {
+                        {alts.map((alt) => {
                           const isSelected = studentChoice === alt.letter;
                           return (
                             <button
-                              key={alt.id || alt.letter}
+                              key={alt.letter}
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
                                 setMarkedAnswers((prev) => ({
                                   ...prev,
-                                  [qNum]: alt.letter as Letter,
-                                }))
-                              }
+                                  [qNum]: isSelected ? null : alt.letter,
+                                }));
+                                if (isAmbiguous) {
+                                  setAmbiguousQuestions((prev) =>
+                                    prev.filter((item) => item !== qNum)
+                                  );
+                                }
+                              }}
                               className={`w-full text-left p-2 rounded-xl border text-xs transition flex items-start gap-2.5 cursor-pointer ${
                                 isSelected
                                   ? 'bg-amber-400/15 border-amber-400 text-white font-semibold'
@@ -1220,9 +931,46 @@ export const MobileScannerScreen: React.FC = () => {
                   );
                 })}
               </div>
+
+              {/* Discursive Questions (if any) */}
+              {resolved.discursiveQuestions.length > 0 && (
+                <div className="space-y-2.5 pt-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5 px-1">
+                    <PenTool className="w-3.5 h-3.5" />
+                    Questões Discursivas ({resolved.discursiveQuestions.length})
+                  </span>
+                  {resolved.discursiveQuestions.map((dq) => {
+                    const maxPts = Number(dq.maxScore.toFixed(2)) || 1;
+                    const assigned = discursiveScores[dq.questionId] ?? 0;
+                    return (
+                      <div
+                        key={dq.questionId}
+                        className="bg-slate-900 border border-amber-500/40 rounded-2xl p-3.5 space-y-2"
+                      >
+                        <p className="text-xs font-bold text-white">
+                          Questão {dq.questionNumber} (máx {maxPts} pts)
+                        </p>
+                        <p className="text-xs text-slate-300">{dq.statement}</p>
+                        <input
+                          type="number"
+                          min={0}
+                          max={maxPts}
+                          step={0.1}
+                          value={assigned}
+                          onChange={(e) => {
+                            const v = Math.max(0, Math.min(maxPts, Number(e.target.value) || 0));
+                            setDiscursiveScores((prev) => ({ ...prev, [dq.questionId]: v }));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono font-bold"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Bottom Action Buttons: Opens Native Phone Camera to Scan & Correct the Test */}
+            {/* Bottom Action Buttons */}
             <div className="pt-2 pb-4 space-y-2 sticky bottom-0 bg-slate-950/95 backdrop-blur-md">
               <button
                 type="button"
@@ -1232,22 +980,27 @@ export const MobileScannerScreen: React.FC = () => {
               >
                 <Camera className="w-5 h-5" />
                 <span>
-                  {isProcessing
-                    ? 'Lendo e Corrigindo Prova...'
-                    : 'Abrir Câmera e Corrigir Prova'}
+                  {isProcessing ? 'Lendo Gabarito (OMR)...' : 'Abrir Câmera e Ler Gabarito'}
                 </span>
               </button>
 
-              {answeredCount > 0 && (
+              {(omrAnalysis || answeredCount > 0) && (
                 <button
                   type="button"
-                  onClick={() => executeGradingAndFinish(markedAnswers)}
+                  onClick={() =>
+                    executeGradingAndFinish(
+                      resolved,
+                      markedAnswers,
+                      ambiguousQuestions,
+                      discursiveScores
+                    )
+                  }
                   disabled={isProcessing}
                   className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white rounded-xl text-xs font-black shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>
-                    Concluir Correção com Respostas Lidas ({answeredCount}/{totalQuestions})
+                    Confirmar e Salvar Correção ({answeredCount}/{totalObjective} respondidas)
                   </span>
                 </button>
               )}
@@ -1264,27 +1017,25 @@ export const MobileScannerScreen: React.FC = () => {
           </>
         )}
 
-        {/* ===================================================================
-            STEP 3: SHOW THE CORRECTED TEST & FINAL SCORE
-        =================================================================== */}
-        {step === 'corrected' && gradingResult && (
+        {/* STEP 3: CORRECTED SUMMARY */}
+        {step === 'corrected' && resolved && gradingResult && (
           <>
             <div className="space-y-3 flex-1 overflow-y-auto pr-0.5">
-              {/* Final Score Summary Card */}
               <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 flex items-center justify-between">
-                <div className="space-y-0.5">
+                <div className="space-y-0.5 min-w-0">
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Prova Corrigida
                   </span>
-                  <h2 className="text-sm font-black text-white">
-                    {currentStudent?.name}
+                  <h2 className="text-sm font-black text-white truncate">
+                    {currentStudent?.name || manualStudentName || 'Folha Avulsa (Pendente)'}
                   </h2>
                   <p className="text-xs text-slate-300 font-mono">
-                    {currentStudent?.registration} • Caderno {selectedVersionLetter}
+                    {currentStudent?.registration || manualStudentReg || 'Sem matrícula'} • Caderno{' '}
+                    {resolved.versionLetter}
                   </p>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <div className="text-3xl font-black text-emerald-400">
                     {gradingResult.totalScore.toFixed(1)}
                     <span className="text-xs text-slate-400 font-normal">
@@ -1292,32 +1043,35 @@ export const MobileScannerScreen: React.FC = () => {
                     </span>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-300">
-                    {gradingResult.correctCount}/{gradingResult.totalQuestions} acertos
+                    {gradingResult.correctCount}/{gradingResult.totalObjectiveQuestions} acertos
                   </span>
                 </div>
               </div>
 
-              {/* Graded Test Questions Breakdown */}
               <div className="space-y-2.5">
-                {testQuestions.map((q, idx) => {
-                  const qNum = idx + 1;
-                  const detail = gradingResult.details.find(
-                    (d) => d.questionNumber === qNum
+                {resolved.objectiveQuestions.map((q) => {
+                  const detail = gradingResult.objectiveResults.find(
+                    (d) => d.questionNumber === q.questionNumber
                   );
                   const isCorrect = detail?.isCorrect ?? false;
-                  const chosen = detail?.chosen;
-                  const correct = detail?.correct || q.correctAlternative;
+                  const chosen = detail?.chosen ?? null;
+                  const correct = detail?.correct || q.correctLetter!;
+                  const alts = resolved.questionAlternativesMap[q.questionNumber] || [];
 
                   return (
                     <div
-                      key={q.originalQuestionId || qNum}
+                      key={q.questionId || q.questionNumber}
                       className={`bg-slate-900 border rounded-2xl p-3.5 space-y-2.5 ${
-                        isCorrect ? 'border-emerald-500/40' : 'border-rose-500/40'
+                        isCorrect
+                          ? 'border-emerald-500/40'
+                          : chosen === null
+                          ? 'border-slate-700'
+                          : 'border-rose-500/40'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-black text-white bg-slate-800 px-2 py-0.5 rounded-md font-mono">
-                          Questão {qNum < 10 ? `0${qNum}` : qNum}
+                          Questão {q.questionNumber < 10 ? `0${q.questionNumber}` : q.questionNumber}
                         </span>
 
                         {isCorrect ? (
@@ -1334,17 +1088,14 @@ export const MobileScannerScreen: React.FC = () => {
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {q.statement}
-                      </p>
+                      <p className="text-xs text-slate-300 leading-relaxed">{q.statement}</p>
 
                       <div className="space-y-1 pt-1">
-                        {q.alternatives.map((alt) => {
+                        {alts.map((alt) => {
                           const isStudentChoice = chosen === alt.letter;
                           const isOfficialCorrect = correct === alt.letter;
 
-                          let rowStyle =
-                            'bg-slate-950/50 border-slate-800/80 text-slate-400';
+                          let rowStyle = 'bg-slate-950/50 border-slate-800/80 text-slate-400';
                           if (isOfficialCorrect) {
                             rowStyle =
                               'bg-emerald-500/15 border-emerald-500/60 text-emerald-200 font-semibold';
@@ -1355,7 +1106,7 @@ export const MobileScannerScreen: React.FC = () => {
 
                           return (
                             <div
-                              key={alt.id || alt.letter}
+                              key={alt.letter}
                               className={`p-2 rounded-xl border text-xs flex items-start gap-2.5 ${rowStyle}`}
                             >
                               <span
@@ -1380,7 +1131,6 @@ export const MobileScannerScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Bottom Button: Scan Next Test */}
             <div className="pt-2 pb-4 sticky bottom-0 bg-slate-950/95 backdrop-blur-md">
               <button
                 type="button"

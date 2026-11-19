@@ -127,6 +127,7 @@ function PrintRenderContent() {
         {sheetsToRender.map((item, idx) => (
           <div key={`ans-render-${idx}`} className="w-full flex flex-col items-center">
             <A4AnswerSheet
+              examId={exam.id}
               examTitle={exam.title}
               examCode={exam.code}
               discipline={exam.discipline}
@@ -205,6 +206,7 @@ function PrintRenderContent() {
           totalSheets.push(
             <A4AnswerSheet
               key={`exam-${eIdx}-ans`}
+              examId={exam.id}
               examTitle={exam.title}
               examCode={exam.code}
               discipline={exam.discipline}

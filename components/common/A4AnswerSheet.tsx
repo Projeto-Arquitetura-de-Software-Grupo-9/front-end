@@ -9,6 +9,7 @@ export interface A4AnswerSheetQuestion {
 }
 
 export interface A4AnswerSheetProps {
+  examId?: string;
   examTitle: string;
   examCode: string;
   discipline?: string;
@@ -34,6 +35,7 @@ export interface A4AnswerSheetProps {
 }
 
 export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
+  examId,
   examTitle,
   examCode,
   discipline,
@@ -163,6 +165,7 @@ export const A4AnswerSheet: React.FC<A4AnswerSheetProps> = ({
             <QrCodeGraphic
               value={JSON.stringify({
                 app: 'CORREGE',
+                ...(examId ? { examId } : {}),
                 code: examCode,
                 exam: examCode.replace(/[^a-zA-Z0-9]/g, ''),
                 title: examTitle,

@@ -22,7 +22,7 @@ interface AppShellProps {
 }
 
 function AppShellContent({ children }: AppShellProps) {
-  const { isAuthenticated, authView } = useApp();
+  const { isAuthenticated, isAuthLoading, authView } = useApp();
   const pathname = usePathname();
   const [isSmartphone, setIsSmartphone] = useState(false);
 
@@ -66,6 +66,15 @@ function AppShellContent({ children }: AppShellProps) {
   // Headless Print Render Mode (for Playwright / Puppeteer PDF generation parity)
   if (pathname?.startsWith('/print-render')) {
     return <div className="bg-white min-h-screen text-slate-900">{children}</div>;
+  }
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-200 gap-3">
+        <span className="inline-block w-8 h-8 border-2 border-[#9E0B1A] border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs font-semibold text-slate-400">Validando sessão institucional...</p>
+      </div>
+    );
   }
 
   const isPublicAuthRoute =

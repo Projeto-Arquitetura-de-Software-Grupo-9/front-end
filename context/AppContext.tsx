@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ScreenType,
@@ -9,8 +9,6 @@ import {
   Student,
   ExamReport,
   ExamVersion,
-  DifficultyLevel,
-  Alternative,
   Class,
   Discipline,
   Application,
@@ -22,7 +20,20 @@ import {
   getVersionLetters,
   generateRandomStudentAssignments,
 } from '@/lib/exam-utils';
-import { api, API_BASE_URL } from '@/lib/api';
+import {
+  api,
+  API_BASE_URL,
+  ApiError,
+  setAuthToken,
+  clearAuthToken,
+} from '@/lib/api';
+
+const AUTH_SESSION_STORAGE_KEY = 'correge_auth_session';
+
+interface StoredAuthSession {
+  token: string;
+  user: User;
+}
 
 interface Toast {
   id: string;
@@ -55,15 +66,20 @@ interface ExamDraft {
 interface AppContextType {
   currentScreen: ScreenType;
   setCurrentScreen: (screen: ScreenType) => void;
-  
-  // LGPD & Auth (Features 1 & 1.1)
+
+  // LGPD & Auth (Features 1 & 1.1 - 100% Backend JWT + bcrypt)
   isAuthenticated: boolean;
+  isAuthLoading: boolean;
   currentUser: User;
   authView: 'login' | 'register' | 'recovery';
   setAuthView: (view: 'login' | 'register' | 'recovery') => void;
   authPrefillEmail: string;
   setAuthPrefillEmail: (email: string) => void;
-  login: (role: UserRole, email?: string, password?: string) => { success: boolean; error?: string };
+  login: (
+    role: UserRole,
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
   registerAccount: (data: {
     fullName: string;
     email: string;
@@ -71,11 +87,21 @@ interface AppContextType {
     department?: string;
     role?: UserRole;
     autoLogin?: boolean;
-  }) => { success: boolean; error?: string };
-  requestPasswordReset: (email: string) => { success: boolean; code?: string; error?: string };
-  resetPassword: (email: string, code: string, newPassword: string) => { success: boolean; error?: string };
+  }) => Promise<{ success: boolean; error?: string }>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  requestPasswordReset: (
+    email: string
+  ) => Promise<{ success: boolean; message?: string; error?: string }>;
+  resetPassword: (
+    email: string,
+    token: string,
+    newPassword: string
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  anonymizeUser: () => void;
+  anonymizeUser: () => Promise<void>;
 
   // Search
   searchQuery: string;
@@ -101,7 +127,7 @@ interface AppContextType {
   addQuestion: (question: Omit<Question, 'id' | 'code'>) => Question;
   updateQuestion: (id: string, question: Partial<Question>) => void;
   deleteQuestion: (id: string) => void;
-  
+
   // Exams (Feature 4 - Templates)
   exams: Exam[];
   refreshExams: () => Promise<void>;
@@ -122,18 +148,22 @@ interface AppContextType {
   reshuffleExamStudents: (id: string) => void;
   deleteExam: (id: string) => void;
   duplicateExam: (id: string) => Exam;
-  
+
   // Applications (Feature 5, 6 - Prova aplicada a Turma)
   applications: Application[];
   activeApplicationId: string;
   setActiveApplicationId: (id: string) => void;
   selectedApplication: Application | undefined;
-  createApplication: (examId: string, classId: string, options: {
-    withStudentIdentification: boolean;
-    numberOfVersions: number;
-    shuffleQuestions: boolean;
-    shuffleAlternatives: boolean;
-  }) => Application;
+  createApplication: (
+    examId: string,
+    classId: string,
+    options: {
+      withStudentIdentification: boolean;
+      numberOfVersions: number;
+      shuffleQuestions: boolean;
+      shuffleAlternatives: boolean;
+    }
+  ) => Application;
   publishAnswerKey: (applicationId: string) => void;
 
   // Corrections & Pending manual assignment (Feature 8, 9)
@@ -172,16 +202,16 @@ interface AppContextType {
 
   // Results & Reports (Feature 10)
   currentReport: ExamReport;
-  
+
   // Modals
   isNewQuestionModalOpen: boolean;
   setIsNewQuestionModalOpen: (open: boolean) => void;
   editingQuestion: Question | null;
   setEditingQuestion: (q: Question | null) => void;
-  
+
   isNewStudentModalOpen: boolean;
   setIsNewStudentModalOpen: (open: boolean) => void;
-  
+
   isExcelImportModalOpen: boolean;
   setIsExcelImportModalOpen: (open: boolean) => void;
 
@@ -200,31 +230,35 @@ interface AppContextType {
   navigateToTurmas: () => void;
   navigateToAplicacoes: () => void;
 
-  // Backend QAS Connection Status
+  // Backend Connection Status
   isBackendOnline: boolean;
   backendUrl: string;
 }
 
-const BLANK_EXAM_DRAFT: ExamDraft = {
-  title: '',
-  discipline: 'Direito Constitucional',
-  course: 'Direito',
-  classGroup: 'Turma A',
-  semester: '2026.1',
-  institution: 'CATÓLICA DE SANTA CATARINA',
-  department: 'Curso de Direito | Departamento de Ciências Jurídicas',
-  date: '15 Mar, 2026',
-  duration: '2 horas',
-  instructions:
-    'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão. Duração máxima: 2 horas. Permitida consulta apenas a textos de lei seca sem anotações.',
-  selectedQuestionIds: [],
-  withStudentIdentification: true,
-  shuffleQuestions: true,
-  shuffleAlternatives: true,
-  numberOfVersions: 4,
-  maxScore: 10.0,
-  permutationStrategy: 'FISHER_YATES',
-};
+function getDefaultDraft(): ExamDraft {
+  const now = new Date();
+  const semester = `${now.getFullYear()}.${now.getMonth() < 6 ? 1 : 2}`;
+  return {
+    title: '',
+    discipline: '',
+    course: 'Direito',
+    classGroup: '',
+    semester,
+    institution: 'CATÓLICA DE SANTA CATARINA',
+    department: 'Centro Universitário Católica de Santa Catarina',
+    date: now.toLocaleDateString('pt-BR'),
+    duration: '2 horas',
+    instructions:
+      'Marque apenas uma alternativa por questão. Preencha completamente o campo correspondente. Use apenas caneta preta ou azul. Rasuras anularão a questão.',
+    selectedQuestionIds: [],
+    withStudentIdentification: true,
+    shuffleQuestions: true,
+    shuffleAlternatives: true,
+    numberOfVersions: 4,
+    maxScore: 10.0,
+    permutationStrategy: 'FISHER_YATES',
+  };
+}
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -253,6 +287,54 @@ const EMPTY_REPORT: ExamReport = {
   pendingCorrectionsCount: 0,
 };
 
+function decodeJwtExpiryMs(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const parsed = JSON.parse(jsonPayload);
+    return typeof parsed?.exp === 'number' ? parsed.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredAuthSession(session: StoredAuthSession | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (session) {
+      localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
+      setAuthToken(session.token);
+    } else {
+      localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+      clearAuthToken();
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function readStoredAuthSession(): StoredAuthSession | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredAuthSession;
+    if (!parsed?.token || !parsed?.user?.id || !parsed?.user?.email) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function mapBackendExam(e: any): Exam {
   const instructions = Array.isArray(e.instructions)
     ? e.instructions.join('\n')
@@ -260,11 +342,12 @@ function mapBackendExam(e: any): Exam {
     ? e.instructions
     : '';
 
-  const rawVersions = (Array.isArray(e.variationsJson?.versions) && e.variationsJson.versions.length > 0)
-    ? e.variationsJson.versions
-    : (Array.isArray(e.versions) && e.versions.length > 0)
-    ? e.versions
-    : [];
+  const rawVersions =
+    Array.isArray(e.variationsJson?.versions) && e.variationsJson.versions.length > 0
+      ? e.variationsJson.versions
+      : Array.isArray(e.versions) && e.versions.length > 0
+      ? e.versions
+      : [];
 
   const mappedVersions = rawVersions.map((v: any, vIdx: number) => {
     let qLayout = v.questions || v.questionsLayout || [];
@@ -276,7 +359,7 @@ function mapBackendExam(e: any): Exam {
       }
     }
     const questions = (Array.isArray(qLayout) ? qLayout : []).map((q: any, qIdx: number) => ({
-      originalQuestionId: q.questionId || q.id || 'q-' + qIdx,
+      originalQuestionId: q.originalQuestionId || q.questionId || q.id || 'q-' + qIdx,
       orderIndex: q.orderIndex || qIdx + 1,
       statement: q.statement || '',
       alternatives: (q.alternatives || []).map((a: any, aIdx: number) => ({
@@ -301,19 +384,27 @@ function mapBackendExam(e: any): Exam {
     const versionLetter = v.versionLetter || String.fromCharCode(65 + vIdx);
 
     return {
-      id: v.id || 'v-' + versionLetter,
+      id: v.id || `${e.id}-${versionLetter}`,
       versionLetter,
       questions,
       answerKey: aKey,
-      qrCodePayload: v.qrCodePayload || JSON.stringify({ examId: e.id, examCode: e.code || '#EXAM', versionLetter }),
+      qrCodePayload:
+        v.qrCodePayload ||
+        JSON.stringify({
+          app: 'CORREGE',
+          examId: e.id,
+          code: e.code || '#EXAM',
+          ver: versionLetter,
+        }),
     };
   });
 
-  const selectedQuestionIds = (e.selectedQuestionIds && e.selectedQuestionIds.length > 0)
-    ? e.selectedQuestionIds
-    : (e.variationsJson?.selectedQuestionIds && e.variationsJson.selectedQuestionIds.length > 0)
-    ? e.variationsJson.selectedQuestionIds
-    : (mappedVersions[0]?.questions || []).map((q: any) => q.originalQuestionId);
+  const selectedQuestionIds =
+    e.selectedQuestionIds && e.selectedQuestionIds.length > 0
+      ? e.selectedQuestionIds
+      : e.variationsJson?.selectedQuestionIds && e.variationsJson.selectedQuestionIds.length > 0
+      ? e.variationsJson.selectedQuestionIds
+      : (mappedVersions[0]?.questions || []).map((q: any) => q.originalQuestionId);
 
   return {
     id: e.id,
@@ -324,9 +415,9 @@ function mapBackendExam(e: any): Exam {
     institution: e.institution || 'CATÓLICA DE SANTA CATARINA',
     department: e.department || '',
     course: e.course || 'Graduação',
-    discipline: e.discipline || (e.disciplinaRef?.nome || ''),
+    discipline: e.discipline || e.disciplinaRef?.nome || '',
     classGroup: e.classGroup || '',
-    semester: e.semester || '2026.1',
+    semester: e.semester || `${new Date().getFullYear()}.1`,
     date: e.date || '',
     duration: e.duration || '2 horas',
     instructions,
@@ -334,7 +425,10 @@ function mapBackendExam(e: any): Exam {
     shuffleQuestions: e.shuffleQuestions ?? e.variationsJson?.shuffleQuestions ?? true,
     shuffleAlternatives: e.shuffleAlternatives ?? e.variationsJson?.shuffleAlternatives ?? true,
     withStudentIdentification: e.withStudentIdentification ?? true,
-    numberOfVersions: e.variationsJson?.numberOfVersions || e.numberOfVersions || (mappedVersions.length > 0 ? mappedVersions.length : 1),
+    numberOfVersions:
+      e.variationsJson?.numberOfVersions ||
+      e.numberOfVersions ||
+      (mappedVersions.length > 0 ? mappedVersions.length : 1),
     selectedQuestionIds,
     versions: mappedVersions,
     maxScore: e.maxScore || e.variationsJson?.maxScore || 10.0,
@@ -349,26 +443,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const router = useRouter();
   const [currentScreen, setCurrentScreenState] = useState<ScreenType>('banco-questoes');
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Auth & LGPD
+
+  // Auth & LGPD (100% Backend JWT + bcrypt)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [currentUser, setCurrentUser] = useState<User>(EMPTY_USER);
   const [authView, setAuthView] = useState<'login' | 'register' | 'recovery'>('login');
   const [authPrefillEmail, setAuthPrefillEmail] = useState<string>('');
-  const [registeredUsers, setRegisteredUsers] = useState<
-    Array<{
-      id: string;
-      fullName: string;
-      email: string;
-      password: string;
-      department?: string;
-      role: UserRole;
-      createdAt: string;
-    }>
-  >([]);
-  const [recoveryCodes, setRecoveryCodes] = useState<Record<string, string>>({});
 
-  // Core Data - sem dados mockados, populados estritamente pelo backend
+  // Core Data — estritamente populados pelo backend (zero mocks!)
   const [questions, setQuestions] = useState<Question[]>([]);
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -381,126 +464,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [students, setStudents] = useState<Student[]>([]);
   const [currentReport, setCurrentReport] = useState<ExamReport>(EMPTY_REPORT);
 
-  const refreshExams = async () => {
-    try {
-      const remoteExams = await api.getExams();
-      if (Array.isArray(remoteExams)) {
-        const mapped = remoteExams.map(mapBackendExam);
-        setExams(mapped);
-        if (mapped.length > 0) {
-          setActiveExamId((prev) => (mapped.some((x) => x.id === prev) ? prev : mapped[0].id));
-        }
-      }
-    } catch (err) {
-      console.warn('Erro ao atualizar provas do backend:', err);
-    }
-  };
-
-  // Exam Wizard Draft: starts cleanly on Step 1 with clean draft
-  const [examDraft, setExamDraft] = useState<ExamDraft>(BLANK_EXAM_DRAFT);
+  const [examDraft, setExamDraft] = useState<ExamDraft>(() => getDefaultDraft());
   const [examWizardStep, setExamWizardStep] = useState<number>(1);
 
-  // Backend QAS Connectivity State
   const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
   const [backendUrl] = useState<string>(API_BASE_URL);
-
-  // Sincronização inicial com o banco de dados em produção
-  useEffect(() => {
-    let isMounted = true;
-    async function syncWithBackend() {
-      try {
-        const health = await api.checkHealth();
-        if (isMounted) {
-          setIsBackendOnline(health.online);
-          if (health.online) {
-            try {
-              const [remoteStudents, remoteDisciplines, remoteClasses, remoteExams, remoteQuestions, remoteCorrecoes] = await Promise.all([
-                api.getStudents().catch(() => []),
-                api.getDisciplinas().catch(() => []),
-                api.getTurmas().catch(() => []),
-                api.getExams().catch(() => []),
-                api.getQuestions().catch(() => []),
-                api.getCorrecoes().catch(() => []),
-              ]);
-              if (isMounted) {
-                if (Array.isArray(remoteStudents)) setStudents(remoteStudents);
-                if (Array.isArray(remoteDisciplines)) {
-                  const sanitized = remoteDisciplines
-                    .map((d: any) => ({
-                      id: String(d.id),
-                      teacherId: String(d.teacherId || d.idProfessor || 'prof-catolica-01'),
-                      code: String(d.code || d.codigo || 'DIR-101'),
-                      name: String(d.name || d.nome || 'Disciplina'),
-                      course: String(d.course || d.curso || 'Direito'),
-                      createdAt: String(d.createdAt || new Date().toISOString()),
-                    }))
-                    .filter((d: any) => Boolean(d.name));
-                  setDisciplines(sanitized);
-                }
-                if (Array.isArray(remoteClasses)) setClasses(remoteClasses);
-                if (Array.isArray(remoteQuestions)) setQuestions(remoteQuestions);
-                if (Array.isArray(remoteCorrecoes)) setCorrections(remoteCorrecoes);
-                if (Array.isArray(remoteExams)) {
-                  const mapped = remoteExams.map(mapBackendExam);
-                  setExams(mapped);
-                  if (mapped.length > 0) {
-                    setActiveExamId((prev) => (mapped.some((x) => x.id === prev) ? prev : mapped[0].id));
-                  }
-                }
-              }
-            } catch (syncErr) {
-              console.warn('Sincronização parcial com banco de dados:', syncErr);
-            }
-          }
-        }
-      } catch (err) {
-        if (isMounted) setIsBackendOnline(false);
-      }
-    }
-    syncWithBackend();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Limpeza de cache local de provas para exibir estritamente dados reais do banco
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('correge_exams_v1');
-        const storedDisc = localStorage.getItem('correge_disciplines_v1');
-        if (storedDisc) {
-          const parsedDisc = JSON.parse(storedDisc);
-          if (Array.isArray(parsedDisc) && parsedDisc.length > 0) {
-            const sanitized = parsedDisc
-              .map((d: any) => ({
-                id: String(d.id),
-                teacherId: String(d.teacherId || d.idProfessor || 'prof-catolica-01'),
-                code: String(d.code || d.codigo || 'DIR-101'),
-                name: String(d.name || d.nome || 'Disciplina'),
-                course: String(d.course || d.curso || 'Direito'),
-                createdAt: String(d.createdAt || new Date().toISOString()),
-              }))
-              .filter((d: any) => Boolean(d.name));
-            setDisciplines(sanitized);
-          }
-        }
-        const storedUsers = localStorage.getItem('correge_users_v1');
-        if (storedUsers) {
-          const parsedUsers = JSON.parse(storedUsers);
-          if (Array.isArray(parsedUsers)) {
-            setRegisteredUsers(parsedUsers);
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load from localStorage:', e);
-      }
-    }
-  }, []);
-
-  const persistExams = (newExams: Exam[]) => {
-    setExams(newExams);
-  };
 
   // Print Preview state
   const [previewVersion, setPreviewVersion] = useState<string>('A');
@@ -520,16 +488,180 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const addToast = (toast: Omit<Toast, 'id'>) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { ...toast, id }]);
-    setTimeout(() => {
-      removeToast(id);
-    }, 4000);
-  };
-
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const addToast = useCallback(
+    (toast: Omit<Toast, 'id'>) => {
+      const id = Math.random().toString(36).substring(2, 9);
+      setToasts((prev) => [...prev, { ...toast, id }]);
+      setTimeout(() => {
+        removeToast(id);
+      }, 4500);
+    },
+    [removeToast]
+  );
+
+  const refreshExams = useCallback(async () => {
+    try {
+      const remoteExams = await api.getExams();
+      if (Array.isArray(remoteExams)) {
+        const mapped = remoteExams.map(mapBackendExam);
+        setExams(mapped);
+        if (mapped.length > 0) {
+          setActiveExamId((prev) => (mapped.some((x) => x.id === prev) ? prev : mapped[0].id));
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao atualizar provas do backend:', err);
+    }
+  }, []);
+
+  const syncWithBackend = useCallback(async () => {
+    try {
+      const health = await api.checkHealth();
+      setIsBackendOnline(health.online);
+      if (!health.online) return;
+
+      const [
+        remoteStudents,
+        remoteDisciplines,
+        remoteClasses,
+        remoteExams,
+        remoteQuestions,
+        remoteCorrecoes,
+      ] = await Promise.all([
+        api.getStudents().catch(() => null),
+        api.getDisciplinas().catch(() => null),
+        api.getTurmas().catch(() => null),
+        api.getExams().catch(() => null),
+        api.getQuestions().catch(() => null),
+        api.getCorrecoes().catch(() => null),
+      ]);
+
+      if (Array.isArray(remoteStudents)) setStudents(remoteStudents);
+      if (Array.isArray(remoteDisciplines)) {
+        setDisciplines(remoteDisciplines.filter((d) => Boolean(d.name)));
+      }
+      if (Array.isArray(remoteClasses)) setClasses(remoteClasses);
+      if (Array.isArray(remoteQuestions)) setQuestions(remoteQuestions);
+      if (Array.isArray(remoteCorrecoes)) setCorrections(remoteCorrecoes);
+      if (Array.isArray(remoteExams)) {
+        const mapped = remoteExams.map(mapBackendExam);
+        setExams(mapped);
+        if (mapped.length > 0) {
+          setActiveExamId((prev) => (mapped.some((x) => x.id === prev) ? prev : mapped[0].id));
+        }
+      }
+    } catch {
+      setIsBackendOnline(false);
+    }
+  }, []);
+
+  // Limpa chaves obsoletas de mock/localStorage e restaura + valida sessão JWT real
+  useEffect(() => {
+    let isMounted = true;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('correge_exams_v1');
+        localStorage.removeItem('correge_users_v1');
+        localStorage.removeItem('correge_disciplines_v1');
+      } catch {
+        // ignore
+      }
+    }
+
+    async function bootstrapSession() {
+      const stored = readStoredAuthSession();
+      if (!stored) {
+        if (isMounted) {
+          setIsAuthenticated(false);
+          setIsAuthLoading(false);
+        }
+        return;
+      }
+
+      const expMs = decodeJwtExpiryMs(stored.token);
+      if (expMs !== null && expMs <= Date.now()) {
+        saveStoredAuthSession(null);
+        if (isMounted) {
+          setIsAuthenticated(false);
+          setCurrentUser(EMPTY_USER);
+          setIsAuthLoading(false);
+        }
+        return;
+      }
+
+      setAuthToken(stored.token);
+
+      try {
+        // Valida token diretamente no back-end (/professores/me)
+        const profile = await api.getCurrentProfessor();
+        if (!isMounted) return;
+        const verifiedUser: User = {
+          id: String(profile.id),
+          role: 'professor',
+          fullName: String(profile.nomeCompleto || stored.user.fullName),
+          email: String(profile.email || stored.user.email),
+          createdAt: String(profile.createdAt || stored.user.createdAt || new Date().toISOString()),
+        };
+        saveStoredAuthSession({ token: stored.token, user: verifiedUser });
+        setCurrentUser(verifiedUser);
+        setIsAuthenticated(true);
+      } catch (err: any) {
+        if (!isMounted) return;
+        if (err instanceof ApiError && err.status === 401) {
+          // Token inválido ou expirado no servidor
+          saveStoredAuthSession(null);
+          setCurrentUser(EMPTY_USER);
+          setIsAuthenticated(false);
+        } else if (err instanceof ApiError && err.status === 404) {
+          // Compatibilidade com back-end anterior antes do redeploy de GET /professores/me
+          try {
+            const prof = await api.getProfessorById(stored.user.id);
+            if (!isMounted) return;
+            const verifiedUser: User = {
+              id: String(prof.id),
+              role: 'professor',
+              fullName: String(prof.nomeCompleto || stored.user.fullName),
+              email: String(prof.email || stored.user.email),
+              createdAt: String(prof.createdAt || stored.user.createdAt || new Date().toISOString()),
+            };
+            saveStoredAuthSession({ token: stored.token, user: verifiedUser });
+            setCurrentUser(verifiedUser);
+            setIsAuthenticated(true);
+          } catch {
+            saveStoredAuthSession(null);
+            setCurrentUser(EMPTY_USER);
+            setIsAuthenticated(false);
+          }
+        } else {
+          // Erro transitório de rede com JWT ainda não expirado: mantém sessão verificada até reconexão
+          setCurrentUser(stored.user);
+          setIsAuthenticated(true);
+        }
+      } finally {
+        if (isMounted) {
+          setIsAuthLoading(false);
+        }
+      }
+    }
+
+    bootstrapSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Sincroniza dados reais do banco assim que autenticado (e também verifica status online)
+  useEffect(() => {
+    syncWithBackend();
+  }, [isAuthenticated, syncWithBackend]);
+
+  const persistExams = (newExams: Exam[]) => {
+    setExams(newExams);
   };
 
   // Helper shuffle function (Fisher-Yates)
@@ -547,7 +679,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     selectedQIds: string[],
     shuffleQ: boolean,
     shuffleAlt: boolean,
-    numVersions: number
+    numVersions: number,
+    examCode = '#EXAM',
+    examId?: string
   ): ExamVersion[] => {
     const baseQuestions = selectedQIds
       .map((id) => questions.find((q) => q.id === id))
@@ -569,8 +703,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           )?.text;
           const shuffledAltsText = shuffleArray(alts.map((a) => a.text));
           const letters: ('A' | 'B' | 'C' | 'D' | 'E')[] = ['A', 'B', 'C', 'D', 'E'];
-          
-          let newCorrectLetter: 'A' | 'B' | 'C' | 'D' | 'E' = 'A';
+
+          let newCorrectLetter: 'A' | 'B' | 'C' | 'D' | 'E' = q.correctAlternative || 'A';
           alts = shuffledAltsText.map((text, idx) => {
             const l = letters[idx];
             if (text === correctAltText) {
@@ -606,18 +740,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       const answerKey: Record<number, 'A' | 'B' | 'C' | 'D' | 'E'> = {};
-      questionsForVersion.forEach((qv, idx) => {
-        answerKey[idx + 1] = qv.correctAlternative;
+      let objIdx = 0;
+      questionsForVersion.forEach((qv) => {
+        if (qv.alternatives && qv.alternatives.length > 0) {
+          objIdx++;
+          answerKey[objIdx] = qv.correctAlternative;
+        }
       });
 
       return {
-        id: `version-${letter}`,
+        id: examId ? `${examId}-${letter}` : `version-${letter}`,
         versionLetter: letter,
         versionNumber: vIdx + 1,
         questions: questionsForVersion,
         answerKey,
-        publicCode: `PUB-KEY-${letter}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-        qrCodePayload: `CATOLICA-OMR:V=${letter}:APP=APP1`,
+        publicCode: `PUB-${examCode.replace(/[^A-Za-z0-9]/g, '')}-${letter}`,
+        qrCodePayload: JSON.stringify({
+          app: 'CORREGE',
+          ...(examId ? { examId } : {}),
+          code: examCode,
+          ver: letter,
+        }),
         answerKeyPublished: false,
       };
     });
@@ -625,288 +768,266 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const selectedExam = exams.find((e) => e.id === activeExamId) || exams[0];
   const selectedClass = classes.find((c) => c.id === activeClassId) || classes[0];
-  const selectedApplication = applications.find((a) => a.id === activeApplicationId) || applications[0];
+  const selectedApplication =
+    applications.find((a) => a.id === activeApplicationId) || applications[0];
 
-  // LGPD Anonymization (Feature 1.1)
-  const anonymizeUser = () => {
-    api.anonymizeTeacherData().catch((err) => console.warn('Aviso de anonimização no backend:', err));
-    setCurrentUser((prev) => ({
-      ...prev,
-      fullName: 'Usuário Removido',
-      email: `anon-${prev.id}@removido.local`,
-      anonymizedAt: new Date().toISOString(),
-    }));
-    addToast({
-      type: 'warning',
-      title: 'Conta Anonimizada (LGPD)',
-      message: 'Seus dados pessoais foram substituídos por identificadores anônimos. Suas provas e notas foram preservadas.',
-    });
-  };
-
-  const persistRegisteredUsers = (
-    nextUsers: Array<{
-      id: string;
-      fullName: string;
-      email: string;
-      password: string;
-      department?: string;
-      role: UserRole;
-      createdAt: string;
-    }>
-  ) => {
-    setRegisteredUsers(nextUsers);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('correge_users_v1', JSON.stringify(nextUsers));
-      } catch (e) {
-        console.error('Failed to save registered users:', e);
-      }
+  // =========================================================================
+  // AUTH & LGPD — 100% REAL BACKEND (JWT + bcrypt)
+  // =========================================================================
+  const login = async (
+    _role: UserRole,
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      return { success: false, error: 'Informe seu e-mail institucional e senha.' };
     }
-  };
-
-  const login = (role: UserRole, email?: string, password?: string): { success: boolean; error?: string } => {
-    const normalizedEmail = (email || '').trim().toLowerCase();
-    const registered = registeredUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-    if (registered && password && password !== '••••••••' && registered.password !== password) {
+    if (!cleanEmail.endsWith('@catolicasc.org.br')) {
       return {
         success: false,
-        error: 'Senha incorreta para esta conta institucional. Verifique ou recupere sua senha.',
+        error: 'E-mail de docente deve pertencer ao domínio @catolicasc.org.br.',
       };
     }
 
-    const fallbackName = normalizedEmail
-      ? normalizedEmail
-          .split('@')[0]
-          .split('.')
-          .map((p: string) => p.charAt(0).toUpperCase() + p.slice(1))
-          .join(' ')
-      : role === 'estudante'
-      ? 'Estudante'
-      : 'Docente';
+    try {
+      const authRes = await api.loginProfessor({ email: cleanEmail, senha: password });
+      const prof = authRes.professor || {
+        id: authRes.id || '',
+        nomeCompleto: authRes.nomeCompleto || '',
+        email: authRes.email || cleanEmail,
+        createdAt: authRes.createdAt,
+      };
 
-    if (role === 'estudante') {
-      const displayName = registered?.fullName || fallbackName;
-      setCurrentUser({
-        id: registered?.id || 'std-' + Date.now(),
-        role: 'estudante',
-        fullName: displayName,
-        email: email || '',
-        createdAt: registered?.createdAt || new Date().toISOString(),
-      });
-      setIsAuthenticated(true);
-      setAuthView('login');
-      setCurrentScreenState('portal-aluno');
-      router.push('/portal-aluno');
-      addToast({
-        type: 'success',
-        title: `Bem-vindo(a), ${displayName.split(' ')[0]}!`,
-        message: 'Acesso autenticado ao Portal do Aluno (Católica SC).',
-      });
-      return { success: true };
-    } else {
-      const displayName = registered?.fullName || fallbackName;
-      setCurrentUser({
-        id: registered?.id || 'prof-' + Date.now(),
+      if (!authRes.token || !prof.id) {
+        return {
+          success: false,
+          error: 'Resposta de autenticação inválida do servidor.',
+        };
+      }
+
+      const authenticatedUser: User = {
+        id: String(prof.id),
         role: 'professor',
-        fullName: displayName,
-        email: email || '',
-        createdAt: registered?.createdAt || new Date().toISOString(),
-      });
+        fullName: String(prof.nomeCompleto || cleanEmail.split('@')[0]),
+        email: String(prof.email || cleanEmail),
+        createdAt: String(prof.createdAt || new Date().toISOString()),
+      };
+
+      saveStoredAuthSession({ token: authRes.token, user: authenticatedUser });
+      setCurrentUser(authenticatedUser);
       setIsAuthenticated(true);
       setAuthView('login');
-      setCurrentScreenState('banco-questoes');
+      setCurrentScreenState('aplicacoes');
       router.push('/provas');
+
       addToast({
         type: 'success',
-        title: `Bem-vindo(a), ${displayName}!`,
-        message: 'Acesso autenticado ao Painel Docente.',
+        title: `Bem-vindo(a), ${authenticatedUser.fullName}!`,
+        message: 'Sessão docente autenticada com segurança.',
       });
+
       return { success: true };
+    } catch (err: any) {
+      const msg =
+        err?.name === 'AbortError'
+          ? 'Tempo limite excedido ao conectar com o servidor. Verifique sua conexão.'
+          : err?.message || 'Não foi possível autenticar. Verifique suas credenciais.';
+      return { success: false, error: msg };
     }
   };
 
-  const registerAccount = (data: {
+  const registerAccount = async (data: {
     fullName: string;
     email: string;
     password: string;
     department?: string;
     role?: UserRole;
     autoLogin?: boolean;
-  }): { success: boolean; error?: string } => {
+  }): Promise<{ success: boolean; error?: string }> => {
     const cleanName = data.fullName.trim();
     const cleanEmail = data.email.trim().toLowerCase();
-    const role = data.role || 'professor';
 
     if (cleanName.length < 3) {
       return { success: false, error: 'Informe seu nome completo (mínimo de 3 caracteres).' };
     }
-
-    if (role === 'professor' && !cleanEmail.endsWith('@catolicasc.org.br')) {
+    if (!cleanEmail.endsWith('@catolicasc.org.br')) {
       return {
         success: false,
         error: 'O e-mail docente deve pertencer ao domínio institucional @catolicasc.org.br.',
       };
     }
-
-    if (role === 'estudante' && !cleanEmail.endsWith('@catolicasc.edu.br')) {
-      return {
-        success: false,
-        error: 'O e-mail de estudante deve pertencer ao domínio @catolicasc.edu.br.',
-      };
-    }
-
     if (data.password.length < 8) {
       return { success: false, error: 'A senha de acesso deve conter pelo menos 8 caracteres.' };
     }
 
-    const exists = registeredUsers.some((u) => u.email.toLowerCase() === cleanEmail);
-    if (exists) {
-      return {
-        success: false,
-        error: 'Já existe uma conta cadastrada com este e-mail institucional.',
-      };
-    }
-
-    const newUser = {
-      id: `prof-${Date.now()}`,
-      fullName: cleanName,
-      email: cleanEmail,
-      password: data.password,
-      department: data.department?.trim() || 'Curso de Direito | Departamento de Ciências Jurídicas',
-      role,
-      createdAt: new Date().toISOString(),
-    };
-
-    const nextUsers = [...registeredUsers, newUser];
-    persistRegisteredUsers(nextUsers);
-    setAuthPrefillEmail(cleanEmail);
-
-    if (data.autoLogin !== false) {
-      setCurrentUser({
-        id: newUser.id,
-        role: newUser.role,
-        fullName: newUser.fullName,
-        email: newUser.email,
-        createdAt: newUser.createdAt,
+    try {
+      const created = await api.createProfessor({
+        nomeCompleto: cleanName,
+        email: cleanEmail,
+        senha: data.password,
       });
+
+      setAuthPrefillEmail(cleanEmail);
+
+      if (data.autoLogin === false) {
+        setAuthView('login');
+        addToast({
+          type: 'success',
+          title: 'Cadastro Concluído!',
+          message: 'Sua conta institucional foi criada no banco de dados. Faça login para continuar.',
+        });
+        return { success: true };
+      }
+
+      // Usa token retornado no registro ou efetua login imediato para obter JWT (compatibilidade com deploys anteriores)
+      let token = created.token;
+      let prof = created.professor || {
+        id: created.id || '',
+        nomeCompleto: created.nomeCompleto || cleanName,
+        email: created.email || cleanEmail,
+        createdAt: created.createdAt,
+      };
+
+      if (!token) {
+        const loginRes = await api.loginProfessor({ email: cleanEmail, senha: data.password });
+        token = loginRes.token;
+        if (loginRes.professor) {
+          prof = loginRes.professor;
+        }
+      }
+
+      if (!token || !prof.id) {
+        setAuthView('login');
+        addToast({
+          type: 'success',
+          title: 'Conta Criada!',
+          message: 'Faça login com suas credenciais para acessar o sistema.',
+        });
+        return { success: true };
+      }
+
+      const authenticatedUser: User = {
+        id: String(prof.id),
+        role: 'professor',
+        fullName: String(prof.nomeCompleto || cleanName),
+        email: String(prof.email || cleanEmail),
+        createdAt: String(prof.createdAt || new Date().toISOString()),
+      };
+
+      saveStoredAuthSession({ token, user: authenticatedUser });
+      setCurrentUser(authenticatedUser);
       setIsAuthenticated(true);
       setAuthView('login');
-      setCurrentScreenState(role === 'estudante' ? 'portal-aluno' : 'banco-questoes');
-      router.push(role === 'estudante' ? '/portal-aluno' : '/provas');
+      setCurrentScreenState('aplicacoes');
+      router.push('/provas');
+
       addToast({
         type: 'success',
         title: 'Conta Criada com Sucesso!',
-        message: `Bem-vindo(a), ${newUser.fullName}. Seu acesso institucional foi ativado.`,
+        message: `Bem-vindo(a), ${authenticatedUser.fullName}. Seu acesso institucional foi ativado.`,
       });
-    } else {
-      setAuthView('login');
+
+      return { success: true };
+    } catch (err: any) {
+      const msg =
+        err?.name === 'AbortError'
+          ? 'Tempo limite excedido ao cadastrar conta no servidor.'
+          : err?.message || 'Não foi possível concluir o cadastro.';
+      return { success: false, error: msg };
+    }
+  };
+
+  const changePassword = async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (newPassword.length < 8) {
+      return { success: false, error: 'A nova senha deve possuir no mínimo 8 caracteres.' };
+    }
+    try {
+      await api.changePassword({
+        senhaAtual: currentPassword,
+        novaSenha: newPassword,
+      });
       addToast({
         type: 'success',
-        title: 'Cadastro Concluído!',
-        message: 'Sua conta institucional foi criada. Faça login para continuar.',
+        title: 'Senha Atualizada!',
+        message: 'Sua senha institucional foi alterada com segurança.',
       });
-    }
-
-    return { success: true };
-  };
-
-  const requestPasswordReset = (email: string): { success: boolean; code?: string; error?: string } => {
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) {
-      return { success: false, error: 'Informe seu e-mail institucional.' };
-    }
-    if (!cleanEmail.endsWith('@catolicasc.org.br') && !cleanEmail.endsWith('@catolicasc.edu.br')) {
+      return { success: true };
+    } catch (err: any) {
       return {
         success: false,
-        error: 'Informe um e-mail institucional válido (@catolicasc.org.br ou @catolicasc.edu.br).',
+        error: err?.message || 'Não foi possível alterar a senha.',
       };
     }
-
-    const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setRecoveryCodes((prev) => ({ ...prev, [cleanEmail]: generatedCode }));
-    setAuthPrefillEmail(cleanEmail);
-
-    addToast({
-      type: 'info',
-      title: 'Código de Verificação Enviado!',
-      message: `Código ${generatedCode} enviado para ${cleanEmail}.`,
-    });
-
-    return { success: true, code: generatedCode };
   };
 
-  const resetPassword = (
+  const requestPasswordReset = async (
+    email: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.endsWith('@catolicasc.org.br')) {
+      return {
+        success: false,
+        error: 'Informe um e-mail docente válido (@catolicasc.org.br).',
+      };
+    }
+    try {
+      const res = await api.forgotPassword(cleanEmail);
+      setAuthPrefillEmail(cleanEmail);
+      addToast({
+        type: 'info',
+        title: 'Solicitação Processada',
+        message:
+          res.message ||
+          'Se o e-mail estiver cadastrado, você receberá as instruções de redefinição.',
+      });
+      return { success: true, message: res.message };
+    } catch (err: any) {
+      return {
+        success: false,
+        error:
+          err?.message ||
+          'Serviço de envio de e-mail para recuperação não está configurado no servidor.',
+      };
+    }
+  };
+
+  const resetPassword = async (
     email: string,
-    code: string,
+    token: string,
     newPassword: string
-  ): { success: boolean; error?: string } => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanCode = code.trim();
-    const expectedCode = recoveryCodes[cleanEmail];
-
-    if (!cleanCode || cleanCode.length < 6) {
-      return { success: false, error: 'Informe o código de verificação de 6 dígitos.' };
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!token.trim()) {
+      return { success: false, error: 'Informe o token de recuperação recebido por e-mail.' };
     }
-
-    if (expectedCode && cleanCode !== expectedCode) {
-      return {
-        success: false,
-        error: 'Código de verificação inválido. Confira os 6 dígitos enviados ao seu e-mail.',
-      };
-    }
-
     if (newPassword.length < 8) {
+      return { success: false, error: 'A nova senha deve possuir no mínimo 8 caracteres.' };
+    }
+
+    try {
+      await api.resetPassword({ token: token.trim(), novaSenha: newPassword });
+      setAuthPrefillEmail(email.trim().toLowerCase());
+      addToast({
+        type: 'success',
+        title: 'Senha Redefinida!',
+        message: 'Sua senha institucional foi atualizada com sucesso.',
+      });
+      return { success: true };
+    } catch (err: any) {
       return {
         success: false,
-        error: 'A nova senha deve possuir no mínimo 8 caracteres.',
+        error: err?.message || 'Token de recuperação inválido ou expirado.',
       };
     }
-
-    const existingIdx = registeredUsers.findIndex((u) => u.email.toLowerCase() === cleanEmail);
-    if (existingIdx >= 0) {
-      const updated = [...registeredUsers];
-      updated[existingIdx] = { ...updated[existingIdx], password: newPassword };
-      persistRegisteredUsers(updated);
-    } else {
-      // Also persist password update if user recovered the default institutional account
-      const isStudent = cleanEmail.endsWith('@catolicasc.edu.br');
-            const derivedName = cleanEmail
-        .split('@')[0]
-        .split('.')
-        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-        .join(' ');
-
-      const newUserEntry = {
-        id: `prof-${Date.now()}`,
-        fullName: derivedName,
-        email: cleanEmail,
-        password: newPassword,
-        role: (isStudent ? 'estudante' : 'professor') as UserRole,
-        createdAt: new Date().toISOString(),
-      };
-      persistRegisteredUsers([...registeredUsers, newUserEntry]);
-    }
-
-    // Clear used recovery code
-    setRecoveryCodes((prev) => {
-      const copy = { ...prev };
-      delete copy[cleanEmail];
-      return copy;
-    });
-    setAuthPrefillEmail(cleanEmail);
-
-    addToast({
-      type: 'success',
-      title: 'Senha Redefinida com Sucesso!',
-      message: 'Sua senha de acesso institucional foi atualizada.',
-    });
-
-    return { success: true };
   };
 
   const logout = () => {
+    saveStoredAuthSession(null);
     setIsAuthenticated(false);
+    setCurrentUser(EMPTY_USER);
     setAuthView('login');
     addToast({
       type: 'info',
@@ -915,22 +1036,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Discipline operations
-  const persistDisciplines = (next: Discipline[]) => {
-    setDisciplines(next);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('correge_disciplines_v1', JSON.stringify(next));
-      } catch (e) {
-        console.error('Failed to save disciplines:', e);
-      }
+  const anonymizeUser = async () => {
+    try {
+      await api.anonymizeProfessorAccount(currentUser.id);
+      saveStoredAuthSession(null);
+      setIsAuthenticated(false);
+      setCurrentUser(EMPTY_USER);
+      setAuthView('login');
+      addToast({
+        type: 'warning',
+        title: 'Conta Anonimizada (LGPD)',
+        message:
+          'Seus dados pessoais foram anonimizados no banco de dados e sua sessão foi encerrada. Provas e notas institucionais foram preservadas.',
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Erro ao Anonimizar Conta',
+        message: err?.message || 'Não foi possível concluir a anonimização no servidor.',
+      });
     }
   };
 
+  // =========================================================================
+  // DISCIPLINES
+  // =========================================================================
   const addDiscipline = (data: { name: string; code?: string; course?: string }): Discipline => {
     const cleanName = data.name.trim();
     const existing = disciplines.find(
-      (d) => (d.name || (d as any).nome || '').trim().toLowerCase() === cleanName.toLowerCase()
+      (d) => (d.name || '').trim().toLowerCase() === cleanName.toLowerCase()
     );
     if (existing) return existing;
 
@@ -938,41 +1072,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       data.code?.trim().toUpperCase() ||
       `${cleanName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
 
+    const tempId = `disc-${Date.now()}`;
     const newDisc: Discipline = {
-      id: `disc-${Date.now()}`,
-      teacherId: currentUser.id || 'prof-catolica-01',
+      id: tempId,
+      teacherId: currentUser.id,
       code: generatedCode,
       name: cleanName,
       course: data.course?.trim() || 'Direito',
       createdAt: new Date().toISOString(),
     };
 
+    setDisciplines((prev) => [...prev, newDisc]);
+
     api
       .createDisciplina({
         nome: cleanName,
         codigo: generatedCode,
-        curso: data.course?.trim() || 'Direito',
-        idProfessor: currentUser.id || 'prof-catolica-01',
+        curso: newDisc.course,
+        idProfessor: currentUser.id,
       })
       .then((createdRemote) => {
-        if (createdRemote && createdRemote.id) {
-          setDisciplines((prev) => {
-            const updated = prev.map((d) => (d.id === newDisc.id ? { ...d, id: createdRemote.id } : d));
-            if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem('correge_disciplines_v1', JSON.stringify(updated));
-              } catch (e) {
-                console.error('Failed to save disciplines:', e);
-              }
-            }
-            return updated;
-          });
+        if (createdRemote?.id) {
+          setDisciplines((prev) =>
+            prev.map((d) => (d.id === tempId ? { ...d, id: createdRemote.id } : d))
+          );
         }
       })
-      .catch((err) => console.warn('Aviso de criação de disciplina no backend:', err));
+      .catch((err) => {
+        addToast({
+          type: 'warning',
+          title: 'Aviso ao Salvar Disciplina',
+          message: err?.message || 'Não foi possível sincronizar a disciplina com o banco.',
+        });
+      });
 
-    const next = [...disciplines, newDisc];
-    persistDisciplines(next);
     addToast({
       type: 'success',
       title: 'Disciplina Criada!',
@@ -982,36 +1115,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteDiscipline = (id: string) => {
-    api.deleteDisciplina(id).catch((err) => console.warn('Aviso de remoção de disciplina no backend:', err));
+    api.deleteDisciplina(id).catch((err) => console.warn('Aviso ao remover disciplina:', err));
     const target = disciplines.find((d) => d.id === id);
-    const next = disciplines.filter((d) => d.id !== id);
-    persistDisciplines(next);
+    setDisciplines((prev) => prev.filter((d) => d.id !== id));
     addToast({
       type: 'info',
       title: 'Disciplina Removida',
-      message: target ? `"${target.name || (target as any).nome}" foi removida.` : 'Disciplina removida.',
+      message: target ? `"${target.name}" foi removida.` : 'Disciplina removida.',
     });
   };
 
-  // Class operations (Feature 3)
+  // =========================================================================
+  // CLASSES (TURMAS)
+  // =========================================================================
   const addClass = (clsData: Omit<Class, 'id' | 'createdAt' | 'inviteCode' | 'teacherId'>): Class => {
-    const randomCode = `CAT-${clsData.subject.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const matchedDisc = disciplines.find(
+      (d) =>
+        (clsData.disciplineId && d.id === clsData.disciplineId) ||
+        d.name.trim().toLowerCase() === (clsData.subject || '').trim().toLowerCase()
+    );
+    const randomCode = `CAT-${(clsData.subject || 'TUR')
+      .replace(/[^A-Za-z]/g, '')
+      .substring(0, 3)
+      .toUpperCase() || 'TUR'}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const tempId = `class-${Date.now()}`;
     const newClass: Class = {
       ...clsData,
-      id: `class-${Date.now()}`,
+      id: tempId,
+      disciplineId: matchedDisc?.id || clsData.disciplineId,
       teacherId: currentUser.id,
       inviteCode: randomCode,
       createdAt: new Date().toISOString(),
       studentCount: 0,
       status: 'active',
     };
-    api.createTurma({
-      nome: newClass.name,
-      idDisciplina: newClass.subject,
-      periodoLetivo: newClass.term,
-    }).catch((err) => console.warn('Aviso de criação de turma no backend:', err));
 
     setClasses((prev) => [newClass, ...prev]);
+
+    api
+      .createTurma({
+        nome: newClass.name,
+        idDisciplina: matchedDisc?.id || clsData.disciplineId || newClass.subject,
+        periodoLetivo: newClass.term,
+        idProfessor: currentUser.id,
+        codigoConvite: randomCode,
+      })
+      .then((createdRemote) => {
+        if (createdRemote?.id) {
+          setClasses((prev) =>
+            prev.map((c) => (c.id === tempId ? { ...c, id: String(createdRemote.id) } : c))
+          );
+        }
+      })
+      .catch((err) => console.warn('Aviso de criação de turma no backend:', err));
+
     addToast({
       type: 'success',
       title: 'Turma Criada com Sucesso!',
@@ -1021,7 +1179,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateClass = (id: string, data: Partial<Class>) => {
-    api.updateTurma(id, data).catch((err) => console.warn('Aviso de atualização de turma no backend:', err));
+    api.updateTurma(id, data).catch((err) => console.warn('Aviso ao atualizar turma:', err));
     setClasses((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
     addToast({
       type: 'info',
@@ -1031,7 +1189,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const archiveClass = (id: string) => {
-    api.deleteTurma(id).catch((err) => console.warn('Aviso de arquivamento de turma no backend:', err));
+    api.deleteTurma(id).catch((err) => console.warn('Aviso ao arquivar turma:', err));
     setClasses((prev) =>
       prev.map((c) => (c.id === id ? { ...c, status: 'archived' } : c))
     );
@@ -1044,7 +1202,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const regenerateInviteCode = (classId: string): string => {
     const target = classes.find((c) => c.id === classId);
-    const newCode = `CAT-${(target?.subject || 'TUR').substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newCode = `CAT-${(target?.subject || 'TUR').substring(0, 3).toUpperCase()}-${Math.floor(
+      1000 + Math.random() * 9000
+    )}`;
+    api.updateTurma(classId, { codigoConvite: newCode }).catch(() => {});
     setClasses((prev) =>
       prev.map((c) => (c.id === classId ? { ...c, inviteCode: newCode } : c))
     );
@@ -1056,30 +1217,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newCode;
   };
 
-  // Question operations (Feature 2)
+  // =========================================================================
+  // QUESTIONS
+  // =========================================================================
   const addQuestion = (newQData: Omit<Question, 'id' | 'code'>): Question => {
     const nextCodeNum = 1024 + questions.length;
     const isDisc = newQData.type === 'discursiva';
+    const tempId = `q-${Date.now()}`;
     const newQuestion: Question = {
       ...newQData,
-      id: `q-${Date.now()}`,
+      id: tempId,
       code: isDisc ? `#Q-DISC-${nextCodeNum}` : `#Q-${nextCodeNum}`,
       type: newQData.type || 'objetiva',
     };
-    api.createQuestion({
-      statement: newQuestion.statement,
-      type: newQuestion.type,
-      discipline: newQuestion.discipline,
-      difficulty: newQuestion.difficulty,
-      topic: newQuestion.topic,
-      tags: newQuestion.tags,
-      points: newQuestion.points,
-      explanation: newQuestion.explanation,
-      alternatives: newQuestion.alternatives,
-      correctAlternative: newQuestion.correctAlternative,
-    }).catch((err) => console.warn('Aviso de criação de questão no backend:', err));
 
     setQuestions((prev) => [newQuestion, ...prev]);
+
+    api
+      .createQuestion({
+        statement: newQuestion.statement,
+        type: newQuestion.type,
+        discipline: newQuestion.discipline,
+        difficulty: newQuestion.difficulty,
+        topic: newQuestion.topic,
+        tags: newQuestion.tags,
+        points: newQuestion.points,
+        explanation: newQuestion.explanation,
+        alternatives: newQuestion.alternatives,
+        correctAlternative: newQuestion.correctAlternative,
+      })
+      .then((createdRemote) => {
+        if (createdRemote?.id) {
+          setQuestions((prev) =>
+            prev.map((q) =>
+              q.id === tempId ? { ...q, id: createdRemote.id, code: createdRemote.code || q.code } : q
+            )
+          );
+        }
+      })
+      .catch((err) => {
+        addToast({
+          type: 'warning',
+          title: 'Aviso ao Salvar Questão',
+          message: err?.message || 'Não foi possível sincronizar a questão com o servidor.',
+        });
+      });
+
     addToast({
       type: 'success',
       title: isDisc ? 'Questão Discursiva Adicionada!' : 'Questão Objetiva Adicionada!',
@@ -1089,7 +1272,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateQuestion = (id: string, updatedData: Partial<Question>) => {
-    api.updateQuestion(id, updatedData).catch((err) => console.warn('Aviso de atualização de questão no backend:', err));
+    api.updateQuestion(id, updatedData).catch((err) => console.warn('Aviso ao atualizar questão:', err));
     setQuestions((prev) =>
       prev.map((q) => (q.id === id ? { ...q, ...updatedData } : q))
     );
@@ -1101,12 +1284,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteQuestion = (id: string) => {
-    api.deleteQuestion(id).catch((err) => console.warn('Aviso de exclusão de questão no backend:', err));
-    // Soft-delete as requested by Feature 2
+    api.deleteQuestion(id).catch((err) => console.warn('Aviso ao excluir questão:', err));
     setQuestions((prev) =>
-      prev.map((q) =>
-        q.id === id ? { ...q, deletedAt: new Date().toISOString() } : q
-      )
+      prev.map((q) => (q.id === id ? { ...q, deletedAt: new Date().toISOString() } : q))
     );
     addToast({
       type: 'warning',
@@ -1115,33 +1295,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Exam operations (Feature 4 - Templates)
+  // =========================================================================
+  // EXAMS
+  // =========================================================================
+  const buildBackendExamPayload = (draft: ExamDraft, code: string, versions: ExamVersion[]) => {
+    const matchedDisc = disciplines.find(
+      (d) => d.name.trim().toLowerCase() === (draft.discipline || '').trim().toLowerCase()
+    );
+    const selectedQuestions = draft.selectedQuestionIds
+      .map((qId) => questions.find((q) => q.id === qId))
+      .filter((q): q is Question => Boolean(q))
+      .map((q) => ({
+        id: q.id,
+        statement: q.statement,
+        type: q.type || 'objetiva',
+        discipline: q.discipline,
+        difficulty: q.difficulty,
+        alternatives: q.alternatives,
+        correctAlternative: q.correctAlternative,
+      }));
+
+    return {
+      code,
+      title: draft.title,
+      subtitle: `Período Letivo ${draft.semester}`,
+      institution: draft.institution,
+      department: draft.department,
+      course: draft.course,
+      discipline: draft.discipline,
+      disciplinaId: matchedDisc?.id,
+      classGroup: draft.classGroup,
+      semester: draft.semester,
+      date: draft.date,
+      duration: draft.duration,
+      instructions: draft.instructions,
+      selectedQuestionIds: draft.selectedQuestionIds,
+      selectedQuestions,
+      shuffleQuestions: draft.shuffleQuestions,
+      shuffleAlternatives: draft.shuffleAlternatives,
+      withStudentIdentification: draft.withStudentIdentification ?? true,
+      numberOfVersions: draft.numberOfVersions,
+      maxScore: draft.maxScore,
+      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
+      versions,
+    };
+  };
+
   const createExamFromDraft = (draft: ExamDraft): Exam => {
-    // Enforce up to 20 questions limit
     if (draft.selectedQuestionIds.length > 20) {
       addToast({
-        type: 'error',
-        title: 'Limite Excedido',
-        message: 'A prova pode conter no máximo 20 questões conforme a especificação.',
+        type: 'warning',
+        title: 'Limite de 20 Questões',
+        message: 'Foram mantidas as 20 primeiras questões selecionadas conforme a especificação.',
       });
     }
 
+    const cappedIds = draft.selectedQuestionIds.slice(0, 20);
+    const generatedCode = `#${(draft.discipline || 'PRV')
+      .replace(/[^A-Za-z]/g, '')
+      .substring(0, 3)
+      .toUpperCase() || 'PRV'}-${Date.now().toString().slice(-4)}`;
+    const tempId = `exam-${Date.now()}`;
+
     const versions = buildExamVersions(
-      draft.selectedQuestionIds.slice(0, 20),
+      cappedIds,
       draft.shuffleQuestions,
       draft.shuffleAlternatives,
-      draft.numberOfVersions
+      draft.numberOfVersions,
+      generatedCode,
+      tempId
     );
 
-    const studentAssignments = generateRandomStudentAssignments(
-      students,
-      draft.numberOfVersions
-    );
+    const studentAssignments = generateRandomStudentAssignments(students, draft.numberOfVersions);
 
     const newExam: Exam = {
-      id: `exam-${Date.now()}`,
+      id: tempId,
       teacherId: currentUser.id,
-      code: `#${draft.discipline.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+      code: generatedCode,
       title: draft.title,
       description: draft.instructions,
       subtitle: `Período Letivo ${draft.semester}`,
@@ -1160,43 +1390,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shuffleAlternatives: draft.shuffleAlternatives,
       numberOfVersions: draft.numberOfVersions,
       permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
-      selectedQuestionIds: draft.selectedQuestionIds,
+      selectedQuestionIds: cappedIds,
       versions,
       studentAssignments,
       maxScore: draft.maxScore,
-      totalStudents: students.length > 0 ? students.length : 32,
+      totalStudents: students.length,
       averageScore: 0,
       createdAt: new Date().toISOString(),
     };
 
     const nextExams = [newExam, ...exams];
     persistExams(nextExams);
-    setActiveExamId(newExam.id);
+    setActiveExamId(tempId);
 
-    api.createExam({
-      title: draft.title,
-      subtitle: `Período Letivo ${draft.semester}`,
-      institution: draft.institution,
-      department: draft.department,
-      course: draft.course,
-      discipline: draft.discipline,
-      classGroup: draft.classGroup,
-      semester: draft.semester,
-      date: draft.date,
-      duration: draft.duration,
-      instructions: draft.instructions,
-      selectedQuestionIds: draft.selectedQuestionIds,
-      shuffleQuestions: draft.shuffleQuestions,
-      shuffleAlternatives: draft.shuffleAlternatives,
-      numberOfVersions: draft.numberOfVersions,
-      maxScore: draft.maxScore,
-      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
-    }).catch((err) => console.warn('Aviso de persistência de prova no backend:', err));
+    api
+      .createExam(buildBackendExamPayload({ ...draft, selectedQuestionIds: cappedIds }, generatedCode, versions))
+      .then((createdRemote) => {
+        if (createdRemote?.id) {
+          const syncedExam = mapBackendExam(createdRemote);
+          setExams((prev) =>
+            prev.map((e) =>
+              e.id === tempId
+                ? {
+                    ...e,
+                    id: syncedExam.id,
+                    code: syncedExam.code || e.code,
+                    versions: syncedExam.versions.length > 0 ? syncedExam.versions : e.versions,
+                  }
+                : e
+            )
+          );
+          setActiveExamId((prev) => (prev === tempId ? syncedExam.id : prev));
+        }
+      })
+      .catch((err) => {
+        addToast({
+          type: 'warning',
+          title: 'Aviso ao Persistir Prova',
+          message: err?.message || 'Falha ao sincronizar a avaliação com o servidor.',
+        });
+      });
 
     addToast({
       type: 'success',
-      title: 'Template de Prova Salvo!',
-      message: `A prova "${newExam.title}" está pronta para ser aplicada a uma turma.`,
+      title: 'Prova Salva com Sucesso!',
+      message: `A avaliação "${newExam.title}" (${newExam.code}) está pronta para impressão e correção.`,
     });
     return newExam;
   };
@@ -1211,13 +1449,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       draft.selectedQuestionIds,
       draft.shuffleQuestions,
       draft.shuffleAlternatives,
-      draft.numberOfVersions
+      draft.numberOfVersions,
+      existing.code,
+      existing.id
     );
 
-    const studentAssignments = generateRandomStudentAssignments(
-      students,
-      draft.numberOfVersions
-    );
+    const studentAssignments = generateRandomStudentAssignments(students, draft.numberOfVersions);
 
     const updatedExam: Exam = {
       ...existing,
@@ -1242,29 +1479,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       studentAssignments,
     };
 
-    const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
-    persistExams(nextExams);
+    persistExams(exams.map((e) => (e.id === id ? updatedExam : e)));
     setActiveExamId(updatedExam.id);
 
-    api.updateExam(id, {
-      title: draft.title,
-      subtitle: `Período Letivo ${draft.semester}`,
-      institution: draft.institution,
-      department: draft.department,
-      course: draft.course,
-      discipline: draft.discipline,
-      classGroup: draft.classGroup,
-      semester: draft.semester,
-      date: draft.date,
-      duration: draft.duration,
-      instructions: draft.instructions,
-      selectedQuestionIds: draft.selectedQuestionIds,
-      shuffleQuestions: draft.shuffleQuestions,
-      shuffleAlternatives: draft.shuffleAlternatives,
-      numberOfVersions: draft.numberOfVersions,
-      maxScore: draft.maxScore,
-      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
-    }).catch((err) => console.warn('Aviso de atualização de prova no backend:', err));
+    api
+      .updateExam(id, buildBackendExamPayload(draft, existing.code, versions))
+      .catch((err) => console.warn('Aviso ao atualizar prova no backend:', err));
 
     addToast({
       type: 'success',
@@ -1299,7 +1519,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       existing.selectedQuestionIds,
       nextShuffleQ,
       nextShuffleAlt,
-      nextNumVersions
+      nextNumVersions,
+      existing.code,
+      existing.id
     );
 
     const studentAssignments = generateRandomStudentAssignments(students, nextNumVersions);
@@ -1314,8 +1536,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       studentAssignments,
     };
 
-    const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
-    persistExams(nextExams);
+    persistExams(exams.map((e) => (e.id === id ? updatedExam : e)));
+    api
+      .updateExam(id, {
+        numberOfVersions: nextNumVersions,
+        shuffleQuestions: nextShuffleQ,
+        shuffleAlternatives: nextShuffleAlt,
+        withStudentIdentification: nextWithIdent,
+        versions,
+      })
+      .catch(() => {});
+
     return updatedExam;
   };
 
@@ -1331,12 +1562,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       studentAssignments,
     };
 
-    const nextExams = exams.map((e) => (e.id === id ? updatedExam : e));
-    persistExams(nextExams);
+    persistExams(exams.map((e) => (e.id === id ? updatedExam : e)));
     addToast({
       type: 'info',
       title: 'Novo Sorteio de Cadernos Realizado!',
-      message: `Os ${students.length} alunos foram redistribuídos aleatoriamente entre os ${numV} cadernos.`,
+      message: `Os ${students.length} alunos foram redistribuídos entre os ${numV} cadernos.`,
     });
   };
 
@@ -1344,40 +1574,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const original = exams.find((e) => e.id === id);
     if (!original) throw new Error('Prova não encontrada');
 
-    const copy: Exam = {
-      ...original,
-      id: `exam-${Date.now()}`,
-      code: `${original.code}-COP`,
+    return createExamFromDraft({
       title: `${original.title} (Cópia)`,
-      status: 'Pendente',
-    };
-
-    const nextExams = [copy, ...exams];
-    persistExams(nextExams);
-    setActiveExamId(copy.id);
-    addToast({
-      type: 'success',
-      title: 'Prova Duplicada!',
-      message: `Uma cópia de "${original.title}" foi adicionada à lista.`,
+      discipline: original.discipline,
+      course: original.course,
+      classGroup: original.classGroup,
+      semester: original.semester,
+      institution: original.institution,
+      department: original.department,
+      date: original.date,
+      duration: original.duration,
+      instructions: original.instructions,
+      selectedQuestionIds: original.selectedQuestionIds,
+      withStudentIdentification: original.withStudentIdentification ?? true,
+      shuffleQuestions: original.shuffleQuestions,
+      shuffleAlternatives: original.shuffleAlternatives,
+      numberOfVersions: original.numberOfVersions,
+      maxScore: original.maxScore,
+      permutationStrategy: original.permutationStrategy,
     });
-    return copy;
   };
 
   const deleteExam = (id: string) => {
-    api.deleteExam(id).catch((err) => console.warn('Erro ao deletar no backend:', err));
+    api.deleteExam(id).catch((err) => console.warn('Erro ao deletar prova no backend:', err));
     const nextExams = exams.filter((e) => e.id !== id);
     persistExams(nextExams);
-    if (activeExamId === id && nextExams.length > 0) {
-      setActiveExamId(nextExams[0].id);
+    if (activeExamId === id) {
+      setActiveExamId(nextExams[0]?.id || '');
     }
     addToast({
       type: 'info',
       title: 'Prova Arquivada',
-      message: 'O modelo de prova foi arquivado.',
+      message: 'O modelo de prova foi removido.',
     });
   };
 
-  // Application operations (Feature 5, 6 - Prova x Turma)
+  // =========================================================================
+  // APPLICATIONS & CORRECTIONS
+  // =========================================================================
   const createApplication = (
     examId: string,
     classId: string,
@@ -1388,14 +1622,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shuffleAlternatives: boolean;
     }
   ): Application => {
-    const exam = exams.find((e) => e.id === examId) || exams[0];
-    const targetClass = classes.find((c) => c.id === classId) || classes[0];
+    const exam = exams.find((e) => e.id === examId);
+    const targetClass = classes.find((c) => c.id === classId);
+    if (!exam || !targetClass) {
+      throw new Error('Selecione uma prova e uma turma válidas para criar a aplicação.');
+    }
 
     const versions = buildExamVersions(
       exam.selectedQuestionIds,
       options.shuffleQuestions,
       options.shuffleAlternatives,
-      options.numberOfVersions
+      options.numberOfVersions,
+      exam.code,
+      exam.id
     );
 
     const newApp: Application = {
@@ -1411,7 +1650,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shuffleQuestions: options.shuffleQuestions,
       shuffleAlternatives: options.shuffleAlternatives,
       numberOfVersions: options.numberOfVersions,
-      pdfUrl: `/storage/applications/app-${Date.now()}-consolidated.pdf`,
       createdAt: new Date().toISOString(),
       versions,
       answerKeyPublished: false,
@@ -1423,12 +1661,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast({
       type: 'success',
       title: 'Aplicação Criada!',
-      message: `Prova vinculada à ${targetClass.name}. PDF consolidado disponível.`,
+      message: `Prova vinculada à ${targetClass.name}.`,
     });
     return newApp;
   };
 
-  // Publish Answer Key (Feature 7)
   const publishAnswerKey = (applicationId: string) => {
     setApplications((prev) =>
       prev.map((app) =>
@@ -1438,11 +1675,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast({
       type: 'success',
       title: 'Gabarito Oficial Publicado!',
-      message: 'Os alunos já podem consultar as respostas pelo portal web usando o código público.',
+      message: 'Gabarito marcado como publicado para esta aplicação.',
     });
   };
 
-  // Add a new OMR / mobile correction (Feature 8)
   const addCorrection = (correctionData: Omit<Correction, 'id' | 'confirmedAt'>): Correction => {
     const newCorrection: Correction = {
       ...correctionData,
@@ -1461,9 +1697,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newCorrection;
   };
 
-  // Manual Assignment of pending correction (Feature 9)
   const assignCorrection = (correctionId: string, studentId: string, notes?: string) => {
-    api.assignStudentToCorrection(correctionId, studentId).catch((err) => console.warn('Aviso de vinculação no backend:', err));
+    api
+      .assignStudentToCorrection(correctionId, studentId)
+      .catch((err) => console.warn('Aviso ao vincular correção no backend:', err));
     const student = students.find((s) => s.id === studentId);
     setCorrections((prev) =>
       prev.map((c) =>
@@ -1480,7 +1717,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
 
-    // Update report pending count
     setCurrentReport((prev) => ({
       ...prev,
       pendingCorrectionsCount: Math.max(0, (prev.pendingCorrectionsCount || 1) - 1),
@@ -1521,18 +1757,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetExamDraft = () => {
-    setExamDraft(BLANK_EXAM_DRAFT);
+    setExamDraft(getDefaultDraft());
     setExamWizardStep(1);
   };
 
-  // Student operations
+  // =========================================================================
+  // STUDENTS
+  // =========================================================================
   const addStudent = (stdData: Omit<Student, 'id'>): Student => {
+    const tempId = `std-${Date.now()}`;
     const newStudent: Student = {
       ...stdData,
-      id: `std-${Date.now()}`,
+      id: tempId,
     };
-    api.createStudent(stdData).catch((err) => console.warn('Aviso de criação de aluno no backend:', err));
     setStudents((prev) => [newStudent, ...prev]);
+
+    api
+      .createStudent(stdData)
+      .then((createdRemote) => {
+        if (createdRemote?.id) {
+          setStudents((prev) =>
+            prev.map((s) => (s.id === tempId ? { ...s, id: createdRemote.id } : s))
+          );
+        }
+      })
+      .catch((err) => {
+        addToast({
+          type: 'warning',
+          title: 'Aviso ao Salvar Aluno',
+          message: err?.message || 'Não foi possível sincronizar o aluno com o servidor.',
+        });
+      });
+
     addToast({
       type: 'success',
       title: 'Aluno Cadastrado!',
@@ -1546,50 +1802,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...s,
       id: `std-imp-${Date.now()}-${idx}`,
     }));
-    api.importStudentsBatch(newStudentsList).catch((err) => console.warn('Aviso de importação no backend:', err));
     setStudents((prev) => [...mapped, ...prev]);
+
+    api
+      .importStudentsBatch(newStudentsList)
+      .then((savedList) => {
+        if (Array.isArray(savedList) && savedList.length > 0) {
+          api
+            .getStudents()
+            .then((fresh) => {
+              if (Array.isArray(fresh)) setStudents(fresh);
+            })
+            .catch(() => {});
+        }
+      })
+      .catch((err) => console.warn('Aviso de importação no backend:', err));
+
     addToast({
       type: 'success',
       title: 'Importação Concluída!',
-      message: `${mapped.length} alunos importados da planilha com sucesso.`,
+      message: `${mapped.length} alunos importados da planilha.`,
     });
   };
 
   const deleteStudent = (id: string) => {
-    api.deleteStudent(id).catch((err) => console.warn('Aviso de exclusão de aluno no backend:', err));
+    api.deleteStudent(id).catch((err) => console.warn('Aviso ao excluir aluno:', err));
     setStudents((prev) => prev.filter((s) => s.id !== id));
     addToast({
       type: 'warning',
-      title: 'Aluno Removido da Turma',
-      message: 'O aluno foi desvinculado, mas seu histórico de notas permanece preservado.',
+      title: 'Aluno Removido',
+      message: 'O aluno foi desvinculado; o histórico de notas permanece preservado.',
     });
   };
 
   const deleteStudentsBatch = (ids: string[]) => {
-    api.deleteStudentsBatch(ids).catch((err) => console.warn('Aviso de exclusão em lote no backend:', err));
+    api.deleteStudentsBatch(ids).catch((err) => console.warn('Aviso na exclusão em lote:', err));
     setStudents((prev) => prev.filter((s) => !ids.includes(s.id)));
     addToast({
       type: 'warning',
       title: 'Exclusão em Massa',
-      message: `${ids.length} alunos foram removidos com sucesso.`,
+      message: `${ids.length} alunos foram removidos.`,
     });
   };
 
-  // Navigation helpers
+  // =========================================================================
+  // NAVIGATION HELPERS
+  // =========================================================================
   const handleSetCurrentScreen = (screen: ScreenType) => {
     setCurrentScreenState(screen);
+    const resolvedExamId = activeExamId || exams[0]?.id;
     const routeMap: Record<ScreenType, string> = {
       'banco-questoes': '/banco-questoes',
-      'turmas': '/turmas',
+      turmas: '/turmas',
       'criar-prova': '/provas/new',
-      'aplicacoes': '/provas',
-      'folha-respostas': `/provas/${activeExamId || 'exam-1'}?p=folha`,
-      'pre-visualizacao': `/provas/${activeExamId || 'exam-1'}?p=caderno`,
-      'resultados': '/resultados',
-      'lancamento-manual': `/provas/${activeExamId || 'exam-2'}?p=lancamento`,
-      'alunos': '/alunos',
+      aplicacoes: '/provas',
+      'folha-respostas': resolvedExamId ? `/provas/${resolvedExamId}?p=folha` : '/provas',
+      'pre-visualizacao': resolvedExamId ? `/provas/${resolvedExamId}?p=caderno` : '/provas',
+      resultados: '/resultados',
+      'lancamento-manual': resolvedExamId ? `/provas/${resolvedExamId}?p=lancamento` : '/provas',
+      alunos: '/alunos',
       'portal-aluno': '/portal-aluno',
-      'configuracoes': '/configuracoes',
+      configuracoes: '/configuracoes',
     };
     if (routeMap[screen]) {
       router.push(routeMap[screen]);
@@ -1597,24 +1870,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const navigateToPreview = (examId?: string) => {
-    const targetId = examId || activeExamId;
+    const targetId = examId || activeExamId || exams[0]?.id;
     if (targetId) setActiveExamId(targetId);
     setCurrentScreenState('pre-visualizacao');
-    if (targetId) router.push(`/provas/${targetId}?p=caderno`);
+    router.push(targetId ? `/provas/${targetId}?p=caderno` : '/provas');
   };
 
   const navigateToResults = (examId?: string) => {
-    const targetId = examId || activeExamId;
+    const targetId = examId || activeExamId || exams[0]?.id;
     if (targetId) setActiveExamId(targetId);
     setCurrentScreenState('resultados');
     router.push(targetId ? `/resultados?examId=${targetId}` : '/resultados');
   };
 
   const navigateToFolha = (examId?: string) => {
-    const targetId = examId || activeExamId;
+    const targetId = examId || activeExamId || exams[0]?.id;
     if (targetId) setActiveExamId(targetId);
     setCurrentScreenState('folha-respostas');
-    if (targetId) router.push(`/provas/${targetId}?p=folha`);
+    router.push(targetId ? `/provas/${targetId}?p=folha` : '/provas');
   };
 
   const navigateToTurmas = () => {
@@ -1633,6 +1906,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentScreen,
         setCurrentScreen: handleSetCurrentScreen,
         isAuthenticated,
+        isAuthLoading,
         currentUser,
         authView,
         setAuthView,
@@ -1640,6 +1914,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAuthPrefillEmail,
         login,
         registerAccount,
+        changePassword,
         requestPasswordReset,
         resetPassword,
         logout,
@@ -1735,7 +2010,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 export const useApp = () => {
   const context = useContext(AppContext);
   if (!context) {
-    throw new Error('useApp must be used within an AppProvider');
+    throw new Error('useApp deve ser usado dentro de um AppProvider');
   }
   return context;
 };

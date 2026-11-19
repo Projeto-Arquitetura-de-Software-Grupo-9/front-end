@@ -1,65 +1,89 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
-import { User, LogOut, ArrowLeftRight, GraduationCap, BookOpen, Settings, Bell, Camera } from 'lucide-react';
+import { User, LogOut, BookOpen, Bell, Camera } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const {
     currentUser,
-    login,
     logout,
     setCurrentScreen,
     setActiveExamId,
     isBackendOnline,
     backendUrl,
     setIsScannerModalOpen,
+    exams,
+    corrections,
+    students,
+    questions,
   } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationsCleared, setNotificationsCleared] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const router = useRouter();
 
-  const isStudent = currentUser.role === 'estudante';
+  // Dynamic real notifications derived strictly from live database state (zero mocks!)
+  const notifications = useMemo(() => {
+    const items: Array<{
+      id: string;
+      title: string;
+      desc: string;
+      time: string;
+      action: () => void;
+    }> = [];
 
-  const notifications = [
-    {
-      id: 1,
-      title: 'Lote de 34 provas corrigido',
-      desc: 'P1 - Direito Constitucional I foi processada com 100% de precisão OMR.',
-      time: 'Há 12 min',
-      read: false,
-      action: () => {
-        setActiveExamId('exam-1');
-        router.push('/resultados?examId=exam-1');
-        setShowNotifications(false);
-      },
-    },
-    {
-      id: 2,
-      title: 'Novo aluno importado',
-      desc: 'Matrícula 2024.1.150 associada à Turma D - Direito Tributário.',
-      time: 'Há 1 hora',
-      read: true,
-      action: () => {
-        router.push('/alunos');
-        setShowNotifications(false);
-      },
-    },
-    {
-      id: 3,
-      title: 'Banco de Questões sincronizado',
-      desc: '15 novas questões de Direito Constitucional, Penal e Civil adicionadas.',
-      time: 'Há 3 horas',
-      read: true,
-      action: () => {
-        router.push('/banco-questoes');
-        setShowNotifications(false);
-      },
-    },
-  ];
+    const pendingCount = corrections.filter((c) => !c.studentId).length;
+    if (pendingCount > 0) {
+      items.push({
+        id: 'pending-corrections',
+        title: `${pendingCount} folha(s) avulsa(s) aguardando atribuição`,
+        desc: 'Vincule as correções sem identificação nominal aos respectivos estudantes.',
+        time: 'Pendente',
+        action: () => {
+          router.push('/resultados');
+          setShowNotifications(false);
+        },
+      });
+    }
+
+    if (corrections.length > 0) {
+      const latest = corrections[0];
+      const exam = exams.find((e) => e.id === latest.applicationId);
+      items.push({
+        id: `corr-${latest.id}`,
+        title: `${corrections.length} correção(ões) registrada(s)`,
+        desc: exam
+          ? `Última leitura em "${exam.title}" (Caderno ${latest.versionLetter} • Nota ${latest.totalScore.toFixed(1)}).`
+          : `Última nota registrada: ${latest.totalScore.toFixed(1)} (Caderno ${latest.versionLetter}).`,
+        time: new Date(latest.confirmedAt).toLocaleDateString('pt-BR'),
+        action: () => {
+          if (exam) setActiveExamId(exam.id);
+          router.push(exam ? `/resultados?examId=${exam.id}` : '/resultados');
+          setShowNotifications(false);
+        },
+      });
+    }
+
+    if (exams.length > 0) {
+      items.push({
+        id: 'exams-summary',
+        title: `${exams.length} avaliação(ões) sincronizada(s)`,
+        desc: `${questions.length} questão(ões) no banco e ${students.length} aluno(s) cadastrado(s).`,
+        time: isBackendOnline ? 'Banco online' : 'Offline',
+        action: () => {
+          router.push('/provas');
+          setShowNotifications(false);
+        },
+      });
+    }
+
+    return items;
+  }, [corrections, exams, questions.length, students.length, isBackendOnline, router, setActiveExamId]);
+
+  const hasUnread = !notificationsCleared && notifications.length > 0;
 
   return (
     <header className="app-shell-header h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 select-none print:hidden">
@@ -70,17 +94,25 @@ export const Header: React.FC = () => {
           Católica SC • SGP
         </span>
 
-        {/* Backend QAS Status Badge */}
+        {/* Backend Status Badge */}
         <div
-          title={isBackendOnline ? `Conectado ao Backend QAS (${backendUrl})` : `Backend Offline (Modo Local)`}
+          title={
+            isBackendOnline
+              ? `Conectado ao Banco de Dados (${backendUrl})`
+              : 'Servidor indisponível no momento'
+          }
           className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition ${
             isBackendOnline
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
               : 'bg-amber-50 text-amber-700 border border-amber-200'
           }`}
         >
-          <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-          {isBackendOnline ? 'QAS Conectado' : 'Modo Local'}
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              isBackendOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+            }`}
+          />
+          {isBackendOnline ? 'Banco Conectado' : 'Sem Conexão'}
         </div>
       </div>
 
@@ -100,40 +132,56 @@ export const Header: React.FC = () => {
         {/* Notifications Button */}
         <div className="relative">
           <button
+            type="button"
             onClick={() => {
               setShowNotifications(!showNotifications);
               setShowProfileMenu(false);
             }}
             className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition relative cursor-pointer"
-            title="Notificações"
+            title="Atividades e Avisos"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white"></span>
+            {hasUnread && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white" />
+            )}
           </button>
 
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl py-3 z-40 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-4 pb-2.5 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">Notificações</span>
-                <span className="text-[10px] font-semibold text-[#9E0B1A] cursor-pointer hover:underline">
-                  Marcar lidas
-                </span>
+                <span className="text-xs font-bold text-slate-900">Atividades do Sistema</span>
+                {hasUnread && (
+                  <button
+                    type="button"
+                    onClick={() => setNotificationsCleared(true)}
+                    className="text-[10px] font-semibold text-[#9E0B1A] cursor-pointer hover:underline"
+                  >
+                    Marcar lidas
+                  </button>
+                )}
               </div>
               <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
-                {notifications.map((n) => (
-                  <button
-                    key={n.id}
-                    onClick={n.action}
-                    className="w-full p-3 text-left hover:bg-slate-50/80 transition flex items-start gap-2.5 cursor-pointer"
-                  >
-                    <div className="w-2 h-2 rounded-full bg-[#9E0B1A] mt-1.5 flex-shrink-0"></div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-800">{n.title}</p>
-                      <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{n.desc}</p>
-                      <span className="text-[10px] text-slate-400 mt-1 block">{n.time}</span>
-                    </div>
-                  </button>
-                ))}
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-400">
+                    Nenhuma atividade recente registrada.
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={n.action}
+                      className="w-full p-3 text-left hover:bg-slate-50/80 transition flex items-start gap-2.5 cursor-pointer"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-[#9E0B1A] mt-1.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800">{n.title}</p>
+                        <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{n.desc}</p>
+                        <span className="text-[10px] text-slate-400 mt-1 block">{n.time}</span>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -142,6 +190,7 @@ export const Header: React.FC = () => {
         {/* Profile Avatar / Menu */}
         <div className="relative">
           <button
+            type="button"
             onClick={() => {
               setShowProfileMenu(!showProfileMenu);
               setShowNotifications(false);
@@ -168,12 +217,13 @@ export const Header: React.FC = () => {
                 <p className="text-xs font-bold text-slate-800">{currentUser.fullName}</p>
                 <p className="text-[11px] text-slate-400 font-mono mt-0.5">{currentUser.email}</p>
                 <span className="inline-block mt-2 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-red-50 text-[#9E0B1A]">
-                  Docente Titular (@catolicasc.org.br)
+                  Docente Autenticado
                 </span>
               </div>
 
               <div className="p-1 space-y-0.5">
                 <button
+                  type="button"
                   onClick={() => {
                     setCurrentScreen('configuracoes');
                     router.push('/configuracoes');
@@ -186,6 +236,7 @@ export const Header: React.FC = () => {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     logout();
                     setShowProfileMenu(false);

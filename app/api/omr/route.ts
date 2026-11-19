@@ -5,6 +5,8 @@ import fs from 'fs';
 
 export const runtime = 'nodejs';
 
+const VALID_LETTERS = new Set(['A', 'B', 'C', 'D', 'E']);
+
 function resolvePythonBinary(): string {
   const localAppData = process.env.LOCALAPPDATA || '';
   const candidates = [
@@ -41,21 +43,54 @@ function resolveScriptPath(): string | null {
   return null;
 }
 
-function gradeInTypeScript(payload: Record<string, any>): Record<string, any> {
-  const markedAnswers: Record<string, string> = payload.markedAnswers || payload.respostasLidas || {};
+/**
+ * Deterministic server-side grader ONLY for action === 'grade' when explicit markedAnswers AND officialAnswerKey are provided.
+ * Never invents answers and never defaults missing answer keys to 'A'.
+ */
+function gradeExplicitAnswers(payload: Record<string, any>): { status: number; body: Record<string, any> } {
+  const markedAnswers: Record<string, string | null> = payload.markedAnswers || payload.respostasLidas || {};
   const officialAnswerKey: Record<string, string> = payload.officialAnswerKey || {};
-  const totalQuestions = Number(payload.totalQuestions) || Object.keys(officialAnswerKey).length || 10;
-  const maxScore = Number(payload.maxScore) || 10.0;
-  const pointPerQuestion = totalQuestions > 0 ? maxScore / totalQuestions : 1;
+  const keyEntries = Object.entries(officialAnswerKey).filter(
+    ([q, letter]) => Number(q) >= 1 && VALID_LETTERS.has(String(letter).toUpperCase())
+  );
+
+  if (keyEntries.length === 0) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        code: 'MISSING_OFFICIAL_ANSWER_KEY',
+        error: 'Gabarito oficial (officialAnswerKey) obrigatório para correção.',
+      },
+    };
+  }
+
+  const totalQuestions = Number(payload.totalQuestions) || keyEntries.length;
+  const maxScore = Number(payload.maxScore) > 0 ? Number(payload.maxScore) : 10.0;
+  const pointPerQuestion = totalQuestions > 0 ? maxScore / totalQuestions : 0;
 
   let correctCount = 0;
   const details = [];
 
   for (let i = 1; i <= totalQuestions; i++) {
     const qKey = String(i);
-    const chosen = (markedAnswers[qKey] || markedAnswers[i] || null) as 'A' | 'B' | 'C' | 'D' | 'E' | null;
-    const correct = (officialAnswerKey[qKey] || officialAnswerKey[i] || 'A') as 'A' | 'B' | 'C' | 'D' | 'E';
-    const isCorrect = chosen !== null && chosen.toUpperCase() === correct.toUpperCase();
+    const rawCorrect = officialAnswerKey[qKey] ?? officialAnswerKey[i];
+    const correct = rawCorrect ? String(rawCorrect).toUpperCase() : null;
+    if (!correct || !VALID_LETTERS.has(correct)) {
+      return {
+        status: 400,
+        body: {
+          success: false,
+          code: 'INCOMPLETE_OFFICIAL_ANSWER_KEY',
+          error: `Gabarito oficial incompleto: alternativa correta ausente para a questão ${i}.`,
+        },
+      };
+    }
+
+    const rawChosen = markedAnswers[qKey] ?? markedAnswers[i] ?? null;
+    const chosenUpper = rawChosen ? String(rawChosen).toUpperCase() : null;
+    const chosen = chosenUpper && VALID_LETTERS.has(chosenUpper) ? chosenUpper : null;
+    const isCorrect = chosen !== null && chosen === correct;
     if (isCorrect) correctCount++;
 
     details.push({
@@ -64,36 +99,47 @@ function gradeInTypeScript(payload: Record<string, any>): Record<string, any> {
       chosen,
       correct,
       isCorrect,
-      score: isCorrect ? pointPerQuestion : 0,
+      score: isCorrect ? Number(pointPerQuestion.toFixed(2)) : 0,
     });
   }
 
   const totalScore = Number((correctCount * pointPerQuestion).toFixed(2));
 
   return {
-    success: true,
-    engine: 'TypeScript Fallback Grader (OMR Core)',
-    versionLetter: payload.versionLetter || 'A',
-    versaoMarcada: payload.versaoMarcada || payload.versionLetter || 'A',
-    confidence: 0.98,
-    markedAnswers,
-    respostasLidas: markedAnswers,
-    grading: {
-      correctCount,
-      totalQuestions,
-      totalScore,
-      maxScore,
-      details,
+    status: 200,
+    body: {
+      success: true,
+      engine: 'Correge Deterministic Grader (API)',
+      versionLetter: payload.versionLetter || 'A',
+      versaoMarcada: payload.versaoMarcada || payload.versionLetter || 'A',
+      markedAnswers,
+      respostasLidas: markedAnswers,
+      grading: {
+        correctCount,
+        totalQuestions,
+        totalScore,
+        maxScore,
+        details,
+      },
     },
   };
 }
 
-function runPythonOmrScanner(payload: Record<string, unknown>): Promise<Record<string, any>> {
-  return new Promise((resolve, reject) => {
+function runPythonOmrScanner(
+  payload: Record<string, unknown>
+): Promise<{ status: number; body: Record<string, any> }> {
+  return new Promise((resolve) => {
     const scriptPath = resolveScriptPath();
     if (!scriptPath) {
-      // Fallback gracioso se o script não for encontrado no filesystem
-      return resolve(gradeInTypeScript(payload));
+      return resolve({
+        status: 501,
+        body: {
+          success: false,
+          code: 'PYTHON_OMR_UNAVAILABLE',
+          error:
+            'Motor Python/OpenCV não está disponível no servidor. Utilize o leitor óptico nativo do navegador.',
+        },
+      });
     }
 
     const pythonBin = resolvePythonBinary();
@@ -113,29 +159,63 @@ function runPythonOmrScanner(payload: Record<string, unknown>): Promise<Record<s
     });
 
     pyProcess.on('error', () => {
-      // Se não houver Python instalado no sistema, chaveia para o avaliador TypeScript
-      resolve(gradeInTypeScript(payload));
+      resolve({
+        status: 501,
+        body: {
+          success: false,
+          code: 'PYTHON_OMR_UNAVAILABLE',
+          error:
+            'Python/OpenCV não está instalado neste servidor. Utilize o leitor óptico nativo do navegador.',
+        },
+      });
     });
 
     pyProcess.on('close', (code) => {
       if (code === 0 && stdoutData.trim()) {
         try {
           const parsed = JSON.parse(stdoutData.trim());
-          resolve(parsed);
+          resolve({
+            status: parsed.success === false ? 400 : 200,
+            body: parsed,
+          });
+          return;
         } catch {
-          resolve(gradeInTypeScript(payload));
+          resolve({
+            status: 500,
+            body: {
+              success: false,
+              code: 'OMR_PARSE_ERROR',
+              error: 'Resposta inválida do motor Python OMR.',
+            },
+          });
+          return;
         }
-      } else {
-        // Fallback resiliente
-        resolve(gradeInTypeScript(payload));
       }
+
+      resolve({
+        status: 501,
+        body: {
+          success: false,
+          code: 'PYTHON_OMR_UNAVAILABLE',
+          error:
+            stderrData.trim() ||
+            'Falha ao executar leitura óptica no servidor Python/OpenCV.',
+        },
+      });
     });
 
     try {
       pyProcess.stdin.write(JSON.stringify(payload));
       pyProcess.stdin.end();
     } catch {
-      resolve(gradeInTypeScript(payload));
+      resolve({
+        status: 500,
+        body: {
+          success: false,
+          code: 'OMR_STDIN_ERROR',
+          error: 'Erro ao enviar imagem ao processo OMR.',
+        },
+      });
     }
   });
 }
@@ -143,10 +223,37 @@ function runPythonOmrScanner(payload: Record<string, unknown>): Promise<Record<s
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const result = await runPythonOmrScanner(body);
-    return NextResponse.json(result, {
-      status: result.success === false ? 400 : 200,
-    });
+    const action = String(body?.action || 'scan').toLowerCase();
+
+    if (action === 'grade') {
+      const graded = gradeExplicitAnswers(body);
+      return NextResponse.json(graded.body, { status: graded.status });
+    }
+
+    if (action === 'scan') {
+      if (!body?.imageBase64 || typeof body.imageBase64 !== 'string') {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'MISSING_IMAGE',
+            error: 'Imagem do cartão-resposta (imageBase64) é obrigatória para leitura OMR.',
+          },
+          { status: 400 }
+        );
+      }
+
+      const result = await runPythonOmrScanner(body);
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        code: 'INVALID_ACTION',
+        error: `Ação OMR desconhecida: "${action}". Utilize "scan" ou "grade".`,
+      },
+      { status: 400 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       {
