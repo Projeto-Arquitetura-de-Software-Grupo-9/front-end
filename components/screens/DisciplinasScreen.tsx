@@ -14,6 +14,7 @@ import {
   ExternalLink,
   X,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 
 export const DisciplinasScreen: React.FC = () => {
@@ -24,7 +25,6 @@ export const DisciplinasScreen: React.FC = () => {
     deleteDiscipline,
     addClass,
     setActiveClassId,
-    addToast,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,6 +37,7 @@ export const DisciplinasScreen: React.FC = () => {
   const [newDiscName, setNewDiscName] = useState('');
   const [newDiscCode, setNewDiscCode] = useState('');
   const [newDiscCourse, setNewDiscCourse] = useState('Direito');
+  const [isSavingDiscipline, setIsSavingDiscipline] = useState(false);
 
   // Modal para cadastrar nova turma nesta disciplina
   const [isNewClassModalOpen, setIsNewClassModalOpen] = useState(false);
@@ -65,20 +66,27 @@ export const DisciplinasScreen: React.FC = () => {
     );
   });
 
-  const handleCreateDiscipline = (e: React.FormEvent) => {
+  const handleCreateDiscipline = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDiscName.trim()) return;
+    if (!newDiscName.trim() || isSavingDiscipline) return;
 
-    const created = addDiscipline({
-      name: newDiscName.trim(),
-      code: newDiscCode.trim() || undefined,
-      course: newDiscCourse.trim() || 'Direito',
-    });
+    setIsSavingDiscipline(true);
+    try {
+      const created = await addDiscipline({
+        name: newDiscName.trim(),
+        code: newDiscCode.trim() || undefined,
+        course: newDiscCourse.trim() || 'Direito',
+      });
 
-    setSelectedDisciplineId(created.id);
-    setNewDiscName('');
-    setNewDiscCode('');
-    setIsNewDisciplineModalOpen(false);
+      if (created) {
+        setSelectedDisciplineId(created.id);
+        setNewDiscName('');
+        setNewDiscCode('');
+        setIsNewDisciplineModalOpen(false);
+      }
+    } finally {
+      setIsSavingDiscipline(false);
+    }
   };
 
   const handleCreateClassForDiscipline = (e: React.FormEvent) => {
@@ -96,11 +104,6 @@ export const DisciplinasScreen: React.FC = () => {
     setActiveClassId(created.id);
     setIsNewClassModalOpen(false);
     setNewClassName('');
-    addToast({
-      type: 'success',
-      title: 'Turma Criada!',
-      message: `Turma "${created.name}" vinculada a ${selectedDiscipline.name}.`,
-    });
   };
 
   return (
@@ -412,9 +415,11 @@ export const DisciplinasScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#9E0B1A] hover:bg-[#850916] text-white font-bold rounded-xl transition cursor-pointer shadow-xs"
+                  disabled={isSavingDiscipline}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-[#9E0B1A] hover:bg-[#850916] disabled:opacity-60 text-white font-bold rounded-xl transition cursor-pointer shadow-xs"
                 >
-                  Salvar Disciplina
+                  {isSavingDiscipline && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSavingDiscipline ? 'Salvando...' : 'Salvar Disciplina'}</span>
                 </button>
               </div>
             </form>

@@ -24,6 +24,7 @@ import {
   api,
   API_BASE_URL,
   ApiError,
+  generateDisciplineCode,
   setAuthToken,
   clearAuthToken,
 } from '@/lib/api';
@@ -109,8 +110,8 @@ interface AppContextType {
 
   // Disciplines
   disciplines: Discipline[];
-  addDiscipline: (data: { name: string; code?: string; course?: string }) => Discipline;
-  deleteDiscipline: (id: string) => void;
+  addDiscipline: (data: { name: string; code?: string; course?: string }) => Promise<Discipline | null>;
+  deleteDiscipline: (id: string) => Promise<boolean>;
 
   // Classes (Turmas - Feature 3)
   classes: Class[];
@@ -134,8 +135,8 @@ interface AppContextType {
   activeExamId: string;
   setActiveExamId: (id: string) => void;
   selectedExam: Exam | undefined;
-  createExamFromDraft: (draft: ExamDraft) => Exam;
-  updateExam: (id: string, draft: ExamDraft) => Exam;
+  createExamFromDraft: (draft: ExamDraft) => Promise<Exam | null>;
+  updateExam: (id: string, draft: ExamDraft) => Promise<Exam | null>;
   updateExamPrintConfig: (
     id: string,
     config: {
@@ -147,7 +148,7 @@ interface AppContextType {
   ) => Exam | undefined;
   reshuffleExamStudents: (id: string) => void;
   deleteExam: (id: string) => void;
-  duplicateExam: (id: string) => Exam;
+  duplicateExam: (id: string) => Promise<Exam | null>;
 
   // Applications (Feature 5, 6 - Prova aplicada a Turma)
   applications: Application[];
@@ -1061,68 +1062,108 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // =========================================================================
   // DISCIPLINES
   // =========================================================================
-  const addDiscipline = (data: { name: string; code?: string; course?: string }): Discipline => {
-    const cleanName = data.name.trim();
+  const addDiscipline = async (data: {
+    name: string;
+    code?: string;
+    course?: string;
+  }): Promise<Discipline | null> => {
+    const cleanName = (data.name || '').trim();
+    if (!cleanName) {
+      addToast({
+        type: 'error',
+        title: 'Nome Obrigatório',
+        message: 'Informe o nome da disciplina para cadastrar.',
+      });
+      return null;
+    }
+
     const existing = disciplines.find(
       (d) => (d.name || '').trim().toLowerCase() === cleanName.toLowerCase()
     );
-    if (existing) return existing;
+    if (existing) {
+      addToast({
+        type: 'info',
+        title: 'Disciplina já Cadastrada',
+        message: `"${existing.name}" (${existing.code}) já existe na sua lista.`,
+      });
+      return existing;
+    }
 
-    const generatedCode =
-      data.code?.trim().toUpperCase() ||
-      `${cleanName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+    const generatedCode = generateDisciplineCode(cleanName, data.code);
+    const cleanCourse = (data.course || '').trim() || 'Direito';
 
-    const tempId = `disc-${Date.now()}`;
-    const newDisc: Discipline = {
-      id: tempId,
-      teacherId: currentUser.id,
-      code: generatedCode,
-      name: cleanName,
-      course: data.course?.trim() || 'Direito',
-      createdAt: new Date().toISOString(),
-    };
+    let professorId = (currentUser.id || '').trim();
+    if (!professorId) {
+      try {
+        const profile = await api.getCurrentProfessor();
+        if (profile?.id) {
+          professorId = String(profile.id);
+          setCurrentUser((prev) => ({
+            ...prev,
+            id: professorId,
+            fullName: profile.nomeCompleto || prev.fullName,
+            email: profile.email || prev.email,
+          }));
+        }
+      } catch {
+        // Backend will validate JWT token if idProfessor is omitted
+      }
+    }
 
-    setDisciplines((prev) => [...prev, newDisc]);
-
-    api
-      .createDisciplina({
+    try {
+      const createdRemote = await api.createDisciplina({
         nome: cleanName,
         codigo: generatedCode,
-        curso: newDisc.course,
-        idProfessor: currentUser.id,
-      })
-      .then((createdRemote) => {
-        if (createdRemote?.id) {
-          setDisciplines((prev) =>
-            prev.map((d) => (d.id === tempId ? { ...d, id: createdRemote.id } : d))
-          );
-        }
-      })
-      .catch((err) => {
-        addToast({
-          type: 'warning',
-          title: 'Aviso ao Salvar Disciplina',
-          message: err?.message || 'Não foi possível sincronizar a disciplina com o banco.',
-        });
+        curso: cleanCourse,
+        ...(professorId ? { idProfessor: professorId } : {}),
       });
 
-    addToast({
-      type: 'success',
-      title: 'Disciplina Criada!',
-      message: `${newDisc.name} (${newDisc.code}) adicionada ao sistema.`,
-    });
-    return newDisc;
+      setDisciplines((prev) => {
+        if (prev.some((d) => d.id === createdRemote.id)) return prev;
+        return [...prev, createdRemote];
+      });
+
+      addToast({
+        type: 'success',
+        title: 'Disciplina Criada!',
+        message: `${createdRemote.name} (${createdRemote.code}) salva no banco de dados.`,
+      });
+      return createdRemote;
+    } catch (err: any) {
+      const msg =
+        err?.name === 'AbortError'
+          ? 'Tempo limite excedido ao salvar a disciplina. Tente novamente.'
+          : err?.message || 'Não foi possível salvar a disciplina no banco de dados.';
+      addToast({
+        type: 'error',
+        title: 'Erro ao Cadastrar Disciplina',
+        message: msg,
+      });
+      return null;
+    }
   };
 
-  const deleteDiscipline = (id: string) => {
-    api.deleteDisciplina(id).catch((err) => console.warn('Aviso ao remover disciplina:', err));
+  const deleteDiscipline = async (id: string): Promise<boolean> => {
     const target = disciplines.find((d) => d.id === id);
-    setDisciplines((prev) => prev.filter((d) => d.id !== id));
-    addToast({
-      type: 'info',
-      title: 'Disciplina Removida',
-      message: target ? `"${target.name}" foi removida.` : 'Disciplina removida.',
-    });
+    try {
+      await api.deleteDisciplina(id);
+      setDisciplines((prev) => prev.filter((d) => d.id !== id));
+      addToast({
+        type: 'info',
+        title: 'Disciplina Removida',
+        message: target ? `"${target.name}" foi removida.` : 'Disciplina removida.',
+      });
+      return true;
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Erro ao Remover Disciplina',
+        message:
+          err?.message ||
+          'Não foi possível remover a disciplina. Verifique se há turmas ou provas vinculadas.',
+      });
+      return false;
+    }
   };
 
   // =========================================================================
@@ -1299,9 +1340,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // EXAMS
   // =========================================================================
   const buildBackendExamPayload = (draft: ExamDraft, code: string, versions: ExamVersion[]) => {
+    const cleanDiscipline = (draft.discipline || '').trim();
     const matchedDisc = disciplines.find(
-      (d) => d.name.trim().toLowerCase() === (draft.discipline || '').trim().toLowerCase()
+      (d) => (d.name || '').trim().toLowerCase() === cleanDiscipline.toLowerCase()
     );
+    const validDisciplinaId =
+      matchedDisc?.id && !matchedDisc.id.startsWith('disc-') ? matchedDisc.id : undefined;
+
     const selectedQuestions = draft.selectedQuestionIds
       .map((qId) => questions.find((q) => q.id === qId))
       .filter((q): q is Question => Boolean(q))
@@ -1315,21 +1360,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         correctAlternative: q.correctAlternative,
       }));
 
+    const resolvedQuestionIds = selectedQuestions.map((q) => q.id);
+    const now = new Date();
+    const defaultSemester = `${now.getFullYear()}.${now.getMonth() < 6 ? 1 : 2}`;
+    const cleanSemester = (draft.semester || '').trim() || defaultSemester;
+    const cleanClassGroup = (draft.classGroup || '').trim() || classes[0]?.name || 'Turma Geral';
+
     return {
       code,
-      title: draft.title,
-      subtitle: `Período Letivo ${draft.semester}`,
-      institution: draft.institution,
-      department: draft.department,
-      course: draft.course,
-      discipline: draft.discipline,
-      disciplinaId: matchedDisc?.id,
-      classGroup: draft.classGroup,
-      semester: draft.semester,
-      date: draft.date,
-      duration: draft.duration,
-      instructions: draft.instructions,
-      selectedQuestionIds: draft.selectedQuestionIds,
+      title: (draft.title || '').trim(),
+      subtitle: `Período Letivo ${cleanSemester}`,
+      institution: (draft.institution || '').trim() || 'CATÓLICA DE SANTA CATARINA',
+      department:
+        (draft.department || '').trim() || 'Centro Universitário Católica de Santa Catarina',
+      course: (draft.course || '').trim() || matchedDisc?.course || 'Graduação',
+      discipline: cleanDiscipline,
+      ...(validDisciplinaId ? { disciplinaId: validDisciplinaId } : {}),
+      classGroup: cleanClassGroup,
+      semester: cleanSemester,
+      date: (draft.date || '').trim() || now.toLocaleDateString('pt-BR'),
+      duration: (draft.duration || '').trim() || '2 horas',
+      instructions: (draft.instructions || '').trim(),
+      selectedQuestionIds: resolvedQuestionIds,
       selectedQuestions,
       shuffleQuestions: draft.shuffleQuestions,
       shuffleAlternatives: draft.shuffleAlternatives,
@@ -1341,8 +1393,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const createExamFromDraft = (draft: ExamDraft): Exam => {
-    if (draft.selectedQuestionIds.length > 20) {
+  const createExamFromDraft = async (draft: ExamDraft): Promise<Exam | null> => {
+    const cleanTitle = (draft.title || '').trim();
+    const cleanDiscipline = (draft.discipline || '').trim();
+
+    if (!cleanTitle) {
+      addToast({
+        type: 'error',
+        title: 'Título Obrigatório',
+        message: 'A avaliação precisa de um título.',
+      });
+      return null;
+    }
+
+    if (!cleanDiscipline) {
+      addToast({
+        type: 'error',
+        title: 'Disciplina Obrigatória',
+        message: 'Selecione ou cadastre uma disciplina para a avaliação.',
+      });
+      return null;
+    }
+
+    const validQuestionIds = draft.selectedQuestionIds.filter((qId) =>
+      questions.some((q) => q.id === qId && !q.deletedAt)
+    );
+
+    if (validQuestionIds.length === 0) {
+      addToast({
+        type: 'error',
+        title: 'Selecione Questões',
+        message: 'Adicione pelo menos uma questão válida do banco à prova.',
+      });
+      return null;
+    }
+
+    if (validQuestionIds.length > 20) {
       addToast({
         type: 'warning',
         title: 'Limite de 20 Questões',
@@ -1350,103 +1436,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    const cappedIds = draft.selectedQuestionIds.slice(0, 20);
-    const generatedCode = `#${(draft.discipline || 'PRV')
-      .replace(/[^A-Za-z]/g, '')
-      .substring(0, 3)
-      .toUpperCase() || 'PRV'}-${Date.now().toString().slice(-4)}`;
-    const tempId = `exam-${Date.now()}`;
+    const cappedIds = validQuestionIds.slice(0, 20);
+    const codePrefix =
+      cleanDiscipline
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Za-z]/g, '')
+        .substring(0, 3)
+        .toUpperCase() || 'PRV';
+    const generatedCode = `#${codePrefix}-${Date.now().toString().slice(-4)}`;
 
-    const versions = buildExamVersions(
+    const initialVersions = buildExamVersions(
       cappedIds,
       draft.shuffleQuestions,
       draft.shuffleAlternatives,
       draft.numberOfVersions,
-      generatedCode,
-      tempId
+      generatedCode
     );
 
-    const studentAssignments = generateRandomStudentAssignments(students, draft.numberOfVersions);
+    const payload = buildBackendExamPayload(
+      { ...draft, title: cleanTitle, discipline: cleanDiscipline, selectedQuestionIds: cappedIds },
+      generatedCode,
+      initialVersions
+    );
 
-    const newExam: Exam = {
-      id: tempId,
-      teacherId: currentUser.id,
-      code: generatedCode,
-      title: draft.title,
-      description: draft.instructions,
-      subtitle: `Período Letivo ${draft.semester}`,
-      institution: draft.institution,
-      department: draft.department,
-      course: draft.course,
-      discipline: draft.discipline,
-      classGroup: draft.classGroup,
-      semester: draft.semester,
-      date: draft.date,
-      duration: draft.duration,
-      instructions: draft.instructions,
-      status: 'ready',
-      withStudentIdentification: draft.withStudentIdentification ?? true,
-      shuffleQuestions: draft.shuffleQuestions,
-      shuffleAlternatives: draft.shuffleAlternatives,
-      numberOfVersions: draft.numberOfVersions,
-      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
-      selectedQuestionIds: cappedIds,
-      versions,
-      studentAssignments,
-      maxScore: draft.maxScore,
-      totalStudents: students.length,
-      averageScore: 0,
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const createdRemote = await api.createExam(payload);
+      const syncedBase = mapBackendExam(createdRemote);
+      const studentAssignments = generateRandomStudentAssignments(students, draft.numberOfVersions);
 
-    const nextExams = [newExam, ...exams];
-    persistExams(nextExams);
-    setActiveExamId(tempId);
+      const finalVersions =
+        syncedBase.versions.length > 0
+          ? syncedBase.versions
+          : buildExamVersions(
+              cappedIds,
+              draft.shuffleQuestions,
+              draft.shuffleAlternatives,
+              draft.numberOfVersions,
+              syncedBase.code || generatedCode,
+              syncedBase.id
+            );
 
-    api
-      .createExam(buildBackendExamPayload({ ...draft, selectedQuestionIds: cappedIds }, generatedCode, versions))
-      .then((createdRemote) => {
-        if (createdRemote?.id) {
-          const syncedExam = mapBackendExam(createdRemote);
-          setExams((prev) =>
-            prev.map((e) =>
-              e.id === tempId
-                ? {
-                    ...e,
-                    id: syncedExam.id,
-                    code: syncedExam.code || e.code,
-                    versions: syncedExam.versions.length > 0 ? syncedExam.versions : e.versions,
-                  }
-                : e
-            )
-          );
-          setActiveExamId((prev) => (prev === tempId ? syncedExam.id : prev));
-        }
-      })
-      .catch((err) => {
-        addToast({
-          type: 'warning',
-          title: 'Aviso ao Persistir Prova',
-          message: err?.message || 'Falha ao sincronizar a avaliação com o servidor.',
-        });
+      const savedExam: Exam = {
+        ...syncedBase,
+        teacherId: syncedBase.teacherId || currentUser.id,
+        withStudentIdentification: draft.withStudentIdentification ?? true,
+        selectedQuestionIds: cappedIds,
+        versions: finalVersions,
+        studentAssignments,
+        totalStudents: students.length,
+      };
+
+      setExams((prev) => [savedExam, ...prev.filter((e) => e.id !== savedExam.id)]);
+      setActiveExamId(savedExam.id);
+
+      addToast({
+        type: 'success',
+        title: 'Prova Salva com Sucesso!',
+        message: `A avaliação "${savedExam.title}" (${savedExam.code}) foi salva e está pronta para impressão.`,
       });
-
-    addToast({
-      type: 'success',
-      title: 'Prova Salva com Sucesso!',
-      message: `A avaliação "${newExam.title}" (${newExam.code}) está pronta para impressão e correção.`,
-    });
-    return newExam;
+      return savedExam;
+    } catch (err: any) {
+      const msg =
+        err?.name === 'AbortError'
+          ? 'Tempo limite excedido ao salvar a prova. Tente novamente.'
+          : err?.message || 'Não foi possível salvar a prova no servidor.';
+      addToast({
+        type: 'error',
+        title: 'Erro ao Cadastrar Prova',
+        message: msg,
+      });
+      return null;
+    }
   };
 
-  const updateExam = (id: string, draft: ExamDraft): Exam => {
+  const updateExam = async (id: string, draft: ExamDraft): Promise<Exam | null> => {
     const existing = exams.find((e) => e.id === id);
     if (!existing) {
       return createExamFromDraft(draft);
     }
 
+    const validQuestionIds = draft.selectedQuestionIds
+      .filter((qId) => questions.some((q) => q.id === qId && !q.deletedAt))
+      .slice(0, 20);
+
+    if (validQuestionIds.length === 0) {
+      addToast({
+        type: 'error',
+        title: 'Selecione Questões',
+        message: 'Adicione pelo menos uma questão válida à prova.',
+      });
+      return null;
+    }
+
     const versions = buildExamVersions(
-      draft.selectedQuestionIds,
+      validQuestionIds,
       draft.shuffleQuestions,
       draft.shuffleAlternatives,
       draft.numberOfVersions,
@@ -1454,44 +1538,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       existing.id
     );
 
-    const studentAssignments = generateRandomStudentAssignments(students, draft.numberOfVersions);
+    const payload = buildBackendExamPayload(
+      { ...draft, selectedQuestionIds: validQuestionIds },
+      existing.code,
+      versions
+    );
 
-    const updatedExam: Exam = {
-      ...existing,
-      title: draft.title,
-      discipline: draft.discipline,
-      course: draft.course,
-      classGroup: draft.classGroup,
-      semester: draft.semester,
-      institution: draft.institution,
-      department: draft.department,
-      date: draft.date,
-      duration: draft.duration,
-      instructions: draft.instructions,
-      selectedQuestionIds: draft.selectedQuestionIds,
-      withStudentIdentification: draft.withStudentIdentification ?? true,
-      shuffleQuestions: draft.shuffleQuestions,
-      shuffleAlternatives: draft.shuffleAlternatives,
-      numberOfVersions: draft.numberOfVersions,
-      permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
-      maxScore: draft.maxScore,
-      versions,
-      studentAssignments,
-    };
+    try {
+      const updatedRemote = await api.updateExam(id, payload);
+      const syncedBase = updatedRemote ? mapBackendExam(updatedRemote) : null;
+      const studentAssignments = generateRandomStudentAssignments(students, draft.numberOfVersions);
 
-    persistExams(exams.map((e) => (e.id === id ? updatedExam : e)));
-    setActiveExamId(updatedExam.id);
+      const updatedExam: Exam = {
+        ...existing,
+        ...(syncedBase || {}),
+        id: existing.id,
+        title: payload.title,
+        discipline: payload.discipline,
+        course: payload.course,
+        classGroup: payload.classGroup,
+        semester: payload.semester,
+        institution: payload.institution,
+        department: payload.department,
+        date: payload.date,
+        duration: payload.duration,
+        instructions: payload.instructions,
+        selectedQuestionIds: validQuestionIds,
+        withStudentIdentification: draft.withStudentIdentification ?? true,
+        shuffleQuestions: draft.shuffleQuestions,
+        shuffleAlternatives: draft.shuffleAlternatives,
+        numberOfVersions: draft.numberOfVersions,
+        permutationStrategy: draft.permutationStrategy || 'FISHER_YATES',
+        maxScore: draft.maxScore,
+        versions:
+          syncedBase && syncedBase.versions.length > 0 ? syncedBase.versions : versions,
+        studentAssignments,
+      };
 
-    api
-      .updateExam(id, buildBackendExamPayload(draft, existing.code, versions))
-      .catch((err) => console.warn('Aviso ao atualizar prova no backend:', err));
+      setExams((prev) => prev.map((e) => (e.id === id ? updatedExam : e)));
+      setActiveExamId(updatedExam.id);
 
-    addToast({
-      type: 'success',
-      title: 'Prova Atualizada com Sucesso!',
-      message: `As alterações em "${updatedExam.title}" foram salvas.`,
-    });
-    return updatedExam;
+      addToast({
+        type: 'success',
+        title: 'Prova Atualizada com Sucesso!',
+        message: `As alterações em "${updatedExam.title}" foram salvas.`,
+      });
+      return updatedExam;
+    } catch (err: any) {
+      const msg =
+        err?.name === 'AbortError'
+          ? 'Tempo limite excedido ao atualizar a prova. Tente novamente.'
+          : err?.message || 'Não foi possível atualizar a prova no servidor.';
+      addToast({
+        type: 'error',
+        title: 'Erro ao Atualizar Prova',
+        message: msg,
+      });
+      return null;
+    }
   };
 
   const updateExamPrintConfig = (
@@ -1570,7 +1674,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const duplicateExam = (id: string): Exam => {
+  const duplicateExam = async (id: string): Promise<Exam | null> => {
     const original = exams.find((e) => e.id === id);
     if (!original) throw new Error('Prova não encontrada');
 

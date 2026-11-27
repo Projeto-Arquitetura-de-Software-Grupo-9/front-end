@@ -225,6 +225,94 @@ function mapBackendCorrecao(raw: any): Correction {
   };
 }
 
+export function generateDisciplineCode(name: string, explicitCode?: string): string {
+  const cleanExplicit = (explicitCode || '').trim().toUpperCase();
+  if (cleanExplicit) return cleanExplicit;
+
+  const prefix =
+    (name || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .substring(0, 3)
+      .toUpperCase() || 'DSC';
+
+  return `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
+}
+
+export function buildDisciplinePayload(data: {
+  nome?: string;
+  name?: string;
+  codigo?: string;
+  code?: string;
+  curso?: string;
+  course?: string;
+  idProfessor?: string;
+  teacherId?: string;
+}): { nome: string; codigo: string; curso: string; idProfessor?: string } {
+  const nome = (data.nome || data.name || '').trim();
+  const codigo = generateDisciplineCode(nome, data.codigo || data.code);
+  const curso = (data.curso || data.course || '').trim() || 'Direito';
+  const professorId = (data.idProfessor || data.teacherId || '').trim();
+
+  return {
+    nome,
+    codigo,
+    curso,
+    ...(professorId ? { idProfessor: professorId } : {}),
+  };
+}
+
+export function sanitizeExamPayload<T extends Record<string, any>>(payload: T): T {
+  const now = new Date();
+  const defaultSemester = `${now.getFullYear()}.${now.getMonth() < 6 ? 1 : 2}`;
+  const defaultDate = now.toLocaleDateString('pt-BR');
+
+  const sanitized: Record<string, any> = { ...payload };
+
+  const isFullExamPayload =
+    'title' in payload || 'discipline' in payload || 'selectedQuestionIds' in payload;
+
+  if (isFullExamPayload) {
+    const semester = String(payload.semester || '').trim() || defaultSemester;
+    const discipline = String(payload.discipline || '').trim();
+    const title = String(payload.title || '').trim();
+
+    sanitized.title = title;
+    sanitized.discipline = discipline;
+    sanitized.semester = semester;
+    sanitized.subtitle = String(payload.subtitle || '').trim() || `Período Letivo ${semester}`;
+    sanitized.institution =
+      String(payload.institution || '').trim() || 'CATÓLICA DE SANTA CATARINA';
+    sanitized.department =
+      String(payload.department || '').trim() ||
+      'Centro Universitário Católica de Santa Catarina';
+    sanitized.course = String(payload.course || '').trim() || 'Graduação';
+    sanitized.classGroup = String(payload.classGroup || '').trim() || 'Turma Geral';
+    sanitized.date = String(payload.date || '').trim() || defaultDate;
+    sanitized.duration = String(payload.duration || '').trim() || '2 horas';
+    if (typeof payload.instructions === 'string') {
+      sanitized.instructions = payload.instructions.trim();
+    }
+
+    // Never send optimistic/temporary frontend discipline IDs (disc-...) to the backend FK check
+    const rawDisciplinaId =
+      typeof payload.disciplinaId === 'string' ? payload.disciplinaId.trim() : '';
+    if (!rawDisciplinaId || rawDisciplinaId.startsWith('disc-')) {
+      delete sanitized.disciplinaId;
+    } else {
+      sanitized.disciplinaId = rawDisciplinaId;
+    }
+
+    // Keep selectedQuestionIds strictly in sync with selectedQuestions to avoid backend mismatch 400
+    if (Array.isArray(payload.selectedQuestions) && payload.selectedQuestions.length > 0) {
+      sanitized.selectedQuestionIds = payload.selectedQuestions.map((q: any) => String(q.id));
+    }
+  }
+
+  return sanitized as T;
+}
+
 export const api = {
   // 1. Health & Status
   async checkHealth(): Promise<{ online: boolean; data?: HealthCheckResponse }> {
@@ -378,23 +466,25 @@ export const api = {
     idProfessor?: string;
     teacherId?: string;
   }): Promise<Discipline> {
-    const payload = {
-      nome: data.nome || data.name || '',
-      codigo: data.codigo || data.code || '',
-      curso: data.curso || data.course || 'Direito',
-      idProfessor: data.idProfessor || data.teacherId || '',
-    };
-    const res = await fetchWithTimeout(`${API_BASE_URL}/disciplinas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const payload = buildDisciplinePayload(data);
+    if (!payload.nome) {
+      throw new ApiError('O nome da disciplina é obrigatório.', 400);
+    }
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/disciplinas`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      15000
+    );
     if (!res.ok) throw await parseErrorResponse(res, 'Falha ao criar disciplina');
     const json = await res.json();
     const d = json.data || {};
     return {
       id: String(d.id),
-      teacherId: String(d.idProfessor || d.teacherId || payload.idProfessor),
+      teacherId: String(d.idProfessor || d.teacherId || payload.idProfessor || ''),
       code: String(d.codigo || d.code || payload.codigo),
       name: String(d.nome || d.name || payload.nome),
       course: String(d.curso || d.course || payload.curso),
@@ -403,10 +493,17 @@ export const api = {
   },
 
   async deleteDisciplina(id: string): Promise<boolean> {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/disciplinas/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-    return res.ok;
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/disciplinas/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+      },
+      15000
+    );
+    if (!res.ok) {
+      throw await parseErrorResponse(res, 'Não foi possível remover a disciplina.');
+    }
+    return true;
   },
 
   // 3. Turmas
@@ -605,11 +702,16 @@ export const api = {
   },
 
   async createExam(payload: any): Promise<any> {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/exams`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const sanitized = sanitizeExamPayload(payload);
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/exams`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitized),
+      },
+      15000
+    );
     if (!res.ok) {
       throw await parseErrorResponse(res, 'Falha ao salvar prova no banco de dados');
     }
@@ -618,11 +720,16 @@ export const api = {
   },
 
   async updateExam(id: string, payload: any): Promise<any> {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/exams/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const sanitized = sanitizeExamPayload(payload);
+    const res = await fetchWithTimeout(
+      `${API_BASE_URL}/exams/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitized),
+      },
+      15000
+    );
     if (!res.ok) {
       throw await parseErrorResponse(res, 'Falha ao atualizar prova no banco de dados');
     }

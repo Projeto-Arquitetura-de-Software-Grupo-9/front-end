@@ -15,6 +15,7 @@ import {
   Search,
   Printer,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
 
 export const CreateExamScreen: React.FC = () => {
@@ -22,6 +23,7 @@ export const CreateExamScreen: React.FC = () => {
   const editId = searchParams.get('edit');
 
   const {
+    exams,
     questions,
     examDraft,
     setExamDraft,
@@ -40,12 +42,16 @@ export const CreateExamScreen: React.FC = () => {
 
   const [isCreatingDiscipline, setIsCreatingDiscipline] = useState(false);
   const [newDisciplineName, setNewDisciplineName] = useState('');
+  const [isSavingDiscipline, setIsSavingDiscipline] = useState(false);
+  const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [showMoreHeaderOptions, setShowMoreHeaderOptions] = useState(false);
 
   // Ensure wizard only uses steps 1 and 2
   useEffect(() => {
     if (editId) {
-      loadExamToDraft(editId);
+      if (examDraft.id !== editId) {
+        loadExamToDraft(editId);
+      }
     } else {
       if (examDraft.id) {
         resetExamDraft();
@@ -53,7 +59,59 @@ export const CreateExamScreen: React.FC = () => {
         setExamWizardStep(1);
       }
     }
-  }, [editId]);
+  }, [editId, exams.length]);
+
+  // Auto-select first available class and discipline when creating a new exam
+  useEffect(() => {
+    if (editId) return;
+    setExamDraft((prev) => {
+      let nextClassGroup = prev.classGroup;
+      let nextDiscipline = prev.discipline;
+      let nextSemester = prev.semester;
+      let nextCourse = prev.course;
+
+      if (!nextClassGroup && classes.length > 0) {
+        nextClassGroup = classes[0].name;
+        if (!nextDiscipline && classes[0].subject) {
+          nextDiscipline = classes[0].subject;
+        }
+        if (classes[0].term) {
+          nextSemester = classes[0].term;
+        }
+      }
+
+      if (!nextDiscipline && disciplines.length > 0) {
+        nextDiscipline = disciplines[0].name;
+        if (disciplines[0].course) {
+          nextCourse = disciplines[0].course;
+        }
+      } else if (nextDiscipline && disciplines.length > 0) {
+        const matchedDisc = disciplines.find(
+          (d) => (d.name || '').trim().toLowerCase() === nextDiscipline.trim().toLowerCase()
+        );
+        if (matchedDisc?.course && !prev.course) {
+          nextCourse = matchedDisc.course;
+        }
+      }
+
+      if (
+        nextClassGroup === prev.classGroup &&
+        nextDiscipline === prev.discipline &&
+        nextSemester === prev.semester &&
+        nextCourse === prev.course
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        classGroup: nextClassGroup,
+        discipline: nextDiscipline,
+        semester: nextSemester,
+        course: nextCourse,
+      };
+    });
+  }, [editId, classes, disciplines, setExamDraft]);
 
   const activeStep = examWizardStep > 2 ? 2 : examWizardStep;
 
@@ -88,10 +146,10 @@ export const CreateExamScreen: React.FC = () => {
       const query = searchBankQuery.trim().toLowerCase();
       const matchesSearch =
         query === '' ||
-        q.statement.toLowerCase().includes(query) ||
-        q.code.toLowerCase().includes(query) ||
+        (q.statement || '').toLowerCase().includes(query) ||
+        (q.code || '').toLowerCase().includes(query) ||
         (q.topic && q.topic.toLowerCase().includes(query)) ||
-        (q.tags && Array.isArray(q.tags) && q.tags.some((t) => t.toLowerCase().includes(query)));
+        (q.tags && Array.isArray(q.tags) && q.tags.some((t) => (t || '').toLowerCase().includes(query)));
       return !isSelected && matchesTag && matchesSearch;
     });
   }, [questions, examDraft.selectedQuestionIds, selectedTag, searchBankQuery]);
@@ -154,18 +212,54 @@ export const CreateExamScreen: React.FC = () => {
   };
 
   const handleStepClick = (targetStep: number) => {
-    if (targetStep === 2 && !examDraft.title.trim()) {
-      addToast({
-        type: 'warning',
-        title: 'Título Obrigatório',
-        message: 'Informe o título da prova antes de selecionar as questões.',
-      });
-      return;
+    if (targetStep === 2) {
+      if (!examDraft.title.trim()) {
+        addToast({
+          type: 'warning',
+          title: 'Título Obrigatório',
+          message: 'Informe o título da prova antes de selecionar as questões.',
+        });
+        return;
+      }
+      if (!examDraft.discipline.trim()) {
+        addToast({
+          type: 'warning',
+          title: 'Disciplina Obrigatória',
+          message: 'Selecione ou cadastre a disciplina antes de continuar.',
+        });
+        return;
+      }
     }
     setExamWizardStep(targetStep);
   };
 
-  const handleFinishAndGenerate = () => {
+  const handleCreateInlineDiscipline = async () => {
+    const cleanName = newDisciplineName.trim();
+    if (!cleanName || isSavingDiscipline) return;
+
+    setIsSavingDiscipline(true);
+    try {
+      const created = await addDiscipline({
+        name: cleanName,
+        course: examDraft.course || 'Direito',
+      });
+      if (created) {
+        setExamDraft((p) => ({
+          ...p,
+          discipline: created.name,
+          course: created.course || p.course,
+        }));
+        setNewDisciplineName('');
+        setIsCreatingDiscipline(false);
+      }
+    } finally {
+      setIsSavingDiscipline(false);
+    }
+  };
+
+  const handleFinishAndGenerate = async () => {
+    if (isSubmittingExam) return;
+
     if (!examDraft.title.trim()) {
       addToast({
         type: 'error',
@@ -176,7 +270,17 @@ export const CreateExamScreen: React.FC = () => {
       return;
     }
 
-    if (examDraft.selectedQuestionIds.length === 0) {
+    if (!examDraft.discipline.trim()) {
+      addToast({
+        type: 'error',
+        title: 'Disciplina Obrigatória',
+        message: 'Por favor, informe a disciplina da avaliação.',
+      });
+      setExamWizardStep(1);
+      return;
+    }
+
+    if (selectedQuestions.length === 0) {
       addToast({
         type: 'error',
         title: 'Selecione Questões',
@@ -186,15 +290,24 @@ export const CreateExamScreen: React.FC = () => {
       return;
     }
 
-    let savedExam: Exam;
-    if (editId) {
-      savedExam = updateExam(editId, examDraft);
-    } else {
-      savedExam = createExamFromDraft(examDraft);
-    }
+    setIsSubmittingExam(true);
+    try {
+      const draftWithValidQuestions = {
+        ...examDraft,
+        selectedQuestionIds: selectedQuestions.map((q) => q.id),
+      };
 
-    resetExamDraft();
-    navigateToPreview(savedExam.id);
+      const savedExam: Exam | null = editId
+        ? await updateExam(editId, draftWithValidQuestions)
+        : await createExamFromDraft(draftWithValidQuestions);
+
+      if (savedExam) {
+        resetExamDraft();
+        navigateToPreview(savedExam.id);
+      }
+    } finally {
+      setIsSubmittingExam(false);
+    }
   };
 
   return (
@@ -280,26 +393,53 @@ export const CreateExamScreen: React.FC = () => {
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Turma
               </label>
-              <select
-                value={examDraft.classGroup}
-                onChange={(e) => {
-                  const selectedName = e.target.value;
-                  const foundClass = classes.find((c) => c.name === selectedName);
-                  setExamDraft((p) => ({
-                    ...p,
-                    classGroup: selectedName,
-                    discipline: foundClass ? foundClass.subject : p.discipline,
-                    semester: foundClass ? foundClass.term : p.semester,
-                  }));
-                }}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-[#9E0B1A] transition"
-              >
-                {classes.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name} — {c.subject}
-                  </option>
-                ))}
-              </select>
+              {classes.length > 0 ? (
+                <select
+                  value={examDraft.classGroup}
+                  onChange={(e) => {
+                    const selectedName = e.target.value;
+                    const foundClass = classes.find((c) => c.name === selectedName);
+                    const matchedDisc = foundClass
+                      ? disciplines.find(
+                          (d) =>
+                            (d.name || '').trim().toLowerCase() ===
+                            (foundClass.subject || '').trim().toLowerCase()
+                        )
+                      : undefined;
+                    setExamDraft((p) => ({
+                      ...p,
+                      classGroup: selectedName,
+                      discipline: foundClass?.subject ? foundClass.subject : p.discipline,
+                      course: matchedDisc?.course ? matchedDisc.course : p.course,
+                      semester: foundClass?.term ? foundClass.term : p.semester,
+                    }));
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-[#9E0B1A] transition"
+                >
+                  {!examDraft.classGroup && (
+                    <option value="">Selecione uma turma...</option>
+                  )}
+                  {examDraft.classGroup &&
+                    !classes.some((c) => c.name === examDraft.classGroup) && (
+                      <option value={examDraft.classGroup}>{examDraft.classGroup}</option>
+                    )}
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name} — {c.subject}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={examDraft.classGroup}
+                  onChange={(e) =>
+                    setExamDraft((p) => ({ ...p, classGroup: e.target.value }))
+                  }
+                  placeholder="Ex: Turma A - Matutino"
+                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-[#9E0B1A] transition"
+                />
+              )}
             </div>
 
             <div>
@@ -307,49 +447,66 @@ export const CreateExamScreen: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-700">
                   Disciplina
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingDiscipline(!isCreatingDiscipline)}
-                  className="text-[11px] font-semibold text-[#9E0B1A] hover:underline cursor-pointer"
-                >
-                  {isCreatingDiscipline ? 'Selecionar existente' : '+ Nova'}
-                </button>
+                {disciplines.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingDiscipline(!isCreatingDiscipline)}
+                    className="text-[11px] font-semibold text-[#9E0B1A] hover:underline cursor-pointer"
+                  >
+                    {isCreatingDiscipline ? 'Selecionar existente' : '+ Nova'}
+                  </button>
+                )}
               </div>
-              {isCreatingDiscipline ? (
+              {isCreatingDiscipline || disciplines.length === 0 ? (
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={newDisciplineName}
                     onChange={(e) => setNewDisciplineName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleCreateInlineDiscipline();
+                      }
+                    }}
                     placeholder="Nome da disciplina..."
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-[#9E0B1A]"
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      if (newDisciplineName.trim()) {
-                        const created = addDiscipline({
-                          name: newDisciplineName.trim(),
-                          course: examDraft.course,
-                        });
-                        setExamDraft((p) => ({ ...p, discipline: created.name }));
-                        setNewDisciplineName('');
-                        setIsCreatingDiscipline(false);
-                      }
-                    }}
-                    className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+                    disabled={isSavingDiscipline || !newDisciplineName.trim()}
+                    onClick={handleCreateInlineDiscipline}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-black disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition cursor-pointer shrink-0"
                   >
-                    Adicionar
+                    {isSavingDiscipline && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{isSavingDiscipline ? 'Salvando...' : 'Adicionar'}</span>
                   </button>
                 </div>
               ) : (
                 <select
                   value={examDraft.discipline}
-                  onChange={(e) =>
-                    setExamDraft((p) => ({ ...p, discipline: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const selectedName = e.target.value;
+                    const matchedDisc = disciplines.find(
+                      (d) => (d.name || (d as any).nome) === selectedName
+                    );
+                    setExamDraft((p) => ({
+                      ...p,
+                      discipline: selectedName,
+                      course: matchedDisc?.course || p.course,
+                    }));
+                  }}
                   className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-[#9E0B1A] transition"
                 >
+                  {!examDraft.discipline && (
+                    <option value="">Selecione uma disciplina...</option>
+                  )}
+                  {examDraft.discipline &&
+                    !disciplines.some(
+                      (d) => (d.name || (d as any).nome) === examDraft.discipline
+                    ) && (
+                      <option value={examDraft.discipline}>{examDraft.discipline}</option>
+                    )}
                   {disciplines.map((d) => {
                     const dName = d.name || (d as any).nome || 'Disciplina';
                     const dCode = d.code || (d as any).codigo || '';
@@ -643,11 +800,22 @@ export const CreateExamScreen: React.FC = () => {
 
               <button
                 type="button"
+                disabled={isSubmittingExam}
                 onClick={handleFinishAndGenerate}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#9E0B1A] hover:bg-[#850916] disabled:opacity-60 text-white rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>{editId ? 'Salvar e Ir para Impressão' : 'Criar Prova e Ir para Impressão'}</span>
+                {isSubmittingExam ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Printer className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {isSubmittingExam
+                    ? 'Salvando Prova...'
+                    : editId
+                    ? 'Salvar e Ir para Impressão'
+                    : 'Criar Prova e Ir para Impressão'}
+                </span>
               </button>
             </div>
           </div>

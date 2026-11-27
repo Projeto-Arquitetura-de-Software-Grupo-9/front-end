@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, API_BASE_URL } from '../lib/api';
+import {
+  api,
+  API_BASE_URL,
+  generateDisciplineCode,
+  buildDisciplinePayload,
+  sanitizeExamPayload,
+} from '../lib/api';
 
 describe('Frontend API Integration & Mock Removal Verification (Items 1, 4, 5, 6, 10)', () => {
   it('should expose all required production API endpoints in lib/api.ts', () => {
@@ -114,5 +120,84 @@ describe('Frontend API Integration & Mock Removal Verification (Items 1, 4, 5, 6
     );
     assert.ok(existingMatch);
     assert.equal(existingMatch?.id, 'disc-backend-1');
+  });
+
+  it('should generate clean discipline codes and omit empty idProfessor in discipline payload', () => {
+    assert.equal(generateDisciplineCode('Direito Constitucional', ' dir-101 '), 'DIR-101');
+    const generated = generateDisciplineCode('Cálculo I');
+    assert.match(generated, /^CAL-\d{3}$/);
+
+    const fallbackCode = generateDisciplineCode('---');
+    assert.match(fallbackCode, /^DSC-\d{3}$/);
+
+    const withoutProf = buildDisciplinePayload({
+      name: '  Direito Penal  ',
+      code: '',
+      course: '   ',
+      idProfessor: '',
+    });
+    assert.equal(withoutProf.nome, 'Direito Penal');
+    assert.match(withoutProf.codigo, /^DIR-\d{3}$/);
+    assert.equal(withoutProf.curso, 'Direito');
+    assert.equal('idProfessor' in withoutProf, false);
+
+    const withProf = buildDisciplinePayload({
+      nome: 'Direito Civil',
+      codigo: 'civ-202',
+      curso: 'Direito',
+      idProfessor: '3aac1889-df83-4302-ba4c-09f19ba9a08f',
+    });
+    assert.equal(withProf.codigo, 'CIV-202');
+    assert.equal(withProf.idProfessor, '3aac1889-df83-4302-ba4c-09f19ba9a08f');
+  });
+
+  it('should sanitize exam payloads to prevent empty-string 400, temp disciplinaId 404, and question mismatch errors', () => {
+    const sanitized = sanitizeExamPayload({
+      code: '#DIR-1234',
+      title: '  P1 Direito Constitucional  ',
+      discipline: '  Direito Constitucional  ',
+      disciplinaId: 'disc-1764200000000',
+      classGroup: '',
+      course: '',
+      institution: '',
+      department: '',
+      semester: '',
+      date: '',
+      duration: '',
+      instructions: '  Leia com atenção.  ',
+      selectedQuestionIds: ['q-valid-1', 'q-stale-deleted'],
+      selectedQuestions: [
+        { id: 'q-valid-1', statement: 'Pergunta 1', type: 'objetiva', alternatives: [] },
+      ],
+    });
+
+    assert.equal(sanitized.title, 'P1 Direito Constitucional');
+    assert.equal(sanitized.discipline, 'Direito Constitucional');
+    assert.equal('disciplinaId' in sanitized, false);
+    assert.equal(sanitized.classGroup, 'Turma Geral');
+    assert.equal(sanitized.course, 'Graduação');
+    assert.equal(sanitized.institution, 'CATÓLICA DE SANTA CATARINA');
+    assert.ok(sanitized.department.length > 0);
+    assert.ok(sanitized.date.length > 0);
+    assert.equal(sanitized.duration, '2 horas');
+    assert.deepEqual(sanitized.selectedQuestionIds, ['q-valid-1']);
+
+    const withValidUuid = sanitizeExamPayload({
+      title: 'P2',
+      discipline: 'Direito',
+      disciplinaId: 'fc5e35b4-5547-48d3-bf43-7218d47521a5',
+      classGroup: 'Turma A',
+    });
+    assert.equal(withValidUuid.disciplinaId, 'fc5e35b4-5547-48d3-bf43-7218d47521a5');
+    assert.equal(withValidUuid.classGroup, 'Turma A');
+
+    // Partial print config update should not inject unrelated fields
+    const partialPrintConfig = sanitizeExamPayload({
+      numberOfVersions: 3,
+      shuffleQuestions: true,
+      withStudentIdentification: false,
+    });
+    assert.equal('title' in partialPrintConfig, false);
+    assert.equal(partialPrintConfig.numberOfVersions, 3);
   });
 });

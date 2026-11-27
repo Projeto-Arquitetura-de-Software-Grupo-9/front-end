@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { DifficultyLevel, QuestionType } from '@/lib/types';
-import { X, BookOpen, Tag, Plus, Trash2, CheckCircle2, FileText, ListOrdered } from 'lucide-react';
+import { X, BookOpen, Tag, Plus, Trash2, CheckCircle2, FileText, ListOrdered, Loader2 } from 'lucide-react';
 
 export const NewQuestionModal: React.FC = () => {
   const {
@@ -23,6 +23,7 @@ export const NewQuestionModal: React.FC = () => {
   const [discipline, setDiscipline] = useState('Direito Constitucional');
   const [isCreatingDiscipline, setIsCreatingDiscipline] = useState(false);
   const [newDisciplineName, setNewDisciplineName] = useState('');
+  const [isSavingDiscipline, setIsSavingDiscipline] = useState(false);
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('Médio');
   const [topic, setTopic] = useState('');
   const [points, setPoints] = useState<number>(1.0);
@@ -76,7 +77,7 @@ export const NewQuestionModal: React.FC = () => {
     } else {
       setQuestionType('objetiva');
       setStatement('');
-      setDiscipline('Direito Constitucional');
+      setDiscipline(disciplines[0]?.name || 'Direito Constitucional');
       setDifficulty('Médio');
       setTopic('');
       setPoints(1.0);
@@ -333,17 +334,24 @@ export const NewQuestionModal: React.FC = () => {
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      if (newDisciplineName.trim()) {
-                        const created = addDiscipline({ name: newDisciplineName.trim() });
-                        setDiscipline(created.name);
-                        setNewDisciplineName('');
-                        setIsCreatingDiscipline(false);
+                    disabled={isSavingDiscipline || !newDisciplineName.trim()}
+                    onClick={async () => {
+                      if (!newDisciplineName.trim() || isSavingDiscipline) return;
+                      setIsSavingDiscipline(true);
+                      try {
+                        const created = await addDiscipline({ name: newDisciplineName.trim() });
+                        if (created) {
+                          setDiscipline(created.name);
+                          setNewDisciplineName('');
+                          setIsCreatingDiscipline(false);
+                        }
+                      } finally {
+                        setIsSavingDiscipline(false);
                       }
                     }}
-                    className="px-2.5 py-2 bg-[#9E0B1A] text-white rounded-xl text-xs font-bold cursor-pointer"
+                    className="inline-flex items-center justify-center px-2.5 py-2 bg-[#9E0B1A] disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer"
                   >
-                    OK
+                    {isSavingDiscipline ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'OK'}
                   </button>
                 </div>
               ) : (
@@ -352,6 +360,10 @@ export const NewQuestionModal: React.FC = () => {
                   onChange={(e) => setDiscipline(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#9E0B1A]/20"
                 >
+                  {discipline &&
+                    !disciplines.some((d) => (d.name || (d as any).nome) === discipline) && (
+                      <option value={discipline}>{discipline}</option>
+                    )}
                   {disciplines.map((d) => {
                     const dName = d.name || (d as any).nome || 'Disciplina';
                     return (

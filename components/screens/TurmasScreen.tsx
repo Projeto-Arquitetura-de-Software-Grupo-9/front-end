@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import {
@@ -52,9 +52,18 @@ export const TurmasScreen: React.FC = () => {
   const [isNewClassModalOpen, setIsNewClassModalOpen] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   const [newClassSubject, setNewClassSubject] = useState(
-    disciplines[0]?.name || 'Direito Constitucional'
+    disciplines[0]?.name || ''
   );
   const [newClassTerm, setNewClassTerm] = useState('2026/1');
+
+  useEffect(() => {
+    if (
+      disciplines.length > 0 &&
+      !disciplines.some((d) => (d.name || (d as any).nome) === newClassSubject)
+    ) {
+      setNewClassSubject(disciplines[0].name);
+    }
+  }, [disciplines, newClassSubject]);
 
   // Quick enroll student by email
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
