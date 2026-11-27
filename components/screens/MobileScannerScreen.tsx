@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
-import { api } from '@/lib/api';
+import { api, mapBackendExam } from '@/lib/api';
 import { CorregeLogo } from '@/components/common/CorregeLogo';
 import {
   Camera,
@@ -189,27 +189,28 @@ export const MobileScannerScreen: React.FC = () => {
           respostasLidasPayload[`desc_${qId}`] = String(score);
         });
 
-        let syncedWithBackend = false;
-        try {
-          await api.createCorrecao({
-            idVersaoProva: target.examVersionId,
-            idProva: target.exam.id,
-            versaoMarcada: target.versionLetter,
-            idAluno: finalStudentId,
-            nomeManuscrito: !isNominal && finalName ? finalName : undefined,
-            matriculaManuscrita: !isNominal && finalReg ? finalReg : undefined,
-            notaTotal: grading.totalScore,
-            respostasLidas: respostasLidasPayload,
-            atribuicaoAutomatica: Boolean(isNominal && finalStudentId),
-          });
-          syncedWithBackend = true;
-        } catch {
-          // Recorded locally with syncStatus = 'pending'
-        }
+        setCameraError(null);
+        const savedRemote = await api.createCorrecao({
+          idVersaoProva: target.examVersionId,
+          idProva: target.exam.id,
+          versaoMarcada: target.versionLetter,
+          idAluno: finalStudentId,
+          nomeManuscrito: !isNominal && finalName ? finalName : undefined,
+          matriculaManuscrita: !isNominal && finalReg ? finalReg : undefined,
+          notaTotal: grading.totalScore,
+          respostasLidas: respostasLidasPayload,
+          atribuicaoAutomatica: Boolean(isNominal && finalStudentId),
+        });
 
         addCorrection({
+          id: savedRemote?.id ? String(savedRemote.id) : undefined,
+          confirmedAt: savedRemote?.dataConfirmacao
+            ? String(savedRemote.dataConfirmacao)
+            : undefined,
           applicationId: target.exam.id,
-          examVersionId: target.examVersionId,
+          examVersionId: savedRemote?.idVersaoProva
+            ? String(savedRemote.idVersaoProva)
+            : target.examVersionId,
           versionLetter: target.versionLetter,
           studentId: finalStudentId,
           studentName: finalName,
@@ -230,7 +231,7 @@ export const MobileScannerScreen: React.FC = () => {
           totalScore: grading.totalScore,
           maxScore: grading.maxScore,
           isAutomaticallyAssigned: Boolean(isNominal && finalStudentId),
-          syncStatus: syncedWithBackend ? 'synced' : 'pending',
+          syncStatus: 'synced',
         });
 
         setStep('corrected');
@@ -238,14 +239,19 @@ export const MobileScannerScreen: React.FC = () => {
 
         addToast({
           type: 'success',
-          title: `Prova Corrigida! Nota: ${grading.totalScore.toFixed(1)}`,
+          title: `Correção Salva no Banco! Nota: ${grading.totalScore.toFixed(1)}`,
           message: `${grading.correctCount} de ${grading.totalObjectiveQuestions} acertos objetivos.`,
         });
       } catch (err: any) {
+        const msg =
+          err?.name === 'AbortError'
+            ? 'Tempo limite excedido ao salvar a correção no banco. Tente novamente.'
+            : err?.message || 'Não foi possível salvar a correção no banco de dados.';
+        setCameraError(msg);
         addToast({
           type: 'error',
-          title: 'Falha ao Corrigir Prova',
-          message: err?.message || 'Erro ao processar correção.',
+          title: 'Erro ao Salvar no Banco',
+          message: msg,
         });
       } finally {
         setIsProcessing(false);
@@ -313,7 +319,7 @@ export const MobileScannerScreen: React.FC = () => {
             const examRes = await resolveExamStrictly(
               qrCheck.parsed,
               exams,
-              () => api.getExams()
+              async () => (await api.getExams()).map(mapBackendExam)
             );
             if (!examRes.ok || !examRes.exam) {
               setCameraError(examRes.error || 'Prova não encontrada no sistema.');

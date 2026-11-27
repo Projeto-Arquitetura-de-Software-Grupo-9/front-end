@@ -1,4 +1,4 @@
-import { Question, Student, Class, Discipline, Correction } from './types';
+import { Question, Student, Class, Discipline, Correction, Exam } from './types';
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'https://back-end-coral-eta.vercel.app/api/v1';
@@ -150,7 +150,140 @@ async function fetchWithTimeout(
   }
 }
 
-function mapBackendCorrecao(raw: any): Correction {
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value?: string | null): boolean {
+  return typeof value === 'string' && UUID_REGEX.test(value.trim());
+}
+
+export function mapBackendExam(e: any): Exam {
+  const instructions = Array.isArray(e.instructions)
+    ? e.instructions.join('\n')
+    : typeof e.instructions === 'string'
+    ? e.instructions
+    : '';
+
+  const dbVersions: any[] = Array.isArray(e.versions) ? e.versions : [];
+  const jsonVersions: any[] = Array.isArray(e.variationsJson?.versions)
+    ? e.variationsJson.versions
+    : [];
+
+  // Prioritize real PostgreSQL VersaoProva rows (they carry the real UUID required by FK id_versao_prova)
+  const rawVersions =
+    dbVersions.length > 0
+      ? [...dbVersions].sort((a, b) =>
+          String(a.versionLetter || '').localeCompare(String(b.versionLetter || ''))
+        )
+      : jsonVersions;
+
+  const mappedVersions = rawVersions.map((v: any, vIdx: number) => {
+    const versionLetter = String(v.versionLetter || String.fromCharCode(65 + vIdx)).toUpperCase();
+    const jsonFallback = jsonVersions.find(
+      (jv) => String(jv.versionLetter || '').toUpperCase() === versionLetter
+    );
+    const dbMatch = dbVersions.find(
+      (dv) => String(dv.versionLetter || '').toUpperCase() === versionLetter
+    );
+
+    let qLayout =
+      v.questionsLayout ||
+      v.questions ||
+      jsonFallback?.questions ||
+      jsonFallback?.questionsLayout ||
+      [];
+    if (typeof qLayout === 'string') {
+      try {
+        qLayout = JSON.parse(qLayout);
+      } catch {
+        qLayout = [];
+      }
+    }
+
+    const questions = (Array.isArray(qLayout) ? qLayout : []).map((q: any, qIdx: number) => ({
+      originalQuestionId: q.originalQuestionId || q.questionId || q.id || 'q-' + qIdx,
+      orderIndex: q.orderIndex || qIdx + 1,
+      statement: q.statement || '',
+      alternatives: (q.alternatives || []).map((a: any, aIdx: number) => ({
+        id: a.id || 'alt-' + aIdx,
+        letter: a.letter || String.fromCharCode(65 + aIdx),
+        text: typeof a === 'string' ? a : a.text || '',
+      })),
+      correctAlternative: q.correctAlternative || 'A',
+      explanation: q.explanation,
+      topic: q.topic,
+    }));
+
+    let aKey = v.answerKey || jsonFallback?.answerKey || {};
+    if (typeof aKey === 'string') {
+      try {
+        aKey = JSON.parse(aKey);
+      } catch {
+        aKey = {};
+      }
+    }
+
+    const resolvedVersionId =
+      (dbMatch?.id && isUuid(String(dbMatch.id)) ? String(dbMatch.id) : null) ||
+      (v.id ? String(v.id) : `${e.id}-${versionLetter}`);
+
+    return {
+      id: resolvedVersionId,
+      versionLetter,
+      questions,
+      answerKey: aKey,
+      qrCodePayload:
+        v.qrCodePayload ||
+        jsonFallback?.qrCodePayload ||
+        JSON.stringify({
+          app: 'CORREGE',
+          examId: e.id,
+          code: e.code || '#EXAM',
+          ver: versionLetter,
+        }),
+    };
+  });
+
+  const selectedQuestionIds =
+    e.selectedQuestionIds && e.selectedQuestionIds.length > 0
+      ? e.selectedQuestionIds
+      : e.variationsJson?.selectedQuestionIds && e.variationsJson.selectedQuestionIds.length > 0
+      ? e.variationsJson.selectedQuestionIds
+      : (mappedVersions[0]?.questions || []).map((q: any) => q.originalQuestionId);
+
+  return {
+    id: e.id,
+    teacherId: e.teacherId,
+    code: e.code || '#EXAM',
+    title: e.title || 'Avaliação',
+    subtitle: e.subtitle,
+    institution: e.institution || 'CATÓLICA DE SANTA CATARINA',
+    department: e.department || '',
+    course: e.course || 'Graduação',
+    discipline: e.discipline || e.disciplinaRef?.nome || '',
+    classGroup: e.classGroup || '',
+    semester: e.semester || `${new Date().getFullYear()}.1`,
+    date: e.date || '',
+    duration: e.duration || '2 horas',
+    instructions,
+    status: (e.status as any) || 'ready',
+    shuffleQuestions: e.shuffleQuestions ?? e.variationsJson?.shuffleQuestions ?? true,
+    shuffleAlternatives: e.shuffleAlternatives ?? e.variationsJson?.shuffleAlternatives ?? true,
+    withStudentIdentification: e.withStudentIdentification ?? true,
+    numberOfVersions:
+      e.variationsJson?.numberOfVersions ||
+      e.numberOfVersions ||
+      (mappedVersions.length > 0 ? mappedVersions.length : 1),
+    selectedQuestionIds,
+    versions: mappedVersions,
+    maxScore: e.maxScore || e.variationsJson?.maxScore || 10.0,
+    totalStudents: e.totalStudents || (e.variationsJson?.studentAssignments || []).length || 0,
+    averageScore: e.averageScore || 0,
+    studentAssignments: e.variationsJson?.studentAssignments || e.studentAssignments || [],
+    createdAt: e.createdAt,
+  };
+}
+
+export function mapBackendCorrecao(raw: any): Correction {
   let parsedRespostas: Record<string, any> = {};
   if (typeof raw?.respostasLidas === 'string') {
     try {
@@ -204,14 +337,21 @@ function mapBackendCorrecao(raw: any): Correction {
 
   return {
     id: String(raw.id),
-    applicationId: String(raw.versaoProva?.idProva || raw.idProva || raw.applicationId || ''),
+    applicationId: String(
+      raw.versaoProva?.examId ||
+        raw.versaoProva?.idProva ||
+        raw.idProva ||
+        raw.applicationId ||
+        ''
+    ),
     examVersionId: String(raw.idVersaoProva || raw.examVersionId || ''),
     versionLetter: String(
       raw.versaoMarcada || raw.versaoProva?.versionLetter || raw.versionLetter || 'A'
     ),
     studentId: raw.idAluno || raw.studentId || undefined,
-    studentName: raw.aluno?.name || raw.studentName || undefined,
-    registration: raw.aluno?.registration || raw.registration || undefined,
+    studentName: raw.student?.name || raw.aluno?.name || raw.studentName || undefined,
+    registration:
+      raw.student?.registration || raw.aluno?.registration || raw.registration || undefined,
     reportedStudentName: raw.nomeManuscrito || raw.reportedStudentName || undefined,
     reportedStudentRegistration:
       raw.matriculaManuscrita || raw.reportedStudentRegistration || undefined,
@@ -219,7 +359,9 @@ function mapBackendCorrecao(raw: any): Correction {
     discursiveScores: Array.isArray(raw.discursiveScores) ? raw.discursiveScores : discursiveScores,
     totalScore: Number(raw.notaTotal ?? raw.totalScore ?? 0),
     maxScore: Number(raw.versaoProva?.prova?.maxScore ?? raw.maxScore ?? 10),
-    confirmedAt: String(raw.createdAt || raw.confirmedAt || new Date().toISOString()),
+    confirmedAt: String(
+      raw.dataConfirmacao || raw.createdAt || raw.confirmedAt || new Date().toISOString()
+    ),
     isAutomaticallyAssigned: Boolean(raw.atribuicaoAutomatica ?? raw.isAutomaticallyAssigned),
     syncStatus: 'synced',
   };
@@ -843,6 +985,25 @@ export const api = {
     return (json.data || []).map(mapBackendCorrecao);
   },
 
+  async resolveExamVersionUuid(examId: string, versionLetter = 'A'): Promise<string | null> {
+    if (!examId) return null;
+    try {
+      const remoteExams = await this.getExams();
+      const targetExam = remoteExams.find((e: any) => String(e.id) === String(examId));
+      const versions: any[] = Array.isArray(targetExam?.versions) ? targetExam.versions : [];
+      const upper = String(versionLetter || 'A').trim().toUpperCase();
+      const matched =
+        versions.find((v: any) => String(v.versionLetter || '').toUpperCase() === upper) ||
+        versions[0];
+      if (matched?.id && isUuid(String(matched.id))) {
+        return String(matched.id);
+      }
+    } catch {
+      // ignore lookup failures; caller will handle
+    }
+    return null;
+  },
+
   async createCorrecao(payload: {
     idVersaoProva: string;
     idProva?: string;
@@ -854,11 +1015,60 @@ export const api = {
     respostasLidas: Record<string, string>;
     atribuicaoAutomatica?: boolean;
   }): Promise<any> {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/correcoes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    let resolvedVersionId = (payload.idVersaoProva || '').trim();
+    const versionLetter = (payload.versaoMarcada || 'A').trim().toUpperCase();
+
+    // If caller passed a synthetic ID (e.g. "<examId>-A"), resolve the real VersaoProva UUID from DB first
+    if (!isUuid(resolvedVersionId) && payload.idProva) {
+      const dbVersionId = await this.resolveExamVersionUuid(payload.idProva, versionLetter);
+      if (dbVersionId) {
+        resolvedVersionId = dbVersionId;
+      }
+    }
+
+    const buildBody = (verId: string) =>
+      JSON.stringify({
+        ...payload,
+        idVersaoProva: verId,
+        versaoMarcada: versionLetter,
+        idAluno: payload.idAluno && isUuid(payload.idAluno) ? payload.idAluno : undefined,
+      });
+
+    let res = await fetchWithTimeout(
+      `${API_BASE_URL}/correcoes`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: buildBody(resolvedVersionId),
+      },
+      15000
+    );
+
+    // Retry once if the cached VersaoProva UUID was regenerated on the server
+    if (!res.ok && payload.idProva) {
+      const firstErr = await parseErrorResponse(res, 'Falha ao registrar correção no backend');
+      if (firstErr.message.includes('id_versao_prova')) {
+        const freshVersionId = await this.resolveExamVersionUuid(payload.idProva, versionLetter);
+        if (freshVersionId && freshVersionId !== resolvedVersionId) {
+          res = await fetchWithTimeout(
+            `${API_BASE_URL}/correcoes`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: buildBody(freshVersionId),
+            },
+            15000
+          );
+          if (!res.ok) {
+            throw await parseErrorResponse(res, 'Falha ao registrar correção no backend');
+          }
+          const retryJson = await res.json();
+          return retryJson.data;
+        }
+      }
+      throw firstErr;
+    }
+
     if (!res.ok) throw await parseErrorResponse(res, 'Falha ao registrar correção no backend');
     const json = await res.json();
     return json.data;

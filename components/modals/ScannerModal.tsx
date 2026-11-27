@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
-import { api } from '@/lib/api';
+import { api, mapBackendExam } from '@/lib/api';
 import {
   X,
   Camera,
@@ -268,7 +268,7 @@ export const ScannerModal: React.FC = () => {
           const examRes = await resolveExamStrictly(
             qrValidation.parsed,
             exams,
-            () => api.getExams()
+            async () => (await api.getExams()).map(mapBackendExam)
           );
           if (!examRes.ok || !examRes.exam) {
             setIdentified(null);
@@ -572,8 +572,9 @@ export const ScannerModal: React.FC = () => {
       });
 
       let syncedWithBackend = false;
+      let savedRemote: any = null;
       try {
-        await api.createCorrecao({
+        savedRemote = await api.createCorrecao({
           idVersaoProva: identified.examVersionId,
           idProva: identified.exam.id,
           versaoMarcada: identified.versionLetter,
@@ -594,8 +595,14 @@ export const ScannerModal: React.FC = () => {
       }
 
       addCorrection({
+        id: savedRemote?.id ? String(savedRemote.id) : undefined,
+        confirmedAt: savedRemote?.dataConfirmacao
+          ? String(savedRemote.dataConfirmacao)
+          : undefined,
         applicationId: identified.exam.id,
-        examVersionId: identified.examVersionId,
+        examVersionId: savedRemote?.idVersaoProva
+          ? String(savedRemote.idVersaoProva)
+          : identified.examVersionId,
         versionLetter: identified.versionLetter,
         studentId: finalStudentId,
         studentName: finalStudentName || undefined,

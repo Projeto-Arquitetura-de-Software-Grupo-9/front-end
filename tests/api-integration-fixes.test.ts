@@ -6,6 +6,9 @@ import {
   generateDisciplineCode,
   buildDisciplinePayload,
   sanitizeExamPayload,
+  mapBackendExam,
+  mapBackendCorrecao,
+  isUuid,
 } from '../lib/api';
 
 describe('Frontend API Integration & Mock Removal Verification (Items 1, 4, 5, 6, 10)', () => {
@@ -199,5 +202,69 @@ describe('Frontend API Integration & Mock Removal Verification (Items 1, 4, 5, 6
     });
     assert.equal('title' in partialPrintConfig, false);
     assert.equal(partialPrintConfig.numberOfVersions, 3);
+  });
+
+  it('should map real PostgreSQL VersaoProva UUIDs ahead of synthetic variationsJson IDs and map Correcao Prisma relations', () => {
+    assert.equal(isUuid('4fd7c56a-a524-4bb7-bd97-816d296dacaf'), true);
+    assert.equal(isUuid('4e455721-deee-44b6-b5f5-782ef3772d1d-A'), false);
+
+    const mappedExam = mapBackendExam({
+      id: '4e455721-deee-44b6-b5f5-782ef3772d1d',
+      code: '#SDF-4308',
+      title: 'Prova Teste',
+      versions: [
+        {
+          id: '10725e00-6f7b-4e9d-a0d4-b130b6927ef2',
+          examId: '4e455721-deee-44b6-b5f5-782ef3772d1d',
+          versionLetter: 'B',
+          questionsLayout: [],
+          answerKey: { 1: 'C' },
+        },
+        {
+          id: '4fd7c56a-a524-4bb7-bd97-816d296dacaf',
+          examId: '4e455721-deee-44b6-b5f5-782ef3772d1d',
+          versionLetter: 'A',
+          questionsLayout: [],
+          answerKey: { 1: 'B' },
+        },
+      ],
+      variationsJson: {
+        versions: [
+          { id: '4e455721-deee-44b6-b5f5-782ef3772d1d-A', versionLetter: 'A', questions: [], answerKey: { 1: 'B' } },
+          { id: '4e455721-deee-44b6-b5f5-782ef3772d1d-B', versionLetter: 'B', questions: [], answerKey: { 1: 'C' } },
+        ],
+      },
+    });
+
+    assert.equal(mappedExam.versions.length, 2);
+    assert.equal(mappedExam.versions[0].versionLetter, 'A');
+    assert.equal(mappedExam.versions[0].id, '4fd7c56a-a524-4bb7-bd97-816d296dacaf');
+    assert.equal(mappedExam.versions[1].versionLetter, 'B');
+    assert.equal(mappedExam.versions[1].id, '10725e00-6f7b-4e9d-a0d4-b130b6927ef2');
+
+    const mappedCorr = mapBackendCorrecao({
+      id: '6fcd72c7-e579-40d7-8c10-71b64239712c',
+      idVersaoProva: '4fd7c56a-a524-4bb7-bd97-816d296dacaf',
+      idAluno: 'cb8d486b-2dbb-4751-a5da-ebe5c5fb070d',
+      notaTotal: 10,
+      respostasLidas: { '1': 'B' },
+      versaoMarcada: 'A',
+      dataConfirmacao: '2026-11-27T02:45:16.194Z',
+      student: {
+        id: 'cb8d486b-2dbb-4751-a5da-ebe5c5fb070d',
+        name: 'JONATAS',
+        registration: '2026.1.123',
+      },
+      versaoProva: {
+        id: '4fd7c56a-a524-4bb7-bd97-816d296dacaf',
+        examId: '4e455721-deee-44b6-b5f5-782ef3772d1d',
+        versionLetter: 'A',
+      },
+    });
+
+    assert.equal(mappedCorr.applicationId, '4e455721-deee-44b6-b5f5-782ef3772d1d');
+    assert.equal(mappedCorr.studentName, 'JONATAS');
+    assert.equal(mappedCorr.registration, '2026.1.123');
+    assert.equal(mappedCorr.confirmedAt, '2026-11-27T02:45:16.194Z');
   });
 });

@@ -25,6 +25,7 @@ import {
   API_BASE_URL,
   ApiError,
   generateDisciplineCode,
+  mapBackendExam,
   setAuthToken,
   clearAuthToken,
 } from '@/lib/api';
@@ -169,7 +170,9 @@ interface AppContextType {
 
   // Corrections & Pending manual assignment (Feature 8, 9)
   corrections: Correction[];
-  addCorrection: (correction: Omit<Correction, 'id' | 'confirmedAt'>) => Correction;
+  addCorrection: (
+    correction: Omit<Correction, 'id' | 'confirmedAt'> & { id?: string; confirmedAt?: string }
+  ) => Correction;
   assignCorrection: (correctionId: string, studentId: string, notes?: string) => void;
 
   // Exam Wizard Draft
@@ -336,109 +339,7 @@ function readStoredAuthSession(): StoredAuthSession | null {
   }
 }
 
-function mapBackendExam(e: any): Exam {
-  const instructions = Array.isArray(e.instructions)
-    ? e.instructions.join('\n')
-    : typeof e.instructions === 'string'
-    ? e.instructions
-    : '';
-
-  const rawVersions =
-    Array.isArray(e.variationsJson?.versions) && e.variationsJson.versions.length > 0
-      ? e.variationsJson.versions
-      : Array.isArray(e.versions) && e.versions.length > 0
-      ? e.versions
-      : [];
-
-  const mappedVersions = rawVersions.map((v: any, vIdx: number) => {
-    let qLayout = v.questions || v.questionsLayout || [];
-    if (typeof qLayout === 'string') {
-      try {
-        qLayout = JSON.parse(qLayout);
-      } catch {
-        qLayout = [];
-      }
-    }
-    const questions = (Array.isArray(qLayout) ? qLayout : []).map((q: any, qIdx: number) => ({
-      originalQuestionId: q.originalQuestionId || q.questionId || q.id || 'q-' + qIdx,
-      orderIndex: q.orderIndex || qIdx + 1,
-      statement: q.statement || '',
-      alternatives: (q.alternatives || []).map((a: any, aIdx: number) => ({
-        id: a.id || 'alt-' + aIdx,
-        letter: a.letter || String.fromCharCode(65 + aIdx),
-        text: typeof a === 'string' ? a : a.text || '',
-      })),
-      correctAlternative: q.correctAlternative || 'A',
-      explanation: q.explanation,
-      topic: q.topic,
-    }));
-
-    let aKey = v.answerKey || {};
-    if (typeof aKey === 'string') {
-      try {
-        aKey = JSON.parse(aKey);
-      } catch {
-        aKey = {};
-      }
-    }
-
-    const versionLetter = v.versionLetter || String.fromCharCode(65 + vIdx);
-
-    return {
-      id: v.id || `${e.id}-${versionLetter}`,
-      versionLetter,
-      questions,
-      answerKey: aKey,
-      qrCodePayload:
-        v.qrCodePayload ||
-        JSON.stringify({
-          app: 'CORREGE',
-          examId: e.id,
-          code: e.code || '#EXAM',
-          ver: versionLetter,
-        }),
-    };
-  });
-
-  const selectedQuestionIds =
-    e.selectedQuestionIds && e.selectedQuestionIds.length > 0
-      ? e.selectedQuestionIds
-      : e.variationsJson?.selectedQuestionIds && e.variationsJson.selectedQuestionIds.length > 0
-      ? e.variationsJson.selectedQuestionIds
-      : (mappedVersions[0]?.questions || []).map((q: any) => q.originalQuestionId);
-
-  return {
-    id: e.id,
-    teacherId: e.teacherId,
-    code: e.code || '#EXAM',
-    title: e.title || 'Avaliação',
-    subtitle: e.subtitle,
-    institution: e.institution || 'CATÓLICA DE SANTA CATARINA',
-    department: e.department || '',
-    course: e.course || 'Graduação',
-    discipline: e.discipline || e.disciplinaRef?.nome || '',
-    classGroup: e.classGroup || '',
-    semester: e.semester || `${new Date().getFullYear()}.1`,
-    date: e.date || '',
-    duration: e.duration || '2 horas',
-    instructions,
-    status: (e.status as any) || 'ready',
-    shuffleQuestions: e.shuffleQuestions ?? e.variationsJson?.shuffleQuestions ?? true,
-    shuffleAlternatives: e.shuffleAlternatives ?? e.variationsJson?.shuffleAlternatives ?? true,
-    withStudentIdentification: e.withStudentIdentification ?? true,
-    numberOfVersions:
-      e.variationsJson?.numberOfVersions ||
-      e.numberOfVersions ||
-      (mappedVersions.length > 0 ? mappedVersions.length : 1),
-    selectedQuestionIds,
-    versions: mappedVersions,
-    maxScore: e.maxScore || e.variationsJson?.maxScore || 10.0,
-    totalStudents: e.totalStudents || (e.variationsJson?.studentAssignments || []).length || 0,
-    averageScore: e.averageScore || 0,
-    studentAssignments: e.variationsJson?.studentAssignments || e.studentAssignments || [],
-    createdAt: e.createdAt,
-  };
-}
+// mapBackendExam is imported from @/lib/api
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
@@ -1783,11 +1684,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const addCorrection = (correctionData: Omit<Correction, 'id' | 'confirmedAt'>): Correction => {
+  const addCorrection = (
+    correctionData: Omit<Correction, 'id' | 'confirmedAt'> & { id?: string; confirmedAt?: string }
+  ): Correction => {
     const newCorrection: Correction = {
       ...correctionData,
-      id: `corr-${Date.now()}`,
-      confirmedAt: new Date().toISOString(),
+      id: correctionData.id || `corr-${Date.now()}`,
+      confirmedAt: correctionData.confirmedAt || new Date().toISOString(),
     };
     setCorrections((prev) => [newCorrection, ...prev]);
 
