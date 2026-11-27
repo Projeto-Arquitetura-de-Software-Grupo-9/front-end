@@ -1388,6 +1388,80 @@ function enhanceImageDataContrast(data: Uint8ClampedArray): Uint8ClampedArray {
 /**
  * Multi-region, multi-contrast QR decoder for live camera frames and uploaded photos.
  */
+/**
+ * Decodes the QR from the working canvas and, when that fails, retries on a higher-resolution
+ * copy of the original photo. The working canvas is downscaled to ~1600px for OMR, which leaves
+ * the small, dense QR of a full-sheet photo with too few pixels per module. The returned location
+ * is always expressed in the working canvas coordinates.
+ */
+export async function decodeQrWithHiResFallback(
+  workingCanvas: HTMLCanvasElement,
+  source: CanvasImageSource & { width: number; height: number },
+  maxDim = 3200
+): Promise<DecodedQrResult | null> {
+  const direct = await decodeQrFromCanvas(workingCanvas);
+  if (direct) return direct;
+
+  const hiScale = Math.min(1, maxDim / Math.max(source.width, source.height));
+  const hiW = Math.max(1, Math.round(source.width * hiScale));
+  const hiH = Math.max(1, Math.round(source.height * hiScale));
+  if (hiW <= workingCanvas.width) return null; // no extra resolution available
+
+  const hiCanvas = document.createElement('canvas');
+  hiCanvas.width = hiW;
+  hiCanvas.height = hiH;
+  const hiCtx = hiCanvas.getContext('2d', { willReadFrequently: true });
+  if (!hiCtx) return null;
+  hiCtx.imageSmoothingEnabled = true;
+  hiCtx.imageSmoothingQuality = 'high';
+  hiCtx.drawImage(source, 0, 0, hiW, hiH);
+
+  // The QR sits in the top-right corner of Correge sheets (or bottom-left when upside down).
+  // Crop those corners at full resolution so the scan is not downscaled again.
+  let hit: DecodedQrResult | null = null;
+  let offX = 0;
+  let offY = 0;
+  const cropW = Math.round(hiW * 0.5);
+  const cropH = Math.round(hiH * 0.35);
+  for (const [x, y] of [
+    [hiW - cropW, 0],
+    [0, hiH - cropH],
+  ]) {
+    const crop = document.createElement('canvas');
+    crop.width = cropW;
+    crop.height = cropH;
+    const cctx = crop.getContext('2d', { willReadFrequently: true });
+    if (!cctx) continue;
+    cctx.drawImage(hiCanvas, x, y, cropW, cropH, 0, 0, cropW, cropH);
+    hit = await decodeQrFromCanvas(crop);
+    if (hit) {
+      offX = x;
+      offY = y;
+      break;
+    }
+  }
+  if (!hit) return null;
+
+  const k = workingCanvas.width / hiW;
+  const mapPt = (p?: Point2D) => (p ? { x: (p.x + offX) * k, y: (p.y + offY) * k } : undefined);
+  const loc = hit.location;
+  return {
+    ...hit,
+    location: loc
+      ? {
+          minX: (loc.minX + offX) * k,
+          minY: (loc.minY + offY) * k,
+          maxX: (loc.maxX + offX) * k,
+          maxY: (loc.maxY + offY) * k,
+          topLeft: mapPt(loc.topLeft),
+          topRight: mapPt(loc.topRight),
+          bottomRight: mapPt(loc.bottomRight),
+          bottomLeft: mapPt(loc.bottomLeft),
+        }
+      : null,
+  };
+}
+
 export async function decodeQrFromCanvas(canvas: HTMLCanvasElement): Promise<DecodedQrResult | null> {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx || canvas.width === 0 || canvas.height === 0) return null;

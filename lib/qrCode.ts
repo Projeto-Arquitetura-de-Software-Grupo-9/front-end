@@ -140,3 +140,28 @@ export async function generateQrCodeSvg(
     width,
   });
 }
+
+/**
+ * Synchronous variant used for rendering: the SVG exists on the very first render,
+ * so window.print() never captures an empty placeholder. The qrcode library runs the
+ * callback form synchronously in both the browser and Node builds.
+ */
+export function generateQrCodeSvgSync(text: string, options: QrCodeOptions = {}): string {
+  let svg = '';
+  let error: Error | null | undefined;
+  QRCode.toString(
+    text,
+    {
+      type: 'svg',
+      margin: options.margin !== undefined ? options.margin : 2,
+      errorCorrectionLevel: options.errorCorrectionLevel || 'M',
+      width: options.size || 200,
+    },
+    (err, result) => {
+      error = err;
+      svg = result;
+    }
+  );
+  if (error) throw error;
+  return svg;
+}

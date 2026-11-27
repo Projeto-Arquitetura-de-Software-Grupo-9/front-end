@@ -24,7 +24,7 @@ import {
 import { Letter, LETTERS, ParsedQrData } from '@/lib/qrCode';
 import { Exam } from '@/lib/types';
 import {
-  decodeQrFromCanvas,
+  decodeQrWithHiResFallback,
   analyzeAnswerSheetCanvas,
   renderOmrVerificationDataUrl,
   OmrAnalysisResult,
@@ -296,11 +296,14 @@ export const MobileScannerScreen: React.FC = () => {
             setCameraError('Erro ao preparar imagem para leitura óptica.');
             return;
           }
+          // Redução de alta qualidade: com a suavização padrão a foto de ~4000px fica serrilhada e o OMR perde os cantos e as bolhas
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
           if (mode === 'qr') {
             // 1. Decode QR strictly
-            const decodedQr = await decodeQrFromCanvas(canvas);
+            const decodedQr = await decodeQrWithHiResFallback(canvas, img);
             if (!decodedQr) {
               setCameraError(
                 'Nenhum QR Code foi encontrado na foto. Aproxime a câmera do QR Code oficial no topo da prova ou do cartão-resposta.'
@@ -421,7 +424,7 @@ export const MobileScannerScreen: React.FC = () => {
             }
 
             // If this photo also contains a QR code, verify it belongs to the SAME exam & Caderno!
-            const decodedQr = await decodeQrFromCanvas(canvas);
+            const decodedQr = await decodeQrWithHiResFallback(canvas, img);
             if (decodedQr) {
               const qrCheck = validateCorregeQrRaw(decodedQr.raw);
               if (qrCheck.ok && qrCheck.parsed) {

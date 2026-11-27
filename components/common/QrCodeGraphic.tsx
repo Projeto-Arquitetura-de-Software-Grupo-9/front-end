@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { generateQrCodeSvg } from '@/lib/qrCode';
+import React, { useMemo } from 'react';
+import { generateQrCodeSvgSync } from '@/lib/qrCode';
 
 export interface QrCodeGraphicProps {
   value?: string;
@@ -23,28 +23,19 @@ export const QrCodeGraphic: React.FC<QrCodeGraphicProps> = ({
   showBadge = true,
   showCodeLabel = false,
 }) => {
-  const [svgMarkup, setSvgMarkup] = useState<string>('');
-
-  useEffect(() => {
-    let isMounted = true;
-
-    generateQrCodeSvg(value, {
-      size: size * 2, // 2x resolution for ultra-crisp rendering
-      margin: 2,
-      errorCorrectionLevel: 'M',
-    })
-      .then((svg) => {
-        if (isMounted) {
-          setSvgMarkup(svg);
-        }
-      })
-      .catch((err) => {
-        console.error('Erro ao gerar SVG do QR Code:', err);
+  // Gerado de forma síncrona: o SVG já existe no primeiro render, então o
+  // window.print() nunca captura o placeholder vazio (bug do QR ausente na impressão).
+  const svgMarkup = useMemo(() => {
+    try {
+      return generateQrCodeSvgSync(value, {
+        size: size * 2, // 2x resolution for ultra-crisp rendering
+        margin: 2,
+        errorCorrectionLevel: 'M',
       });
-
-    return () => {
-      isMounted = false;
-    };
+    } catch (err) {
+      console.error('Erro ao gerar SVG do QR Code:', err);
+      return '';
+    }
   }, [value, size]);
 
   return (

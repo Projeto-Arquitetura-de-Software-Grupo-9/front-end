@@ -503,6 +503,8 @@ export const ScannerModal: React.FC = () => {
           setScanError('Falha ao inicializar o leitor de imagem.');
           return;
         }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         await processCapturedCanvas(canvas, 'explicit-capture');
       };
