@@ -226,6 +226,57 @@ describe('Pure TypeScript OMR Engine (Real Bubble Reading, Zero Guessing)', () =
     assert.equal(noiseResult.sheetDetected, false);
     assert.equal(Object.keys(noiseResult.markedAnswers).length, 0);
   });
+
+  it('should read 1-question and small exams accurately without being hijacked by header text or CADERNO bubbles', () => {
+    const sheet = renderSyntheticAnswerSheet({
+      totalQuestions: 1,
+      marks: { 1: ['B'] },
+      withShadowGradient: true,
+    });
+
+    // Inject dense header title letter-like blobs (r ~ 7px at y=48) and CADERNO (A)(B)(C)(D) bubbles (r ~ 11px at y=57)
+    const { rgba, width, height } = sheet;
+    const paintRing = (cx: number, cy: number, r: number) => {
+      for (let y = Math.max(0, Math.floor(cy - r - 1)); y <= Math.min(height - 1, Math.ceil(cy + r + 1)); y++) {
+        for (let x = Math.max(0, Math.floor(cx - r - 1)); x <= Math.min(width - 1, Math.ceil(cx + r + 1)); x++) {
+          const dist = Math.hypot(x - cx, y - cy);
+          if (dist >= r - 1.5 && dist <= r + 1) {
+            const p = (y * width + x) * 4;
+            rgba[p] = 20;
+            rgba[p + 1] = 20;
+            rgba[p + 2] = 20;
+          }
+        }
+      }
+    };
+
+    // Simulated bold uppercase header letters ("CARTÃO-RESPOSTA OFICIAL")
+    for (let i = 0; i < 20; i++) {
+      paintRing(60 + i * 16, 48, 7);
+    }
+    // Simulated CADERNO (A)(B)(C)(D) bubbles in top-right header
+    for (let i = 0; i < 4; i++) {
+      paintRing(610 + i * 55, 57, 11);
+    }
+
+    // Both rectified (with fiducials) and unrectified (with QR box) must read Q1 = B
+    const resRectified = analyzeAnswerSheetPixels(rgba, width, height, {
+      totalQuestions: 1,
+      qrLocation: { minX: 840, minY: 18, maxX: 940, maxY: 112 },
+    });
+    assert.equal(resRectified.sheetDetected, true);
+    assert.equal(resRectified.markedAnswers[1], 'B');
+    assert.deepEqual(resRectified.blankQuestions, []);
+
+    const resUnrectified = analyzeAnswerSheetPixels(rgba, width, height, {
+      totalQuestions: 1,
+      qrLocation: { minX: 840, minY: 18, maxX: 940, maxY: 112 },
+      skipPerspectiveWarp: true,
+    });
+    assert.equal(resUnrectified.sheetDetected, true);
+    assert.equal(resUnrectified.markedAnswers[1], 'B');
+    assert.deepEqual(resUnrectified.blankQuestions, []);
+  });
 });
 
 describe('Strict QR Validation, Strict Exam Lookup & Deterministic Grading (Zero Fallbacks)', () => {

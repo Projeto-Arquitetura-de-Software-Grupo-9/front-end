@@ -538,7 +538,7 @@ function hasCircularPerimeter(
     if (found) hits++;
   }
 
-  if (hits < 8) return false;
+  if (hits < 9) return false;
 
   // Reject solid squares unless heavily filled (pen bleed)
   const bboxFill = blob.area / (blob.bw * blob.bh);
@@ -560,10 +560,12 @@ function hasCircularPerimeter(
 }
 
 /**
- * Finds the dominant bubble radius mode among circular candidates.
+ * Finds candidate bubble radius modes among circular candidates.
+ * Returns the dominant mode plus up to 2 distinct secondary modes so small exams (1-3 questions)
+ * cannot be hijacked by smaller printed text characters.
  */
-function findDominantBubbleRadius(cands: ComponentBlob[]): number {
-  if (cands.length === 0) return 0;
+function findCandidateBubbleRadii(cands: ComponentBlob[]): number[] {
+  if (cands.length === 0) return [];
   const binSize = 1.5;
   const bins = new Map<number, ComponentBlob[]>();
 
@@ -576,14 +578,27 @@ function findDominantBubbleRadius(cands: ComponentBlob[]): number {
     }
   }
 
-  let bestList: ComponentBlob[] = [];
-  for (const list of bins.values()) {
-    if (list.length > bestList.length) {
-      bestList = list;
+  const ranked = Array.from(bins.values())
+    .filter((list) => list.length >= 2)
+    .map((list) => ({
+      count: list.length,
+      r: median(list.map((b) => b.r)),
+    }))
+    .sort((a, b) => b.count - a.count || b.r - a.r);
+
+  const selected: number[] = [];
+  for (const item of ranked) {
+    if (selected.every((existing) => Math.abs(existing - item.r) > Math.max(2.0, existing * 0.22))) {
+      selected.push(item.r);
+      if (selected.length >= 3) break;
     }
   }
 
-  return bestList.length > 0 ? median(bestList.map((b) => b.r)) : median(cands.map((b) => b.r));
+  if (selected.length === 0) {
+    selected.push(median(cands.map((b) => b.r)));
+  }
+
+  return selected;
 }
 
 /**
@@ -625,7 +640,7 @@ function discoverBubbleColumns(
     band.sort((a, b) => a.cx - b.cx);
     for (let i = 1; i < band.length; i++) {
       const dx = band[i].cx - band[i - 1].cx;
-      if (dx >= modeR * 1.85 && dx <= modeR * 5.0) {
+      if (dx >= modeR * 2.1 && dx <= modeR * 5.0) {
         adjacentDxs.push(dx);
       }
     }
@@ -938,44 +953,50 @@ export function analyzeAnswerSheetPixels(
     }
   }
 
-  // Stage D: Extract circular bubble candidates
-  const minDia = Math.max(8, Math.round(minDim * 0.012));
+  // Stage D: Extract circular bubble candidates within the valid answer-grid ROI
+  // Exclude institutional header (title, CADERNO bubbles, student info, instructions) & bottom OMR-ALIGN bar
+  const minDia = rectified
+    ? Math.max(15, Math.round(minDim * 0.016))
+    : Math.max(11, Math.round(minDim * 0.015));
   const maxDia = Math.round(minDim * 0.075);
-  const minArea = Math.max(14, Math.round(minDia * 1.4));
+  const minArea = Math.max(18, Math.round(minDia * 1.5));
   const maxArea = Math.round(maxDia * maxDia * 1.05);
   const allBlobs = extractConnectedComponents(darkMask, w, h, minArea, maxArea);
 
   const borderPadX = Math.round(w * 0.015);
   const borderPadY = Math.round(h * 0.015);
+  let minGridY = rectified ? Math.round(h * 0.165) : borderPadY;
+  const maxGridY = rectified ? Math.round(h * 0.935) : h - borderPadY;
+
+  // When the QR code is located in the upper header strip, answer bubbles always start well below it
+  if (qrBox && qrBox.maxY < h * 0.45) {
+    const qrH = Math.max(1, qrBox.maxY - qrBox.minY);
+    minGridY = Math.max(minGridY, Math.round(qrBox.maxY + qrH * 0.35));
+  }
 
   const rawCircleCands = allBlobs.filter((b) => {
     if (b.minX <= borderPadX || b.maxX >= w - borderPadX) return false;
+    if (b.cy < minGridY || b.cy > maxGridY) return false;
     if (b.minY <= borderPadY || b.maxY >= h - borderPadY) return false;
     if (isInsideBox(b.cx, b.cy, qrBox, 10)) return false;
     if (b.bw < minDia || b.bh < minDia || b.bw > maxDia || b.bh > maxDia) return false;
 
     const aspect = b.bw / b.bh;
-    if (aspect < 0.72 || aspect > 1.38) return false;
+    if (aspect < 0.75 || aspect > 1.33) return false;
 
     const bboxFill = b.area / (b.bw * b.bh);
-    if (bboxFill < 0.13 || bboxFill > 0.94) return false;
+    if (bboxFill < 0.14 || bboxFill > 0.94) return false;
 
     return hasCircularPerimeter(darkMask, w, h, b);
   });
 
-  if (rawCircleCands.length < Math.max(4, Math.min(totalQuestions * 2, 10))) {
+  if (rawCircleCands.length < Math.max(2, Math.min(totalQuestions * 2, 10))) {
     return emptyFailure(
       'Nenhuma grade de bolhas do cartão-resposta foi detectada na imagem. Enquadre a folha inteira em local bem iluminado.',
       w,
       h
     );
   }
-
-  // Keep candidates around the dominant bubble radius
-  const modeR = findDominantBubbleRadius(rawCircleCands);
-  const sizedCands = rawCircleCands.filter(
-    (b) => b.r >= modeR * 0.68 && b.r <= modeR * 1.42
-  );
 
   // Determine max letters across expected questions
   let expectedMaxLetters = 5;
@@ -984,39 +1005,45 @@ export function analyzeAnswerSheetPixels(
     if (lens.length > 0) expectedMaxLetters = Math.max(2, ...lens);
   }
 
-  // Stage E: Discover bubble rows & column clusters
-  let columns = discoverBubbleColumns(sizedCands, modeR, expectedMaxLetters);
+  // Stage E: Discover bubble rows & column clusters across candidate bubble radii
+  const candidateRadii = findCandidateBubbleRadii(rawCircleCands);
+  const maxExpectedCols = Math.min(
+    totalQuestions,
+    totalQuestions > 75 ? 4 : totalQuestions > 25 ? 3 : 2
+  );
+  const minRequiredRows = Math.max(1, Math.ceil(totalQuestions * 0.45));
+  const minRequiredBubbles = Math.max(2, Math.ceil(totalQuestions * 1.5));
 
-  // Filter out stray non-grid clusters (e.g., header "Caderno: A B C D" bubbles sitting way above the answer grid)
-  if (columns.length > 0) {
-    // Expected number of grid columns on Correge A4 sheets
-    const maxExpectedCols = totalQuestions > 75 ? 4 : totalQuestions > 25 ? 3 : 2;
+  const pruneAndScoreColumns = (rawCols: ColumnCluster[], candR: number) => {
+    let cols = rawCols.map((c) => ({ ...c, rows: [...c.rows] }));
+    if (cols.length === 0) {
+      return { cols, rowsCount: 0, bubblesCount: 0, score: -1 };
+    }
 
-    // Remove isolated header row (e.g., single row sitting > 3.5x rowStep above the main grid when multi-row columns exist)
     const verticalSteps: number[] = [];
-    for (const col of columns) {
+    for (const col of cols) {
       for (let i = 1; i < col.rows.length; i++) {
         const dy = col.rows[i].y - col.rows[i - 1].y;
-        if (dy >= modeR * 1.8 && dy <= modeR * 6.5) {
+        if (dy >= candR * 1.8 && dy <= candR * 6.5) {
           verticalSteps.push(dy);
         }
       }
     }
-    const globalRowStepY = verticalSteps.length > 0 ? median(verticalSteps) : modeR * 3.0;
+    const globalRowStepY = verticalSteps.length > 0 ? median(verticalSteps) : candR * 3.0;
 
-    // Trim top outlier header row if it's far above the main column start
+    // Trim top outlier header row if it sits far above the main column start
     if (totalQuestions >= 4) {
-      for (const col of columns) {
+      for (const col of cols) {
         if (col.rows.length >= 3) {
           const firstGap = col.rows[1].y - col.rows[0].y;
           if (firstGap > globalRowStepY * 2.4) {
-            // Check if col.rows[0] is much higher than other columns' first rows
-            const otherTops = columns
+            const otherTops = cols
               .filter((c) => c !== col && c.rows.length >= 2)
               .map((c) => c.rows[0].y);
             if (
               otherTops.length === 0 ||
-              Math.abs(col.rows[1].y - median(otherTops)) < Math.abs(col.rows[0].y - median(otherTops))
+              Math.abs(col.rows[1].y - median(otherTops)) <
+                Math.abs(col.rows[0].y - median(otherTops))
             ) {
               col.rows.shift();
             }
@@ -1025,14 +1052,69 @@ export function analyzeAnswerSheetPixels(
       }
     }
 
-    // If too many spurious columns were found, keep the top columns by row count & vertical alignment
-    if (columns.length > maxExpectedCols) {
-      columns.sort((a, b) => b.rows.length - a.rows.length);
-      columns = columns.slice(0, maxExpectedCols).sort((a, b) => a.startX - b.startX);
+    // Score columns by row count, closeness to expectedMaxLetters bubbles per row, and bubble radius
+    if (cols.length > maxExpectedCols) {
+      const colQuality = (col: ColumnCluster) => {
+        const avgBubbles =
+          col.rows.reduce((acc, r) => acc + r.bubbles.length, 0) / Math.max(1, col.rows.length);
+        const exactMatchBonus = col.rows.filter(
+          (r) => r.bubbles.length === expectedMaxLetters
+        ).length;
+        return (
+          col.rows.length * 100 +
+          exactMatchBonus * 35 +
+          avgBubbles * 12 +
+          col.medianR * 2
+        );
+      };
+      cols.sort((a, b) => colQuality(b) - colQuality(a));
+      cols = cols.slice(0, maxExpectedCols).sort((a, b) => a.startX - b.startX);
     }
 
-    // Remove empty columns
-    columns = columns.filter((c) => c.rows.length > 0);
+    cols = cols.filter((c) => c.rows.length > 0);
+    const rowsCount = cols.reduce((acc, c) => acc + c.rows.length, 0);
+    const bubblesCount = cols.reduce(
+      (acc, c) => acc + c.rows.reduce((rAcc, r) => rAcc + r.bubbles.length, 0),
+      0
+    );
+
+    const exactRowMatches = cols.reduce(
+      (acc, c) => acc + c.rows.filter((r) => r.bubbles.length === expectedMaxLetters).length,
+      0
+    );
+    const avgStepRatio =
+      cols.length > 0
+        ? median(cols.map((c) => c.stepX / Math.max(1, c.medianR)))
+        : 0;
+    const stepRatioBonus = avgStepRatio >= 2.25 && avgStepRatio <= 4.2 ? 40 : 0;
+    const meetsMinimum = rowsCount >= minRequiredRows && bubblesCount >= minRequiredBubbles;
+    const clampedRows = Math.min(rowsCount, totalQuestions);
+    const score =
+      (meetsMinimum ? 1000 : 0) +
+      clampedRows * 60 +
+      exactRowMatches * 30 +
+      Math.min(bubblesCount, totalQuestions * expectedMaxLetters) * 5 +
+      stepRatioBonus +
+      candR * 2;
+
+    return { cols, rowsCount, bubblesCount, score };
+  };
+
+  let modeR = candidateRadii[0] || 0;
+  let columns: ColumnCluster[] = [];
+  let bestScore = -1;
+
+  for (const candR of candidateRadii) {
+    const sized = rawCircleCands.filter(
+      (b) => b.r >= candR * 0.68 && b.r <= candR * 1.42
+    );
+    const discovered = discoverBubbleColumns(sized, candR, expectedMaxLetters);
+    const evaluated = pruneAndScoreColumns(discovered, candR);
+    if (evaluated.score > bestScore) {
+      bestScore = evaluated.score;
+      columns = evaluated.cols;
+      modeR = candR;
+    }
   }
 
   const totalDetectedRows = columns.reduce((acc, c) => acc + c.rows.length, 0);
@@ -1042,9 +1124,6 @@ export function analyzeAnswerSheetPixels(
   );
 
   // Strict verification: reject non-answer-sheet images!
-  const minRequiredRows = Math.max(1, Math.ceil(totalQuestions * 0.45));
-  const minRequiredBubbles = Math.max(2, Math.ceil(totalQuestions * 1.5));
-
   if (
     columns.length === 0 ||
     totalDetectedRows < minRequiredRows ||
