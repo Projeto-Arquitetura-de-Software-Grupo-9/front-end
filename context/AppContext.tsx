@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ScreenType,
@@ -19,6 +19,7 @@ import {
 import {
   getVersionLetters,
   generateRandomStudentAssignments,
+  computeExamCorrectionStatus,
 } from '@/lib/exam-utils';
 import {
   api,
@@ -406,6 +407,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const refreshExams = useCallback(async () => {
+    // Recarrega também as correções: notas lidas no celular passam a contar no status no computador
+    api
+      .getCorrecoes()
+      .then((remoteCorrecoes) => {
+        if (Array.isArray(remoteCorrecoes)) setCorrections(remoteCorrecoes);
+      })
+      .catch((err) => console.warn('Erro ao atualizar correções do backend:', err));
     try {
       const remoteExams = await api.getExams();
       if (Array.isArray(remoteExams)) {
@@ -668,7 +676,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const selectedExam = exams.find((e) => e.id === activeExamId) || exams[0];
+  // Status da prova derivado das correções salvas (Pronta → Em Andamento → Corrigida)
+  const examsWithStatus = useMemo(
+    () => exams.map((e) => ({ ...e, ...computeExamCorrectionStatus(e, corrections, students) })),
+    [exams, corrections, students]
+  );
+
+  const selectedExam = examsWithStatus.find((e) => e.id === activeExamId) || examsWithStatus[0];
   const selectedClass = classes.find((c) => c.id === activeClassId) || classes[0];
   const selectedApplication =
     applications.find((a) => a.id === activeApplicationId) || applications[0];
@@ -1943,7 +1957,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addQuestion,
         updateQuestion,
         deleteQuestion,
-        exams,
+        exams: examsWithStatus,
         refreshExams,
         activeExamId,
         setActiveExamId,

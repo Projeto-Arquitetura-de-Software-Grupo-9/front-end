@@ -73,12 +73,29 @@ function ExamHubContent() {
               <span className="text-xs text-slate-500">
                 {currentExam?.discipline} • {currentExam?.classGroup} • {questionCount} questões
               </span>
+              {currentExam?.status === 'Corrigida' ? (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                  Corrigida
+                  {currentExam.expectedCount ? ` (${currentExam.correctedCount}/${currentExam.expectedCount})` : ''}
+                </span>
+              ) : currentExam?.status === 'Em Andamento' ? (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
+                  Em correção
+                  {currentExam.expectedCount
+                    ? ` (${currentExam.correctedCount}/${currentExam.expectedCount})`
+                    : ` (${currentExam.correctedCount})`}
+                </span>
+              ) : (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                  Pronta p/ impressão
+                </span>
+              )}
             </div>
           </div>
 
           {/* Right Action buttons */}
           <div className="flex items-center gap-2 self-start sm:self-center">
-            {currentExam?.status === 'Corrigida' && (
+            {(currentExam?.correctedCount ?? 0) > 0 && (
               <Link
                 href={`/resultados?examId=${id}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-2xs"

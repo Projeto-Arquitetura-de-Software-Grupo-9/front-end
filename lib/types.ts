@@ -165,6 +165,8 @@ export interface Exam {
   maxScore: number;
   totalStudents?: number;
   averageScore?: number;
+  correctedCount?: number; // Alunos com correção salva (derivado das correções)
+  expectedCount?: number; // Alunos esperados para a prova (derivado)
   permutationStrategy?: 'FISHER_YATES' | 'CYCLIC_ROTATION';
   createdAt?: string;
   studentAssignments?: {

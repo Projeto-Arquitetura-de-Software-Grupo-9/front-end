@@ -34,7 +34,7 @@ export const ExamsListScreen: React.FC = () => {
     setIsScannerModalOpen,
     refreshExams,
   } = useApp();
-  const [statusFilter, setStatusFilter] = useState<'Todos' | 'Corrigida' | 'Pendente' | 'Em Andamento'>('Todos');
+  const [statusFilter, setStatusFilter] = useState<'Todos' | 'Corrigida' | 'Em Andamento' | 'Pronta'>('Todos');
   const [disciplineFilter, setDisciplineFilter] = useState<string>('Todas');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -58,7 +58,9 @@ export const ExamsListScreen: React.FC = () => {
       (exam.classGroup || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       exam.code.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus = statusFilter === 'Todos' || exam.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'Todos' ||
+      (statusFilter === 'Pronta' ? exam.status !== 'Corrigida' && exam.status !== 'Em Andamento' : exam.status === statusFilter);
     const matchesDiscipline = disciplineFilter === 'Todas' || exam.discipline === disciplineFilter;
 
     return matchesSearch && matchesStatus && matchesDiscipline;
@@ -117,7 +119,7 @@ export const ExamsListScreen: React.FC = () => {
       <div className="bg-white px-3 py-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
         {/* Segmented Status Pills */}
         <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg self-start">
-          {(['Todos', 'Corrigida', 'Pendente', 'Em Andamento'] as const).map((st) => (
+          {(['Todos', 'Pronta', 'Em Andamento', 'Corrigida'] as const).map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -214,6 +216,14 @@ export const ExamsListScreen: React.FC = () => {
                     {exam.status === 'Corrigida' ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700">
                         <CheckCircle2 className="w-3 h-3" /> Corrigida
+                        {exam.expectedCount ? ` (${exam.correctedCount}/${exam.expectedCount})` : ''}
+                      </span>
+                    ) : exam.status === 'Em Andamento' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700">
+                        <Clock className="w-3 h-3" /> Em correção
+                        {exam.expectedCount
+                          ? ` (${exam.correctedCount}/${exam.expectedCount})`
+                          : ` (${exam.correctedCount} corrigida${exam.correctedCount === 1 ? '' : 's'})`}
                       </span>
                     ) : exam.status === 'Pendente' ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700">
